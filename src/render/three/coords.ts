@@ -31,4 +31,17 @@ export class GridSpace {
   half(): number {
     return (this.N / 2) * CELL;
   }
+
+  /** inverse of cellCenter: a world point → the grid cell containing it */
+  worldToCell(p: THREE.Vector3): { gx: number; gy: number } {
+    const off = ((this.N - 1) / 2) * CELL;
+    return {
+      gx: Math.round((p.x + off) / CELL),
+      gy: Math.round((p.z + off) / CELL),
+    };
+  }
+
+  inBounds(gx: number, gy: number): boolean {
+    return gx >= 0 && gy >= 0 && gx < this.N && gy < this.N;
+  }
 }

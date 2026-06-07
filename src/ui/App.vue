@@ -25,6 +25,11 @@ onMounted(async () => {
   if (!canvas.value) return;
   renderer = new ThreeRenderer(canvas.value, b, Tuning.GRID_N);
   renderer.start();
+
+  // dev-only handle so tests can drive tools before the HUD palette (Phase 5)
+  if (import.meta.env.DEV) {
+    (window as unknown as { __viv: unknown }).__viv = { renderer, bridge: b };
+  }
 });
 
 onUnmounted(() => {

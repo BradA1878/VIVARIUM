@@ -14,6 +14,7 @@ import { Terrain } from "./three/terrain";
 import { GridSpace } from "./three/coords";
 import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh } from "./three/kit";
+import { PlacementController, type HoverInfo } from "./three/placement";
 
 interface Placed {
   mesh: KitMesh;
@@ -40,6 +41,7 @@ export class ThreeRenderer {
   private materials = createMaterials();
   private placed = new Map<number, Placed>();
   private bridge: SimBridge;
+  private placement: PlacementController;
   private raf = 0;
   private running = false;
 
@@ -50,9 +52,17 @@ export class ThreeRenderer {
     this.terrain = new Terrain(this.grid);
     this.scene.scene.add(this.terrain.group);
     this.scene.scene.add(this.buildingsGroup);
+    this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
+    this.scene.scene.add(this.placement.group);
     this.onResize = this.onResize.bind(this);
     window.addEventListener("resize", this.onResize);
   }
+
+  // ---- tool controls (driven by the HUD palette, Phase 5) -------------------
+  setTool(defId: string): void { this.placement.setTool(defId); }
+  setDemolish(): void { this.placement.setDemolish(); }
+  clearTool(): void { this.placement.clearTool(); }
+  onHover(cb: (info: HoverInfo | null) => void): void { this.placement.onHover(cb); }
 
   start(): void {
     if (this.running) return;
@@ -77,6 +87,7 @@ export class ThreeRenderer {
     }
     this.scene.update(snap.tod, snap.weather === "dust");
     this.reconcile(snap);
+    this.placement.update();
     this.scene.render();
   }
 
@@ -118,6 +129,7 @@ export class ThreeRenderer {
     this.running = false;
     cancelAnimationFrame(this.raf);
     window.removeEventListener("resize", this.onResize);
+    this.placement.dispose();
     for (const entry of this.placed.values()) entry.mesh.dispose();
     this.placed.clear();
     this.terrain.dispose();
