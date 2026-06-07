@@ -16,11 +16,22 @@ export default defineConfig({
   server: {
     port: 5180,
     // Proxy the narrator / persistence API to the Hono server in dev so the
-    // provider key never touches the client (doc §3.2).
+    // provider key never touches the client (doc §3.2). If the server isn't
+    // running, answer the proxy error quietly with a 502 (the client falls back
+    // to scripted lines / localStorage) instead of spamming ECONNREFUSED stacks.
     proxy: {
       "/api": {
         target: "http://localhost:8787",
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on("error", (_err, _req, res) => {
+            const r = res as { writeHead?: (s: number, h: Record<string, string>) => void; end?: (b?: string) => void; headersSent?: boolean };
+            if (r.writeHead && r.end && !r.headersSent) {
+              r.writeHead(502, { "content-type": "application/json" });
+              r.end(JSON.stringify({ error: "narrator server offline", fallback: "scripted" }));
+            }
+          });
+        },
       },
     },
   },

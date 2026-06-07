@@ -8,6 +8,22 @@ import type { ColonyEvent, Snapshot } from "@shared/types";
 
 export const LIVE_ENABLED = import.meta.env.VITE_LIVE_NARRATOR === "1";
 
+// Circuit breaker: if the narrator server is down (or absent), stop hammering it.
+// After a few consecutive failures we go quiet for a while — the council just
+// speaks its scripted lines until the endpoint comes back. (Agent layer, main
+// thread — Date.now() is fine here; the determinism rule is the engine's, doc §0.)
+const FAIL_THRESHOLD = 3;
+const COOLDOWN_MS = 30_000;
+let consecutiveFailures = 0;
+let disabledUntil = 0;
+
+function recordFailure(): void {
+  if (++consecutiveFailures >= FAIL_THRESHOLD) {
+    disabledUntil = Date.now() + COOLDOWN_MS;
+    consecutiveFailures = 0;
+  }
+}
+
 /** a compact snapshot for the prompt — just what gives the line its context */
 function slim(s: Snapshot | null) {
   if (!s) return null;
@@ -31,16 +47,19 @@ export async function narrateLive(
   snapshot: Snapshot | null,
   persona = "vivarium",
 ): Promise<string | null> {
+  if (Date.now() < disabledUntil) return null; // breaker open — don't even try
   try {
     const res = await fetch("/api/narrate", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ event, snapshot: slim(snapshot), persona }),
     });
-    if (!res.ok) return null; // 429 / 502 / 503 → scripted fallback
+    if (!res.ok) { recordFailure(); return null; } // 429 / 502 / 503 → scripted
+    consecutiveFailures = 0;
     const data = (await res.json()) as { line?: unknown };
     return typeof data.line === "string" && data.line ? data.line : null;
   } catch {
+    recordFailure();
     return null; // network down / server off → scripted fallback
   }
 }
