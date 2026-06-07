@@ -7,5 +7,6 @@
 import { createApp } from "vue";
 import App from "./ui/App.vue";
 import "./ui/style/tokens.css";
+import "./ui/style/hud.css";
 
 createApp(App).mount("#root");
