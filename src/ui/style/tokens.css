@@ -1,0 +1,178 @@
+/* ============================================================================
+   VIVARIUM — design tokens + global chrome.
+   Observatory-dark palette, the cyan signal accent, rust→crit escalation, glass
+   panels over the Mars surface. The voice split is absolute: IBM Plex Mono is the
+   machine; Newsreader italic is the intelligence. (Doc §4.1–4.2.)
+   ============================================================================ */
+:root {
+  --void: #07090b;
+  --void2: #0b0e12;
+  --ink: #c3d0d6;
+  --dim: #6a7a82;
+  --faint: #3a464c;
+  --cyan: #7fd4e8;
+  --rust: #c8794f;
+  --crit: #e8784f;
+  --panel: rgba(12, 16, 20, 0.74);
+  --hair: rgba(127, 212, 232, 0.12);
+  --hair2: rgba(127, 212, 232, 0.06);
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --serif: "Newsreader", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+html,
+body {
+  background: #000;
+  overflow: hidden;
+}
+body {
+  font-family: var(--mono);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  cursor: default;
+}
+button {
+  font-family: var(--mono);
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+::selection {
+  background: rgba(127, 212, 232, 0.25);
+}
+
+.app {
+  position: fixed;
+  inset: 0;
+  background: var(--void);
+}
+.stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 38%, transparent 45%, rgba(4, 5, 7, 0.55) 100%);
+  mix-blend-mode: multiply;
+}
+
+/* The HUD is a pointer-events:none overlay; only the controls opt back in. */
+.hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.hud > * {
+  pointer-events: none;
+}
+.panel,
+.ctl,
+.pal-btn,
+.alert,
+.term,
+.inspect {
+  pointer-events: auto;
+}
+
+/* ---------- boot ---------- */
+.boot {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: #050608;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.boot.out {
+  animation: bootout 0.5s ease forwards;
+}
+.boot-inner {
+  text-align: center;
+}
+.boot-mark {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 54px;
+  letter-spacing: 0.08em;
+  color: #e6eef1;
+  text-shadow: 0 0 24px rgba(127, 212, 232, 0.4);
+  margin-bottom: 26px;
+}
+.boot-log {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  min-width: 280px;
+}
+.boot-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  animation: fadein 0.3s ease;
+}
+.boot-ok {
+  color: var(--cyan);
+}
+.boot-hint {
+  margin-top: 24px;
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+@keyframes fadein {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes bootout {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+@keyframes critflash {
+  50% {
+    opacity: 0.62;
+  }
+}
