@@ -26,7 +26,10 @@ src/
   worker/        sim.worker.ts hosts the engine; bridge.ts is the main-thread client
   render/        three.js renderer — iso camera, Mars terrain, procedural building kit
   ui/            Vue 3 HUD overlay (pointer-events:none) reading a reactive store
-  agent/         VIVARIUM — gated scripted narrator + live-narrator client
+  agent/         VIVARIUM's agent layer (see below)
+    council/     the Council — VIVARIUM, Watcher, Strategist, Chronicler
+    worldmodel/  causal graph of the colony (the Memgraph-deferred model)
+    sentinel/    TensorFlow.js anomaly detection (the Watcher's eyes)
   persistence/   save serialization, localStorage + Mongo adapters
 server/          Node + Hono — live MXF narrator endpoint + Mongo persistence
 shared/          the neutral vocabulary spoken across the wall (events, snapshot)
@@ -34,6 +37,26 @@ shared/          the neutral vocabulary spoken across the wall (events, snapshot
 
 The engine lives in the worker; the renderer, HUD, and agent layer live on the
 main thread and only consume the worker's output.
+
+## The agent layer — a council, not a voice (doc §3.3, §7)
+
+VIVARIUM is a chorus of four agents that share a causal model of the colony and
+arbitrate so only one speaks per beat:
+
+- **VIVARIUM** — the keeper. Serif italic; speaks to most events.
+- **The Watcher** — a Sentinel-class anomaly intelligence. Reads the causal
+  **world model** (`agent/worldmodel`) to name *why* a pool is failing — it
+  traces a shortfall down the cascade to its root (oxygen → starved electrolysis
+  → water → the storm took the light). Its "eyes" are a **TensorFlow.js**
+  autoencoder (`agent/sentinel`) that learns the colony's normal telemetry and
+  flags drift the fixed-threshold alerts miss.
+- **The Strategist** — reads bottlenecks and recommends the next build.
+- **The Chronicler** — the long memory: milestone sols, the dead, the campaign's
+  last entry.
+
+Each voice has its own register in the terminal and, in the live build, its own
+pinned system prompt. The world model is an in-memory graph with a `WorldStore`
+seam where a Memgraph-backed store can drop in later.
 
 ## Run it
 
@@ -86,6 +109,12 @@ future, and a save resumes bit-identically.
 - Trigger a dust storm (top bar) — solar guts to ~12%.
 - Let a pool empty and the grace timer counts down to a casualty.
 - Earth resupply windows arrive on a schedule and refill the buffers.
+
+**The campaign (doc §2.5).** Earth's launch window closes at Sol 12. Reach a real
+settlement — the target population, sustaining itself on all life support without
+resupply for a sustained stretch — before then, and you win. Let the window close
+on an unfinished colony, or lose everyone, and the watch ends. The objective panel
+tracks both clocks; the Chronicler writes the last entry.
 
 ## Notes
 
