@@ -10,7 +10,8 @@ import { RESOURCES } from "@shared/types";
 import { DEFS } from "./defs";
 import {
   BASE_CAP, START_AMOUNT, GRID_N, SOL_LENGTH, START_TOD, GRACE,
-  STORM_FIRST, ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST, DEFAULT_SEED,
+  STORM_FIRST, ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
+  DEADLINE_SOL, TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
 import { RNG } from "./rng";
 import { canPlace, cellsFor, idx } from "./grid";
@@ -169,6 +170,12 @@ export class Colony {
       timers: { ...s.timers },
       grace: s.grace,
       dead: s.dead,
+      deadlineSol: s.deadlineSol,
+      targetPop: s.targetPop,
+      selfSufficientFor: s.selfSufficientFor,
+      selfSufficiencyGoal: s.selfSufficiencyGoal,
+      outcome: s.outcome,
+      outcomeReason: s.outcomeReason,
       paused: s.paused,
       speed: s.speed,
       t: s.t,
@@ -254,6 +261,12 @@ function freshState(): ColonyState {
     timers: { oxygen: null, water: null, food: null },
     grace: GRACE,
     dead: 0,
+    deadlineSol: DEADLINE_SOL,
+    targetPop: TARGET_POP,
+    selfSufficientFor: 0,
+    selfSufficiencyGoal: SELF_SUFFICIENCY_GOAL,
+    outcome: null,
+    outcomeReason: "",
     arrivalsLeft: ARRIVALS_TOTAL,
     nextArrival: ARRIVAL_FIRST,
     nextResupply: RESUPPLY_FIRST,

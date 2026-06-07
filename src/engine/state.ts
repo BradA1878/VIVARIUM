@@ -4,7 +4,7 @@
    extra bookkeeping (storm schedule, arrival timers, brownout latch, uid
    counter) the tick needs but the UI doesn't.
    ============================================================================ */
-import type { BuildingState, Pool, Resource, Weather } from "@shared/types";
+import type { BuildingState, Outcome, Pool, Resource, Weather } from "@shared/types";
 
 export interface ColonyState {
   N: number;
@@ -32,6 +32,14 @@ export interface ColonyState {
   timers: Record<"oxygen" | "water" | "food", number | null>;
   grace: number;
   dead: number;
+
+  // campaign (doc §2.5)
+  deadlineSol: number;
+  targetPop: number;
+  selfSufficientFor: number;
+  selfSufficiencyGoal: number;
+  outcome: Outcome;
+  outcomeReason: string;
 
   arrivalsLeft: number;
   nextArrival: number;

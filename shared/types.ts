@@ -92,6 +92,20 @@ export interface Snapshot {
   timers: Record<"oxygen" | "water" | "food", number | null>;
   grace: number;
   dead: number;
+
+  // ---- campaign (doc §2.5) ----
+  /** the sol Earth's launch window closes; reach self-sufficiency before then */
+  deadlineSol: number;
+  /** colonists required to count as a settlement */
+  targetPop: number;
+  /** seconds of sustained self-sufficiency accrued so far */
+  selfSufficientFor: number;
+  /** seconds of sustained self-sufficiency needed to win */
+  selfSufficiencyGoal: number;
+  /** set once when the campaign ends */
+  outcome: Outcome;
+  outcomeReason: string;
+
   paused: boolean;
   speed: number;
   /** elapsed sim seconds */
@@ -115,8 +129,13 @@ export type EventType =
   | "casualty"
   | "arrival"
   | "resupply"
+  /** campaign end states (doc §2.5) */
+  | "victory"
+  | "defeat"
   /** agent-layer only — emitted by the Sentinel (Phase 13), never by the engine */
   | "anomaly";
+
+export type Outcome = "victory" | "defeat" | null;
 
 /** Emitted by the engine for the UI and (optionally) for VIVARIUM. Never read
  *  back into the tick (doc §0). */

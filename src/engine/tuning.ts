@@ -70,6 +70,14 @@ export const RESUPPLY_AMOUNT: Record<Resource, number> = {
   power: 40, water: 60, oxygen: 30, food: 45,
 };
 
+/** Campaign arc — the launch-window deadline (doc §2.5). Reach self-sufficiency
+ *  before Earth's window closes, or the colony is stranded. */
+export const DEADLINE_SOL = 12; // the launch window closes at the start of this sol
+export const TARGET_POP = 8; // colonists required to count as a real settlement
+/** seconds of sustained non-negative net on all life support (excluding resupply)
+ *  with the target population, to be judged self-sufficient */
+export const SELF_SUFFICIENCY_GOAL = 45;
+
 /** brownout latch thresholds */
 export const BROWNOUT_DEFICIT = -0.2;
 export const BROWNOUT_LOW = 2;

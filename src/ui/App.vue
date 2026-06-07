@@ -11,7 +11,9 @@ import TopBar from "./components/TopBar.vue";
 import SolClock from "./components/SolClock.vue";
 import ResourceRail from "./components/ResourceRail.vue";
 import Crew from "./components/Crew.vue";
+import Objective from "./components/Objective.vue";
 import Alerts from "./components/Alerts.vue";
+import EndScreen from "./components/EndScreen.vue";
 import Terminal from "./components/Terminal.vue";
 import Inspector from "./components/Inspector.vue";
 import Palette from "./components/Palette.vue";
@@ -74,6 +76,7 @@ onUnmounted(() => {
           <SolClock />
           <ResourceRail />
           <Crew />
+          <Objective />
         </div>
       </div>
 
@@ -90,6 +93,8 @@ onUnmounted(() => {
         <Palette />
       </div>
     </div>
+
+    <EndScreen />
 
     <Boot v-if="booting" @done="booting = false" />
   </div>

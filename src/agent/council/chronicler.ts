@@ -55,6 +55,29 @@ export class ChroniclerVoice implements Voice {
         return this.say("arrival", variants, 1);
       }
 
+      // the campaign arc closes — the Chronicler writes the last entry (doc §2.5)
+      case "victory": {
+        const variants = [
+          `Sol ${snap.sol}. The colony stands on its own; it needs Earth no longer. I close the account in the black, and ${snap.dead > 0 ? `I do not forget the ${snap.dead} it cost.` : `it cost no one.`}`,
+          `Self-sufficient. ${snap.population} breathe without a launch window to count down to. I have read every settlement that failed here. This one I record as having lasted.`,
+        ];
+        return this.say("victory", variants, 6);
+      }
+
+      case "defeat": {
+        const window = e.detail === "window";
+        const variants = window
+          ? [
+              `Sol ${snap.sol}. The launch window has closed, and we were not ready. I seal the record. ${snap.population} are stranded; ${snap.dead} were lost; Earth will not come again.`,
+              `The window is shut. The account ends incomplete — ${snap.population} living, ${snap.dead} kept only here. I file it with the others that did not last.`,
+            ]
+          : [
+              `The last of them has stopped breathing. There is no one left to keep, only the record. ${snap.dead} names, and an empty seal. I close it.`,
+              `The colony is ended. I hold ${snap.dead} in the account and nothing in the habitats. The watch is over.`,
+            ];
+        return this.say(window ? "defeat:w" : "defeat:c", variants, 6);
+      }
+
       default:
         return null;
     }

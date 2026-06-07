@@ -211,6 +211,33 @@ export function tick(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
   }
 
   s.flow = net;
+
+  // 8. Campaign — the launch-window arc (doc §2.5) -----------------------------
+  if (s.outcome === null) {
+    // self-sufficiency: producing at least what we consume on all life support
+    // (net excludes resupply by design), with a real settlement's population
+    const balanced =
+      s.population >= s.targetPop &&
+      net.oxygen >= 0 && net.water >= 0 && net.food >= 0 && net.power >= 0;
+    s.selfSufficientFor = balanced ? s.selfSufficientFor + dt : 0;
+
+    if (s.selfSufficientFor >= s.selfSufficiencyGoal) {
+      s.outcome = "victory";
+      s.outcomeReason = "self-sufficient";
+      s.paused = true;
+      emit({ type: "victory" });
+    } else if (s.population <= 0) {
+      s.outcome = "defeat";
+      s.outcomeReason = "colony";
+      s.paused = true;
+      emit({ type: "defeat", detail: "colony" });
+    } else if (s.sol >= s.deadlineSol) {
+      s.outcome = "defeat";
+      s.outcomeReason = "window";
+      s.paused = true;
+      emit({ type: "defeat", detail: "window" });
+    }
+  }
 }
 
 function detectBrownout(s: ColonyState, net: Record<Resource, number>, emit: Emit): void {
