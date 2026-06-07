@@ -88,6 +88,26 @@ button {
   0%, 100% { opacity: 0.78; }
   50% { opacity: 1; }
 }
+/* solar-flare wash — a cold electric flicker over the whole view */
+.flare-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(130% 110% at 50% 20%, rgba(180, 220, 245, 0.18) 0%, rgba(120, 170, 220, 0.05) 60%, transparent 100%);
+  opacity: 0;
+}
+.flare-veil.on {
+  animation: flareflicker 2.6s steps(1) infinite;
+}
+@keyframes flareflicker {
+  0%, 100% { opacity: 0.15; }
+  8% { opacity: 0.9; }
+  12% { opacity: 0.2; }
+  20% { opacity: 0.7; }
+  24% { opacity: 0.25; }
+  60% { opacity: 0.5; }
+  64% { opacity: 0.2; }
+}
 
 /* The HUD is a pointer-events:none overlay; only the controls opt back in. */
 .hud {

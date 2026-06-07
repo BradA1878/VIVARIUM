@@ -16,6 +16,7 @@ import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh } from "./three/kit";
 import { PlacementController, type HoverInfo } from "./three/placement";
 import { Atmosphere } from "./three/atmosphere";
+import { HazardFx } from "./three/hazardfx";
 
 interface Placed {
   mesh: KitMesh;
@@ -60,6 +61,8 @@ export class ThreeRenderer {
   private bridge: SimBridge;
   private placement: PlacementController;
   private atmosphere: Atmosphere;
+  private hazardFx: HazardFx;
+  private unsubEvents: () => void;
   private raf = 0;
   private running = false;
   private lastFrame = 0;
@@ -75,6 +78,10 @@ export class ThreeRenderer {
     this.scene.scene.add(this.placement.group);
     this.atmosphere = new Atmosphere(this.grid);
     this.scene.scene.add(this.atmosphere.points);
+    this.hazardFx = new HazardFx(this.grid);
+    this.scene.scene.add(this.hazardFx.group);
+    // the renderer observes the event stream for transient hazard FX (doc §0)
+    this.unsubEvents = bridge.onEvent((e) => this.hazardFx.onEvent(e));
     this.onResize = this.onResize.bind(this);
     window.addEventListener("resize", this.onResize);
   }
@@ -111,6 +118,7 @@ export class ThreeRenderer {
     const snap = this.bridge.latest;
     if (!snap) {
       this.atmosphere.update(dt, false);
+      this.hazardFx.update(dt);
       this.scene.render();
       return;
     }
@@ -118,6 +126,7 @@ export class ThreeRenderer {
     this.reconcile(snap);
     this.placement.update();
     this.atmosphere.update(dt, snap.weather === "dust");
+    this.hazardFx.update(dt);
     this.scene.render();
   }
 
@@ -196,8 +205,10 @@ export class ThreeRenderer {
     this.running = false;
     cancelAnimationFrame(this.raf);
     window.removeEventListener("resize", this.onResize);
+    this.unsubEvents();
     this.placement.dispose();
     this.atmosphere.dispose();
+    this.hazardFx.dispose();
     for (const entry of this.placed.values()) entry.mesh.dispose();
     this.placed.clear();
     this.terrain.dispose();

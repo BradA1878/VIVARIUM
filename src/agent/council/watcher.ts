@@ -8,6 +8,7 @@
    only state here is a deterministic line rotator, cleared on colony reset.
    ============================================================================ */
 import type { ColonyEvent, Resource } from "@shared/types";
+import { DEFS } from "@/engine";
 import { summarizeDiagnosis } from "../worldmodel";
 import type { Candidate, Voice, VoiceContext } from "./types";
 
@@ -49,6 +50,36 @@ const STORM: string[] = [
   "Particulate front detected. {secs} seconds. I have seen this shape before.",
 ];
 
+/** incoming-hazard telegraphs, keyed by kind ({secs} = time to impact) */
+const HAZARD_WARN: Record<string, string[]> = {
+  dust: [
+    "Dust on the long-range return. {secs} seconds. I am dimming what we do not need.",
+    "A storm comes for the light. {secs} seconds. I have started to hold our breath.",
+  ],
+  meteor: [
+    "Meteors on the descent track. Impact in {secs}. I am modeling every rock.",
+    "Debris field inbound. {secs} seconds to the first strike. Move nothing important into the open.",
+  ],
+  flare: [
+    "Flare off the sun, {secs} seconds out. The electronics will feel it before you do.",
+    "Coronal ejection inbound. {secs} seconds. Charge what you can; it will take the rest.",
+  ],
+  coldsnap: [
+    "The temperature is falling, {secs} seconds to the front. The habs will burn power to stay warm.",
+    "A cold mass approaches. {secs} seconds. Heating load is about to climb.",
+  ],
+  quake: [
+    "Tremor signature building. {secs} seconds. The seal is the thing I fear for.",
+    "Subsurface movement. {secs} seconds to the jolt. I am watching the corridors.",
+  ],
+};
+
+const DESTROYED: string[] = [
+  "Structure lost. The {name} is gone. I logged the moment it stopped existing.",
+  "We have lost the {name}. I have already recomputed everything that depended on it.",
+  "The {name} is rubble. The {cause} took it. I told you what the {cause} does.",
+];
+
 /** the Sentinel's learned-model anomalies (Phase 13) — drift no threshold caught */
 const ANOMALY: string[] = [
   "Anomaly. {detail} does not match any sol I have learned — {sigma} sigma from normal. I am watching it.",
@@ -79,6 +110,17 @@ export class WatcherVoice implements Voice {
             .replace("{sigma}", String(e.sigma ?? "several")),
           3,
         );
+      case "hazard_warn": {
+        const bank = HAZARD_WARN[e.kind ?? "dust"] ?? HAZARD_WARN.dust;
+        return this.make(this.rotate("hazard_warn:" + e.kind, bank).replace("{secs}", String(e.secs ?? 0)), 3);
+      }
+      case "building_destroyed": {
+        const name = (DEFS[e.defId ?? ""]?.name ?? "structure").toLowerCase();
+        const line = this.rotate("destroyed", DESTROYED)
+          .replace(/\{name\}/g, name)
+          .replace(/\{cause\}/g, e.detail ?? "planet");
+        return this.make(line, 4);
+      }
       default:
         return null;
     }

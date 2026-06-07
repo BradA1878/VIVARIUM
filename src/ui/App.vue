@@ -30,6 +30,7 @@ let renderer: ThreeRenderer | null = null;
 
 const { snapshot, clearTool, rotate, controls } = useColony();
 const storming = computed(() => snapshot.value?.weather === "dust");
+const flaring = computed(() => snapshot.value?.hazards.some((h) => h.kind === "flare" && h.phase === "active") ?? false);
 
 function onKey(e: KeyboardEvent): void {
   if (e.key === "Escape") clearTool();
@@ -68,6 +69,7 @@ onUnmounted(() => {
     <canvas ref="canvas" class="stage"></canvas>
     <div class="vignette"></div>
     <div class="storm-veil" :class="{ on: storming }"></div>
+    <div class="flare-veil" :class="{ on: flaring }"></div>
 
     <div class="hud" v-if="ready">
       <TopBar />

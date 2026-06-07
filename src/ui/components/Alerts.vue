@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useColony } from "@/ui/stores/colony";
 import { fmt } from "@/ui/format";
 import { DEFS } from "@/engine";
+import type { HazardKind } from "@shared/types";
 
 interface AlertItem {
   k: string;
@@ -10,6 +11,14 @@ interface AlertItem {
   txt: string;
   sub: string;
 }
+
+const HAZARD: Record<HazardKind, { name: string; effect: string }> = {
+  dust:     { name: "DUST STORM", effect: "guts the solar arrays" },
+  meteor:   { name: "METEOR SHOWER", effect: "impacts — structures at risk" },
+  flare:    { name: "SOLAR FLARE", effect: "siphons power · electronics faulting" },
+  coldsnap: { name: "COLD SNAP", effect: "heating load climbing" },
+  quake:    { name: "MARSQUAKE", effect: "the seal is shaking loose" },
+};
 
 const { snapshot } = useColony();
 const s = computed(() => snapshot.value);
@@ -19,12 +28,19 @@ const items = computed<AlertItem[]>(() => {
   if (!cur) return [];
   const out: AlertItem[] = [];
 
-  if (cur.weather === "dust") {
+  // live hazards (telegraph + active) — the planet's repertoire
+  for (const h of cur.hazards) {
+    const meta = HAZARD[h.kind];
+    const incoming = h.phase === "telegraph";
     out.push({
-      k: "storm",
-      sev: 2,
-      txt: `DUST STORM — solar at ${fmt(cur.solarMul * 100)}%`,
-      sub: `clears in ${fmt(cur.stormT)}s`,
+      k: "hz-" + h.kind,
+      sev: incoming ? 3 : h.kind === "dust" || h.kind === "coldsnap" ? 2 : 3,
+      txt: incoming ? `${meta.name} — INBOUND` : meta.name,
+      sub: incoming
+        ? `impact in ${fmt(h.remaining)}s`
+        : h.kind === "dust"
+          ? `solar at ${fmt(cur.solarMul * 100)}% · ${fmt(h.remaining)}s`
+          : `${meta.effect} · ${fmt(h.remaining)}s`,
     });
   }
 
