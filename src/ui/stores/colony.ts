@@ -13,7 +13,12 @@ import { Council, type Register } from "@/agent/council";
 import { narrateLive, LIVE_ENABLED } from "@/agent/client";
 import { Sentinel } from "@/agent/sentinel";
 import { Director } from "@/agent/director/director";
+import {
+  loadModel, saveModel, recordOutcome, openingBias,
+  type PlayerModel, type Axis,
+} from "@/agent/director/memory";
 import { loadBest, persist, clearLocal } from "@/persistence";
+import type { HazardKind } from "@shared/types";
 import { clockOf } from "../format";
 
 export interface TerminalLine {
@@ -37,6 +42,11 @@ let renderer: ThreeRenderer | null = null;
 let council: Council | null = null;
 let sentinel: Sentinel | null = null;
 let director: Director | null = null;
+// cross-run memory — the planet's learning across runs
+let playerModel: PlayerModel = { runs: 0, wins: 0, deaths: 0, solsSum: 0, byAxis: { power: 0, oxygen: 0, water: 0, food: 0 }, byHazard: { dust: 0, meteor: 0, flare: 0, coldsnap: 0, quake: 0 } };
+let directorBias: Record<HazardKind, number> = { dust: 1, meteor: 1, flare: 1, coldsnap: 1, quake: 1 };
+let lastCritRes: Axis | null = null;
+let lastHazard: HazardKind | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let msgId = 1;
 
@@ -86,15 +96,35 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   council = new Council();
   sentinel = new Sentinel();
   director = new Director();
+  // the planet remembers how this player dies and opens accordingly
+  playerModel = loadModel();
+  directorBias = openingBias(playerModel);
   // hand hazard control to the Director — the planet becomes a learning antagonist
   b.setDirector(true);
 
   b.onSnapshot((s) => {
     snapshot.value = s;
     sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
-    // the Director observes and may throw a hazard at the colony's weak seam
-    const strike = director?.decide(s);
+    // the Director observes and may throw a hazard, aimed by colony shape, the
+    // memory of past deaths, and how settled the Sentinel thinks the player is
+    const strike = director?.decide(s, Math.random, { bias: directorBias, comfort: sentinel?.comfort() });
     if (strike) b.triggerHazard(strike.kind, strike.intensity);
+  });
+
+  // track the failure signature + record it across runs (the learning)
+  b.onEvent((e) => {
+    if (e.type === "crit_start" && e.res) lastCritRes = e.res as Axis;
+    else if (e.type === "hazard_start" && e.kind) lastHazard = e.kind;
+    else if (e.type === "victory" || e.type === "defeat") {
+      recordOutcome(playerModel, {
+        won: e.type === "victory",
+        lethalAxis: e.type === "defeat" ? lastCritRes ?? undefined : undefined,
+        recentHazard: lastHazard ?? undefined,
+        sols: snapshot.value?.sol ?? 1,
+      });
+      saveModel(playerModel);
+      directorBias = openingBias(playerModel);
+    }
   });
   r.onHover((info) => { hover.value = info; });
 
@@ -178,6 +208,10 @@ const controls = {
     sentinel?.reset();
     director?.reset();
     bridge?.setDirector(true); // reset() reseeds the colony with the scheduler on
+    // the planet keeps its cross-run memory; re-aim the opening for the new run
+    directorBias = openingBias(playerModel);
+    lastCritRes = null;
+    lastHazard = null;
     clearLocal(); // discard the saved colony; autosave will persist the fresh one
     messages.value = [];
     clearTool();

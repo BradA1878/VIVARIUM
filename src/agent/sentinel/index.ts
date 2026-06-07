@@ -39,10 +39,20 @@ export class Sentinel {
   // EWMA of total reconstruction error (mean + variance)
   private errMean = 0;
   private errVar = 0;
+  private recentSigma = 0;
   private onAnomalyCb: ((a: Anomaly) => void) | null = null;
 
   onAnomaly(cb: (a: Anomaly) => void): void {
     this.onAnomalyCb = cb;
+  }
+
+  /** how settled the colony feels (0 = chaotic/novel, 1 = comfortable/predictable).
+   *  Neutral until the model has learned enough. The Director presses harder when
+   *  the player has grown comfortable. */
+  comfort(): number {
+    if (!this.ae.ready || this.scored < WARMUP_SCORES) return 0.5;
+    const c = 1 - this.recentSigma / 2.5;
+    return c < 0 ? 0 : c > 1 ? 1 : c;
   }
 
   /** feed a snapshot at sim-time `now`. Throttled internally. */
@@ -78,6 +88,8 @@ export class Sentinel {
     if (this.scored < WARMUP_SCORES) return;
     const std = Math.sqrt(this.errVar) || 1e-6;
     const sigma = (total - this.errMean) / std;
+    // track how "settled" the colony feels — low recent deviation = comfortable
+    this.recentSigma += 0.1 * (Math.abs(sigma) - this.recentSigma);
     if (total > ERR_FLOOR && sigma > K_SIGMA && now - this.lastAnomaly > ANOMALY_COOLDOWN) {
       this.lastAnomaly = now;
       // which feature drove it?
@@ -91,6 +103,7 @@ export class Sentinel {
     this.window = [];
     this.sinceTrain = 0;
     this.scored = 0;
+    this.recentSigma = 0;
     this.errMean = 0;
     this.errVar = 0;
     this.lastSample = -999;
