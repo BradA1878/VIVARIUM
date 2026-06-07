@@ -7,16 +7,24 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { narrate } from "./routes/narrate";
+import { persistence } from "./routes/save";
 import { NARRATOR_MODEL } from "./mxf/claude";
 import { liveAvailable } from "./mxf/claude";
+import { mongoAvailable } from "./db/mongo";
 
 const app = new Hono();
 
-app.get("/api/health", (c) =>
-  c.json({ ok: true, liveNarrator: liveAvailable(), model: NARRATOR_MODEL }),
+app.get("/api/health", async (c) =>
+  c.json({
+    ok: true,
+    liveNarrator: liveAvailable(),
+    model: NARRATOR_MODEL,
+    mongo: await mongoAvailable(),
+  }),
 );
 
 app.route("/api", narrate);
+app.route("/api", persistence);
 
 const port = Number(process.env.PORT) || 8787;
 serve({ fetch: app.fetch, port });

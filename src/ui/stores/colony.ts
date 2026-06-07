@@ -11,6 +11,7 @@ import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo } from "@/render/three/placement";
 import { ScriptedNarrator } from "@/agent/narrator";
 import { narrateLive, LIVE_ENABLED } from "@/agent/client";
+import { loadBest, persist, clearLocal } from "@/persistence";
 import { clockOf } from "../format";
 
 export interface TerminalLine {
@@ -30,7 +31,10 @@ const hover: Ref<HoverInfo | null> = ref(null);
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
 let narrator: ScriptedNarrator | null = null;
+let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let msgId = 1;
+
+const AUTOSAVE_MS = 12_000;
 
 /** push a line into VIVARIUM's terminal (used by the narrator, Phase 7) */
 export function pushLine(text: string): void {
@@ -71,8 +75,24 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     });
   });
 
+  // load-on-boot: resume the saved colony if one exists (doc §5). The worker
+  // already came up on a fresh seed; a save just replaces it.
+  void loadBest().then((save) => {
+    if (save) b.load(save);
+  });
+
+  // autosave on an interval — Mongo when reachable, localStorage always
+  autosaveTimer = setInterval(() => {
+    void b.save().then(persist);
+  }, AUTOSAVE_MS);
+
   // first words
   setTimeout(() => { if (narrator) pushLine(narrator.bootLine()); }, 900);
+}
+
+/** tear down the store's timers (called from App on unmount) */
+export function disposeColony(): void {
+  if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
 }
 
 // ---- tool selection (mirrors prototype app.jsx) ------------------------------
@@ -103,6 +123,7 @@ const controls = {
   reset(): void {
     bridge?.reset();
     narrator?.reset();
+    clearLocal(); // discard the saved colony; autosave will persist the fresh one
     messages.value = [];
     clearTool();
     // re-greet after the colony reseeds

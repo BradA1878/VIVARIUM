@@ -18,7 +18,7 @@ import Palette from "./components/Palette.vue";
 import { SimBridge } from "@/worker/bridge";
 import { Tuning } from "@/engine";
 import type { ThreeRenderer } from "@/render/renderer";
-import { initColony, useColony } from "./stores/colony";
+import { initColony, useColony, disposeColony } from "./stores/colony";
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 const booting = ref(true);
@@ -54,6 +54,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKey);
+  disposeColony();
   renderer?.dispose();
   bridge.value?.dispose();
 });
