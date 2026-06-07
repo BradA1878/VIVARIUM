@@ -4,6 +4,8 @@
    ============================================================================ */
 export { Colony } from "./colony";
 export { DEFS, ORDER } from "./defs";
+export { doorCells, doorCellsOf, worldDoorSide, SIDE_DELTA } from "./doors";
+export { planRoute, routeCorridor, type RouteQuery } from "./route";
 export { RNG } from "./rng";
 export { solarOutput } from "./tick";
 export type { ColonyState, SaveData } from "./state";

@@ -5,8 +5,9 @@
    and synchronous placement prediction (doc §0: observe, don't reach in).
    ============================================================================ */
 import type { BuildingState, ColonyEvent, Snapshot } from "@shared/types";
-import type { SaveData } from "@/engine";
+import { DEFS, type SaveData } from "@/engine";
 import { buildingAtPredict, canPlacePredict, occupancy } from "@/engine/predict";
+import { planRoute } from "@/engine/route";
 import type { Command, Outbound } from "./protocol";
 
 type SnapshotFn = (s: Snapshot) => void;
@@ -66,8 +67,10 @@ export class SimBridge {
 
   // ---- commands -------------------------------------------------------------
   private send(cmd: Command): void { this.worker.postMessage(cmd); }
-  place(defId: string, gx: number, gy: number): void { this.send({ type: "place", defId, gx, gy }); }
+  place(defId: string, gx: number, gy: number, rot = 0): void { this.send({ type: "place", defId, gx, gy, rot }); }
   remove(gx: number, gy: number): void { this.send({ type: "remove", gx, gy }); }
+  rotate(gx: number, gy: number): void { this.send({ type: "rotate", gx, gy }); }
+  route(fromUid: number, toUid: number): void { this.send({ type: "route", fromUid, toUid }); }
   setPaused(value: boolean): void { this.send({ type: "setPaused", value }); }
   setSpeed(value: number): void { this.send({ type: "setSpeed", value }); }
   forceStorm(): void { this.send({ type: "forceStorm" }); }
@@ -90,6 +93,16 @@ export class SimBridge {
   }
   buildingAt(gx: number, gy: number): BuildingState | null {
     return this.latest ? buildingAtPredict(this.latest, gx, gy) : null;
+  }
+
+  /** predict the corridor path the worker would lay, for the ghost preview */
+  previewRoute(fromUid: number, toUid: number): [number, number][] | null {
+    if (!this.latest) return null;
+    const blocked = (x: number, y: number): boolean => {
+      const b = buildingAtPredict(this.latest!, x, y);
+      return !!b && !DEFS[b.defId]?.conduit; // empty/corridor passable; else blocked
+    };
+    return planRoute(this.latest.buildings, this.latest.N, blocked, fromUid, toUid);
   }
 
   dispose(): void {

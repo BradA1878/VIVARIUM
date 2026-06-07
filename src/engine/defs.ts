@@ -15,7 +15,7 @@ export const DEFS: Record<string, BuildingDef> = {
     foot: [2, 2], h: 30, color: "#3a4750",
     cost: { power: 0 },
     staffing: 0, consumes: { power: 1.5 }, produces: {},
-    requiresPressure: false, isHub: true, priority: 99,
+    requiresPressure: false, isHub: true, priority: 99, door: 2,
     caps: { oxygen: 30 },
     desc: "Source of pressure. Everything sealed flood-fills from here.",
   },
@@ -32,7 +32,7 @@ export const DEFS: Record<string, BuildingDef> = {
     foot: [1, 1], h: 22, color: "#39444c",
     cost: { power: 0 },
     staffing: 0, consumes: { power: 1.0 }, produces: {},
-    requiresPressure: true, priority: 88, popCap: 4,
+    requiresPressure: true, priority: 88, popCap: 4, door: 2,
     desc: "Houses 4 colonists. Heated. Must stay pressurized.",
   },
   solar: {
@@ -64,7 +64,7 @@ export const DEFS: Record<string, BuildingDef> = {
     foot: [1, 1], h: 20, color: "#2f3a44",
     cost: { power: 0 },
     staffing: 1, consumes: { power: 7, water: 2.5 }, produces: { oxygen: 5 },
-    requiresPressure: true, priority: 82,
+    requiresPressure: true, priority: 82, door: 2,
     desc: "Splits water for breathable oxygen. Life support — served first.",
   },
   greenhouse: {
@@ -72,7 +72,7 @@ export const DEFS: Record<string, BuildingDef> = {
     foot: [2, 2], h: 16, color: "#33422f",
     cost: { power: 0 },
     staffing: 2, consumes: { power: 6, water: 3 }, produces: { food: 5, oxygen: 2 },
-    requiresPressure: true, priority: 30,
+    requiresPressure: true, priority: 30, door: 2,
     desc: "Food, plus a little oxygen. Needs two workers. Shed first in a brownout.",
   },
   cistern: {

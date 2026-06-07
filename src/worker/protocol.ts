@@ -8,8 +8,10 @@ import type { SaveData } from "@/engine";
 
 // ---- main thread → worker ----------------------------------------------------
 export type Command =
-  | { type: "place"; defId: string; gx: number; gy: number }
+  | { type: "place"; defId: string; gx: number; gy: number; rot?: number }
   | { type: "remove"; gx: number; gy: number }
+  | { type: "rotate"; gx: number; gy: number }
+  | { type: "route"; fromUid: number; toUid: number }
   | { type: "setPaused"; value: boolean }
   | { type: "setSpeed"; value: number }
   | { type: "forceStorm" }

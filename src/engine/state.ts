@@ -4,7 +4,7 @@
    extra bookkeeping (storm schedule, arrival timers, brownout latch, uid
    counter) the tick needs but the UI doesn't.
    ============================================================================ */
-import type { BuildingState, Outcome, Pool, Resource, Weather } from "@shared/types";
+import type { BuildingState, Outcome, Pool, Resource, Side, Weather } from "@shared/types";
 
 export interface ColonyState {
   N: number;
@@ -73,9 +73,10 @@ export function emptyBuilding(
   defId: string,
   gx: number,
   gy: number,
+  rot: Side = 0,
 ): BuildingState {
   return {
-    uid, defId, gx, gy,
+    uid, defId, gx, gy, rot,
     online: false, connected: false, staffed: false, fed: false, util: 0,
   };
 }

@@ -21,8 +21,10 @@ export class SimHost {
    *  (currently only `save`); snapshots/events flow through step(). */
   applyCommand(cmd: Command): Outbound[] {
     switch (cmd.type) {
-      case "place": this.colony.place(cmd.defId, cmd.gx, cmd.gy); break;
+      case "place": this.colony.place(cmd.defId, cmd.gx, cmd.gy, (cmd.rot ?? 0) as 0 | 1 | 2 | 3); break;
       case "remove": this.colony.removeAt(cmd.gx, cmd.gy); break;
+      case "rotate": this.colony.rotateAt(cmd.gx, cmd.gy); break;
+      case "route": this.colony.route(cmd.fromUid, cmd.toUid); break;
       case "setPaused": this.colony.setPaused(cmd.value); break;
       case "setSpeed": this.colony.setSpeed(cmd.value); break;
       case "forceStorm": this.colony.forceStorm(); break;

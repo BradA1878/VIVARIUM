@@ -4,7 +4,7 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, Resource, Snapshot,
+  BuildingDef, BuildingState, ColonyEvent, Resource, Side, Snapshot,
 } from "@shared/types";
 import { RESOURCES } from "@shared/types";
 import { DEFS } from "./defs";
@@ -16,6 +16,7 @@ import {
 import { RNG } from "./rng";
 import { canPlace, cellsFor, idx } from "./grid";
 import { tick as runTick } from "./tick";
+import { planRoute } from "./route";
 import type { ColonyState, SaveData } from "./state";
 import { emptyBuilding } from "./state";
 
@@ -65,10 +66,10 @@ export class Colony {
     return !!def && canPlace(this.s, def, gx, gy);
   }
 
-  place(defId: string, gx: number, gy: number): boolean {
+  place(defId: string, gx: number, gy: number, rot: Side = 0): boolean {
     const def = DEFS[defId];
     if (!def || !canPlace(this.s, def, gx, gy)) return false;
-    const b = emptyBuilding(this.s.uidCounter++, defId, gx, gy);
+    const b = emptyBuilding(this.s.uidCounter++, defId, gx, gy, rot);
     this.s.buildings.push(b);
     for (const [x, y] of cellsFor(def, gx, gy)) this.s.grid[idx(this.s.N, x, y)] = b.uid;
     this.recomputeCaps();
@@ -86,6 +87,31 @@ export class Colony {
     for (const [x, y] of cellsFor(def, b.gx, b.gy)) this.s.grid[idx(this.s.N, x, y)] = 0;
     this.s.buildings = this.s.buildings.filter((x) => x.uid !== id);
     this.recomputeCaps();
+    return true;
+  }
+
+  /** auto-route corridors between two buildings' doors (doc §2.3 reskinned). */
+  route(fromUid: number, toUid: number): boolean {
+    const blocked = (x: number, y: number): boolean => {
+      const id = this.s.grid[idx(this.s.N, x, y)];
+      if (id === 0) return false;
+      const b = this.s.buildings.find((bb) => bb.uid === id);
+      return !!b && !DEFS[b.defId].conduit; // corridors are passable
+    };
+    const path = planRoute(this.s.buildings, this.s.N, blocked, fromUid, toUid);
+    if (!path) return false;
+    for (const [x, y] of path) {
+      if (this.s.grid[idx(this.s.N, x, y)] === 0) this.place("corridor", x, y);
+    }
+    return true;
+  }
+
+  /** rotate the building at a cell one quarter-turn (aims its door). Footprints
+   *  are square, so this never changes occupancy. */
+  rotateAt(gx: number, gy: number): boolean {
+    const b = this.buildingAt(gx, gy);
+    if (!b) return false;
+    b.rot = ((b.rot + 1) % 4) as Side;
     return true;
   }
 

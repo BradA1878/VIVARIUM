@@ -9,6 +9,10 @@ export type Resource = "power" | "water" | "oxygen" | "food";
 
 export const RESOURCES: Resource[] = ["power", "water", "oxygen", "food"];
 
+/** A side of a footprint / a rotation step. N=0, E=1, S=2, W=3. Grid deltas:
+ *  0→(0,-1) 1→(1,0) 2→(0,1) 3→(-1,0). */
+export type Side = 0 | 1 | 2 | 3;
+
 /** A building definition is data, not code (doc §2.1). consumes/produces are
  *  per-second at full operation; the engine scales by dt internally. */
 export interface BuildingDef {
@@ -38,6 +42,9 @@ export interface BuildingDef {
   isHub?: boolean;
   /** extends the seal between hub and habs */
   conduit?: boolean;
+  /** which local side the airlock/door is on (pressure buildings only). The
+   *  world door side is (door + rot) % 4; corridors auto-route to its exit cell. */
+  door?: Side;
   desc: string;
 }
 
@@ -53,6 +60,8 @@ export interface BuildingState {
   defId: string;
   gx: number;
   gy: number;
+  /** quarter-turn rotation (0-3); aims the door + orients the mesh */
+  rot: Side;
   online: boolean;
   connected: boolean;
   staffed: boolean;
