@@ -9,6 +9,7 @@ import type { ColonyEvent, Snapshot } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo } from "@/render/three/placement";
+import { ScriptedNarrator } from "@/agent/narrator";
 import { clockOf } from "../format";
 
 export interface TerminalLine {
@@ -27,6 +28,7 @@ const hover: Ref<HoverInfo | null> = ref(null);
 
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
+let narrator: ScriptedNarrator | null = null;
 let msgId = 1;
 
 /** push a line into VIVARIUM's terminal (used by the narrator, Phase 7) */
@@ -42,8 +44,19 @@ export function pushLine(text: string): void {
 export function initColony(b: SimBridge, r: ThreeRenderer): void {
   bridge = b;
   renderer = r;
+  narrator = new ScriptedNarrator();
   b.onSnapshot((s) => { snapshot.value = s; });
   r.onHover((info) => { hover.value = info; });
+
+  // the agent layer observes the event stream — VIVARIUM speaks (doc §0, §3.1).
+  // It uses the event's own sim-time as the gate clock, so cooldowns are stable.
+  b.onEvent((e) => {
+    const line = narrator?.observe(e, e.t);
+    if (line) pushLine(line);
+  });
+
+  // first words
+  setTimeout(() => { if (narrator) pushLine(narrator.bootLine()); }, 900);
 }
 
 // ---- tool selection (mirrors prototype app.jsx) ------------------------------
@@ -73,8 +86,11 @@ const controls = {
   storm(): void { bridge?.forceStorm(); },
   reset(): void {
     bridge?.reset();
+    narrator?.reset();
     messages.value = [];
     clearTool();
+    // re-greet after the colony reseeds
+    setTimeout(() => { if (narrator) pushLine(narrator.bootLine()); }, 600);
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };

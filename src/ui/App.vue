@@ -18,7 +18,7 @@ import Palette from "./components/Palette.vue";
 import { SimBridge } from "@/worker/bridge";
 import { Tuning } from "@/engine";
 import type { ThreeRenderer } from "@/render/renderer";
-import { initColony, useColony, pushLine } from "./stores/colony";
+import { initColony, useColony } from "./stores/colony";
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 const booting = ref(true);
@@ -44,9 +44,6 @@ onMounted(async () => {
   renderer.start();
   initColony(b, renderer);
   ready.value = true;
-
-  // first words — the scripted narrator (Phase 7) takes over the voice from here
-  setTimeout(() => pushLine("I am VIVARIUM. I keep what breathes here breathing. Begin."), 900);
 
   window.addEventListener("keydown", onKey);
 
