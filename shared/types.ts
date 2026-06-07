@@ -114,7 +114,9 @@ export type EventType =
   | "crit_clear"
   | "casualty"
   | "arrival"
-  | "resupply";
+  | "resupply"
+  /** agent-layer only — emitted by the Sentinel (Phase 13), never by the engine */
+  | "anomaly";
 
 /** Emitted by the engine for the UI and (optionally) for VIVARIUM. Never read
  *  back into the tick (doc §0). */
@@ -131,4 +133,8 @@ export interface ColonyEvent {
   secs?: number;
   n?: number;
   pop?: number;
+  /** free-text detail (e.g. the Sentinel's anomalous feature) */
+  detail?: string;
+  /** anomaly magnitude in standard deviations above learned-normal */
+  sigma?: number;
 }

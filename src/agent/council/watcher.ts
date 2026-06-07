@@ -49,6 +49,13 @@ const STORM: string[] = [
   "Particulate front detected. {secs} seconds. I have seen this shape before.",
 ];
 
+/** the Sentinel's learned-model anomalies (Phase 13) — drift no threshold caught */
+const ANOMALY: string[] = [
+  "Anomaly. {detail} does not match any sol I have learned — {sigma} sigma from normal. I am watching it.",
+  "The model flags {detail}. {sigma} sigma off the manifold. Nothing has tripped yet. That is what concerns me.",
+  "Deviation in {detail}. {sigma} sigma. I have not seen this shape before. I am recording it.",
+];
+
 export class WatcherVoice implements Voice {
   readonly id = "watcher" as const;
   private rotators: Record<string, number> = {};
@@ -63,6 +70,13 @@ export class WatcherVoice implements Voice {
       case "storm_in":
         return this.make(
           this.rotate("storm_in", STORM).replace("{secs}", String(e.secs ?? 0)),
+          3,
+        );
+      case "anomaly":
+        return this.make(
+          this.rotate("anomaly", ANOMALY)
+            .replace("{detail}", e.detail ?? "a signal")
+            .replace("{sigma}", String(e.sigma ?? "several")),
           3,
         );
       default:

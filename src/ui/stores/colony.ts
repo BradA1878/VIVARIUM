@@ -11,6 +11,7 @@ import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo } from "@/render/three/placement";
 import { Council, type Register } from "@/agent/council";
 import { narrateLive, LIVE_ENABLED } from "@/agent/client";
+import { Sentinel } from "@/agent/sentinel";
 import { loadBest, persist, clearLocal } from "@/persistence";
 import { clockOf } from "../format";
 
@@ -33,6 +34,7 @@ const hover: Ref<HoverInfo | null> = ref(null);
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
 let council: Council | null = null;
+let sentinel: Sentinel | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let msgId = 1;
 
@@ -57,30 +59,49 @@ export function pushLine(
   ].slice(-40);
 }
 
+/** route one event (engine OR agent-originated) through the council. The gate
+ *  short-circuits BEFORE any model call (doc §3.1); a live line falls back to the
+ *  scripted line on any failure — the game never depends on it. */
+function routeEvent(e: ColonyEvent): void {
+  if (!council) return;
+  if (!LIVE_ENABLED) {
+    const u = council.observe(e, snapshot.value, e.t);
+    if (u) pushLine(u.line, e.sol, e.tod, u.speaker, u.register);
+    return;
+  }
+  const cand = council.shouldSpeak(e, snapshot.value, e.t);
+  if (!cand) return;
+  void narrateLive(e, snapshot.value, cand.persona).then((live) => {
+    council!.commit(cand, e, e.t);
+    pushLine(live ?? cand.line, e.sol, e.tod, cand.speaker, cand.register);
+  });
+}
+
 /** wire the store to the live bridge + renderer (called once from App) */
 export function initColony(b: SimBridge, r: ThreeRenderer): void {
   bridge = b;
   renderer = r;
   council = new Council();
-  b.onSnapshot((s) => { snapshot.value = s; });
+  sentinel = new Sentinel();
+
+  b.onSnapshot((s) => {
+    snapshot.value = s;
+    sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
+  });
   r.onHover((info) => { hover.value = info; });
 
   // the agent layer observes the event stream — the council speaks (doc §0, §3.3).
-  // It uses the event's own sim-time as the gate clock, so cooldowns are stable.
-  // The gate short-circuits BEFORE any model call (doc §3.1); a live line falls
-  // back to the scripted line on any failure — the game never depends on it.
-  b.onEvent((e) => {
-    if (!council) return;
-    if (!LIVE_ENABLED) {
-      const u = council.observe(e, snapshot.value, e.t);
-      if (u) pushLine(u.line, e.sol, e.tod, u.speaker, u.register);
-      return;
-    }
-    const cand = council.shouldSpeak(e, snapshot.value, e.t);
-    if (!cand) return;
-    void narrateLive(e, snapshot.value, cand.persona).then((live) => {
-      council!.commit(cand, e, e.t);
-      pushLine(live ?? cand.line, e.sol, e.tod, cand.speaker, cand.register);
+  // Engine events AND the Sentinel's anomaly events route through the same path.
+  b.onEvent(routeEvent);
+
+  if (import.meta.env.DEV) (window as unknown as { __sentinel: Sentinel }).__sentinel = sentinel;
+
+  // a learned-model anomaly becomes a synthetic agent-layer event for the Watcher
+  sentinel.onAnomaly((a) => {
+    routeEvent({
+      type: "anomaly",
+      t: a.snapshot.t, sol: a.snapshot.sol, tod: a.snapshot.tod,
+      detail: a.feature, sigma: Math.round(a.sigma * 10) / 10,
     });
   });
 
@@ -104,6 +125,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 /** tear down the store's timers (called from App on unmount) */
 export function disposeColony(): void {
   if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+  sentinel?.dispose();
 }
 
 // ---- tool selection (mirrors prototype app.jsx) ------------------------------
@@ -134,6 +156,7 @@ const controls = {
   reset(): void {
     bridge?.reset();
     council?.reset();
+    sentinel?.reset();
     clearLocal(); // discard the saved colony; autosave will persist the fresh one
     messages.value = [];
     clearTool();
