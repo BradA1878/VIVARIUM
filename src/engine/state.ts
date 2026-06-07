@@ -4,7 +4,20 @@
    extra bookkeeping (storm schedule, arrival timers, brownout latch, uid
    counter) the tick needs but the UI doesn't.
    ============================================================================ */
-import type { BuildingState, Outcome, Pool, Resource, Side, Weather } from "@shared/types";
+import type { BuildingState, HazardKind, HazardPhase, Outcome, Pool, Resource, Side, Weather } from "@shared/types";
+
+/** a live hazard with the bookkeeping the tick needs (the HUD sees HazardView) */
+export interface HazardInstance {
+  kind: HazardKind;
+  phase: HazardPhase;
+  /** seconds left in the current phase */
+  tLeft: number;
+  /** active-phase duration (for HUD remaining + scheduling) */
+  activeDur: number;
+  intensity: number;
+  /** per-kind cadence timer (meteor strikes, quake jolts) */
+  cadence: number;
+}
 
 export interface ColonyState {
   N: number;
@@ -24,10 +37,13 @@ export interface ColonyState {
   solLength: number;
 
   weather: Weather;
-  stormT: number;
-  stormDur: number;
-  nextStorm: number;
   solarMul: number;
+  /** live hazards (telegraph + active) */
+  hazards: HazardInstance[];
+  /** seconds to the next auto-scheduled hazard (ignored when director-controlled) */
+  nextHazard: number;
+  /** an external Director is driving hazards → the engine scheduler stands down */
+  directorControlled: boolean;
 
   timers: Record<"oxygen" | "water" | "food", number | null>;
   grace: number;
@@ -78,5 +94,6 @@ export function emptyBuilding(
   return {
     uid, defId, gx, gy, rot,
     online: false, connected: false, staffed: false, fed: false, util: 0,
+    integrity: 1, faulted: 0,
   };
 }

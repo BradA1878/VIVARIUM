@@ -3,7 +3,7 @@
    Main thread sends Commands; the worker (which owns the engine) sends Outbound
    messages: throttled snapshots, the event stream, and save responses.
    ============================================================================ */
-import type { ColonyEvent, Snapshot } from "@shared/types";
+import type { ColonyEvent, HazardKind, Snapshot } from "@shared/types";
 import type { SaveData } from "@/engine";
 
 // ---- main thread → worker ----------------------------------------------------
@@ -12,6 +12,8 @@ export type Command =
   | { type: "remove"; gx: number; gy: number }
   | { type: "rotate"; gx: number; gy: number }
   | { type: "route"; fromUid: number; toUid: number }
+  | { type: "triggerHazard"; kind: HazardKind; intensity?: number }
+  | { type: "setDirector"; value: boolean }
   | { type: "setPaused"; value: boolean }
   | { type: "setSpeed"; value: number }
   | { type: "forceStorm" }

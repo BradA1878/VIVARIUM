@@ -2,6 +2,7 @@
    Grid helpers — placement geometry over the typed-array occupancy grid.
    ============================================================================ */
 import type { BuildingDef } from "@shared/types";
+import { DEFS } from "./defs";
 import type { ColonyState } from "./state";
 
 export function idx(N: number, x: number, y: number): number {
@@ -26,4 +27,15 @@ export function canPlace(s: ColonyState, def: BuildingDef, gx: number, gy: numbe
     if (s.grid[idx(s.N, x, y)] !== 0) return false;
   }
   return true;
+}
+
+/** remove a building by uid: clear its grid cells + drop it from the list.
+ *  Caller is responsible for recomputeCaps(). Returns the defId removed, or null. */
+export function removeBuilding(s: ColonyState, uid: number): string | null {
+  const b = s.buildings.find((x) => x.uid === uid);
+  if (!b) return null;
+  const def = DEFS[b.defId];
+  if (def) for (const [x, y] of cellsFor(def, b.gx, b.gy)) s.grid[idx(s.N, x, y)] = 0;
+  s.buildings = s.buildings.filter((x) => x.uid !== uid);
+  return b.defId;
 }

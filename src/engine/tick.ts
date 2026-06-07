@@ -9,8 +9,7 @@
 import type { ColonyEvent, Resource } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  PERSON, STORM_SOLAR_MULT, DAY_START, DAY_END,
-  STORM_DUR_MIN, STORM_DUR_SPAN, STORM_GAP_MIN, STORM_GAP_SPAN,
+  PERSON, DAY_START, DAY_END,
   ARRIVAL_BATCH, ARRIVAL_GAP_MIN, ARRIVAL_GAP_SPAN, ARRIVAL_RETRY,
   BROWNOUT_DEFICIT, BROWNOUT_LOW, BROWNOUT_RECOVER_FRAC,
   RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT,
@@ -18,6 +17,7 @@ import {
 import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
 import { recomputeConnectivity } from "./connectivity";
+import { updateHazards, hazardMods, buildingFunctional, type HazardMods } from "./hazards";
 import type { RNG } from "./rng";
 
 /** event emitter — the colony stamps t/sol/tod before recording */
@@ -32,7 +32,15 @@ function takePool(s: ColonyState, k: Resource, amt: number): void {
   p.amount = Math.max(0, p.amount - amt);
 }
 
-/** daytime solar curve × storm throttle, 0..1 (doc §2.4 pass 1) */
+/** a building's power draw, with cold-snap heating on pressurized structures */
+function powerNeed(b: { defId: string }, mods: HazardMods): number {
+  const d = DEFS[b.defId];
+  const base = d.consumes.power ?? 0;
+  return base > 0 && d.requiresPressure ? base * mods.pressurePowerMult : base;
+}
+
+/** daytime solar curve, 0..1 — the dust/hazard throttle is applied separately
+ *  via hazardMods().solarFactor (doc §2.4 pass 1) */
 export function solarOutput(s: ColonyState): number {
   const t = s.tod;
   let day = 0;
@@ -40,8 +48,7 @@ export function solarOutput(s: ColonyState): number {
     const phase = (t - DAY_START) / (DAY_END - DAY_START);
     day = Math.sin(phase * Math.PI);
   }
-  const stormMul = s.weather === "dust" ? STORM_SOLAR_MULT : 1;
-  return Math.max(0, day) * stormMul;
+  return Math.max(0, day);
 }
 
 export function tick(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
@@ -58,24 +65,10 @@ export function tick(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
   if (prevTod < DAY_END && s.tod >= DAY_END) emit({ type: "dusk" });
   if (prevTod < DAY_START && s.tod >= DAY_START) emit({ type: "dawn" });
 
-  // weather scheduling
-  if (s.weather === "clear") {
-    s.nextStorm -= dt;
-    if (s.nextStorm <= 0) {
-      s.weather = "dust";
-      s.stormDur = STORM_DUR_MIN + rng.next() * STORM_DUR_SPAN;
-      s.stormT = s.stormDur;
-      emit({ type: "storm_in", secs: Math.round(s.stormDur) });
-    }
-  } else {
-    s.stormT -= dt;
-    if (s.stormT <= 0) {
-      s.weather = "clear";
-      s.nextStorm = STORM_GAP_MIN + rng.next() * STORM_GAP_SPAN;
-      emit({ type: "storm_clear" });
-    }
-  }
-  s.solarMul = solarOutput(s);
+  // hazards — the living environment (scheduler + lifecycle + effects + damage)
+  updateHazards(s, dt, rng, emit);
+  const mods = hazardMods(s);
+  s.solarMul = solarOutput(s) * mods.solarFactor;
 
   // Earth resupply windows (doc §2.5) — a window opens on a schedule and trickles
   // a batch of resources into the buffers while open. External delivery, so it is
@@ -110,25 +103,29 @@ export function tick(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
   addPool(s, "power", gen * dt);
   net.power += gen;
 
+  // solar flare siphons power straight off the grid
+  if (mods.powerDrain > 0) { takePool(s, "power", mods.powerDrain * dt); net.power -= mods.powerDrain; }
+
   // 3. Power demand by priority — brownout sheds the bottom first ---------------
   const consumers = s.buildings
-    .filter((b) => (DEFS[b.defId].consumes.power ?? 0) > 0)
+    .filter((b) => powerNeed(b, mods) > 0)
     .sort((a, b) => DEFS[b.defId].priority - DEFS[a.defId].priority);
   let powerAvail = s.pools.power.amount; // what's in the battery this tick
   for (const b of s.buildings) b.online = false;
   for (const b of consumers) {
-    const need = (DEFS[b.defId].consumes.power ?? 0) * dt;
+    const need = powerNeed(b, mods) * dt;
     if (powerAvail >= need) { b.online = true; powerAvail -= need; }
     else b.online = false;
   }
   // buildings with no power draw are "online" if other gates pass
-  for (const b of s.buildings) if (!((DEFS[b.defId].consumes.power ?? 0) > 0)) b.online = true;
+  for (const b of s.buildings) if (!(powerNeed(b, mods) > 0)) b.online = true;
 
-  // 4. Production — online AND connected AND staffed AND fed --------------------
+  // 4. Production — online AND connected AND staffed AND fed AND intact ---------
   for (const b of s.buildings) {
     b.util = 0; b.staffed = true; b.fed = true;
     const d = DEFS[b.defId];
     if (!b.online) continue;
+    if (!buildingFunctional(b)) { b.online = false; continue; } // hazard damage / fault
     if (d.requiresPressure && !b.connected) { b.online = false; continue; }
     // staffing
     if (d.staffing > 0) {
@@ -146,11 +143,12 @@ export function tick(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
       if (d.staffing > 0) s.laborUsed -= d.staffing; // release the labor it claimed
       continue;
     }
-    // run recipe
+    // run recipe (power draw is inflated by cold-snap heating)
     for (const k in d.consumes) {
       const r = k as Resource;
-      takePool(s, r, d.consumes[r]! * dt);
-      net[r] -= d.consumes[r]!;
+      const rate = r === "power" ? powerNeed(b, mods) : d.consumes[r]!;
+      takePool(s, r, rate * dt);
+      net[r] -= rate;
     }
     for (const k in d.produces) {
       const r = k as Resource;

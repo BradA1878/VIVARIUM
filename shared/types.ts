@@ -68,9 +68,31 @@ export interface BuildingState {
   fed: boolean;
   /** 0..1 utilization this tick */
   util: number;
+  /** structural integrity 0..1; below a threshold the building can't operate,
+   *  it self-repairs slowly, and 0 destroys it (doc: hazard damage) */
+  integrity: number;
+  /** seconds an electronics fault keeps it offline (solar flare) */
+  faulted: number;
 }
 
 export type Weather = "clear" | "dust";
+
+/** environmental hazards the planet throws at the colony */
+export type HazardKind = "dust" | "meteor" | "flare" | "coldsnap" | "quake";
+
+export const HAZARD_KINDS: HazardKind[] = ["dust", "meteor", "flare", "coldsnap", "quake"];
+
+export type HazardPhase = "telegraph" | "active";
+
+/** a hazard as the HUD/renderer sees it */
+export interface HazardView {
+  kind: HazardKind;
+  phase: HazardPhase;
+  /** 0..1 severity */
+  intensity: number;
+  /** seconds left in the current phase */
+  remaining: number;
+}
 
 /** The read-only view of the colony the UI/agent layer consume each frame.
  *  Serializable; carries no functions. */
@@ -93,6 +115,10 @@ export interface Snapshot {
   stormT: number;
   /** current solar multiplier (sun curve × storm), 0..1 */
   solarMul: number;
+  /** live hazards (telegraphed + active) for the HUD + renderer */
+  hazards: HazardView[];
+  /** whether an external Director is driving hazards (engine scheduler stands down) */
+  directorControlled: boolean;
   /** seconds until the next Earth resupply window (doc §2.5) */
   nextResupply: number;
   /** seconds the current resupply window stays open (0 = none) */
@@ -131,6 +157,14 @@ export type EventType =
   | "new_sol"
   | "storm_in"
   | "storm_clear"
+  /** generic hazard lifecycle (kind in `detail`) */
+  | "hazard_warn"
+  | "hazard_start"
+  | "hazard_end"
+  /** a meteor/quake impact (cell in n/pop unused; res unused) */
+  | "strike"
+  | "building_damaged"
+  | "building_destroyed"
   | "brownout"
   | "power_back"
   | "crit_start"
@@ -161,8 +195,15 @@ export interface ColonyEvent {
   secs?: number;
   n?: number;
   pop?: number;
-  /** free-text detail (e.g. the Sentinel's anomalous feature) */
+  /** free-text detail (e.g. the Sentinel's anomalous feature, or a hazard kind) */
   detail?: string;
   /** anomaly magnitude in standard deviations above learned-normal */
   sigma?: number;
+  /** hazard kind for hazard_* events */
+  kind?: HazardKind;
+  /** impact cell for strike / building_* events */
+  gx?: number;
+  gy?: number;
+  /** whether a strike hit a building */
+  hit?: boolean;
 }

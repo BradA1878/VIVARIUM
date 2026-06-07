@@ -4,19 +4,21 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, Resource, Side, Snapshot,
+  BuildingDef, BuildingState, ColonyEvent, Side, Snapshot,
 } from "@shared/types";
-import { RESOURCES } from "@shared/types";
 import { DEFS } from "./defs";
 import {
   BASE_CAP, START_AMOUNT, GRID_N, SOL_LENGTH, START_TOD, GRACE,
-  STORM_FIRST, ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
+  ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
   DEADLINE_SOL, TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
 import { RNG } from "./rng";
 import { canPlace, cellsFor, idx } from "./grid";
 import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
+import { recomputeCaps } from "./caps";
+import { spawnHazard, hazardViews, SCHED_FIRST } from "./hazards";
+import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData } from "./state";
 import { emptyBuilding } from "./state";
 
@@ -130,25 +132,23 @@ export class Colony {
   // ---- controls (the worker loop reads paused/speed) ------------------------
   setPaused(v: boolean): void { this.s.paused = v; }
   setSpeed(v: number): void { this.s.speed = v; }
-  forceStorm(): void { if (this.s.weather === "clear") this.s.nextStorm = 0; }
+  /** the storm button → a full-intensity dust hazard */
+  forceStorm(): void { this.triggerHazard("dust", 1); }
   get paused(): boolean { return this.s.paused; }
   get speed(): number { return this.s.speed; }
 
-  // ---- capacities -----------------------------------------------------------
-  private recomputeCaps(): void {
-    const caps: Record<Resource, number> = { ...BASE_CAP };
-    let housing = 0;
-    for (const b of this.s.buildings) {
-      const def = DEFS[b.defId];
-      if (def.caps) for (const k in def.caps) caps[k as Resource] += def.caps[k as Resource]!;
-      if (def.popCap) housing += def.popCap;
-    }
-    for (const k of RESOURCES) {
-      this.s.pools[k].capacity = caps[k];
-      if (this.s.pools[k].amount > caps[k]) this.s.pools[k].amount = caps[k];
-    }
-    this.s.housing = housing;
+  // ---- hazards (the living environment) -------------------------------------
+  /** spawn a hazard now (used by the storm button and the agent-layer Director) */
+  triggerHazard(kind: HazardKind, intensity?: number): void {
+    const inten = spawnHazard(this.s, kind, this.rng, intensity);
+    this.emit({ type: "hazard_warn", kind, detail: kind, secs: 6 });
+    void inten;
   }
+  /** hand hazard control to an external Director (engine scheduler stands down) */
+  setDirector(on: boolean): void { this.s.directorControlled = on; }
+
+  // ---- capacities -----------------------------------------------------------
+  private recomputeCaps(): void { recomputeCaps(this.s); }
 
   // ---- starter colony so the sim is alive on load (doc seed) ----------------
   private seedColony(): void {
@@ -189,8 +189,10 @@ export class Colony {
       tod: s.tod,
       solLength: s.solLength,
       weather: s.weather,
-      stormT: s.stormT,
+      stormT: s.hazards.find((h) => h.kind === "dust" && h.phase === "active")?.tLeft ?? 0,
       solarMul: s.solarMul,
+      hazards: hazardViews(s),
+      directorControlled: s.directorControlled,
       nextResupply: s.nextResupply,
       resupplyT: s.resupplyT,
       timers: { ...s.timers },
@@ -228,6 +230,7 @@ export class Colony {
         },
         flow: { ...this.s.flow },
         timers: { ...this.s.timers },
+        hazards: this.s.hazards.map((h) => ({ ...h })),
       },
     };
   }
@@ -248,6 +251,7 @@ export class Colony {
       },
       flow: { ...st.flow },
       timers: { ...st.timers },
+      hazards: (st.hazards ?? []).map((h) => ({ ...h })),
     };
     c.events = [];
     return c;
@@ -280,10 +284,10 @@ function freshState(): ColonyState {
     tod: START_TOD,
     solLength: SOL_LENGTH,
     weather: "clear",
-    stormT: 0,
-    stormDur: 0,
-    nextStorm: STORM_FIRST,
     solarMul: 0,
+    hazards: [],
+    nextHazard: SCHED_FIRST,
+    directorControlled: false,
     timers: { oxygen: null, water: null, food: null },
     grace: GRACE,
     dead: 0,

@@ -4,7 +4,7 @@
    Exposes the latest snapshot, a snapshot/event subscription, command methods,
    and synchronous placement prediction (doc §0: observe, don't reach in).
    ============================================================================ */
-import type { BuildingState, ColonyEvent, Snapshot } from "@shared/types";
+import type { BuildingState, ColonyEvent, HazardKind, Snapshot } from "@shared/types";
 import { DEFS, type SaveData } from "@/engine";
 import { buildingAtPredict, canPlacePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
@@ -71,6 +71,8 @@ export class SimBridge {
   remove(gx: number, gy: number): void { this.send({ type: "remove", gx, gy }); }
   rotate(gx: number, gy: number): void { this.send({ type: "rotate", gx, gy }); }
   route(fromUid: number, toUid: number): void { this.send({ type: "route", fromUid, toUid }); }
+  triggerHazard(kind: HazardKind, intensity?: number): void { this.send({ type: "triggerHazard", kind, intensity }); }
+  setDirector(value: boolean): void { this.send({ type: "setDirector", value }); }
   setPaused(value: boolean): void { this.send({ type: "setPaused", value }); }
   setSpeed(value: number): void { this.send({ type: "setSpeed", value }); }
   forceStorm(): void { this.send({ type: "forceStorm" }); }
