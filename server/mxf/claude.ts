@@ -5,7 +5,7 @@
    this single function.
    ============================================================================ */
 import Anthropic from "@anthropic-ai/sdk";
-import { SYSTEM_PROMPT, userTurn } from "./prompt";
+import { systemPromptFor, userTurn } from "./prompt";
 
 // Default to the most capable model (claude-api skill guidance); override via
 // NARRATOR_MODEL to route a public build to a cheaper/faster model.
@@ -22,8 +22,12 @@ export function liveAvailable(): boolean {
   return !!process.env.ANTHROPIC_API_KEY;
 }
 
-/** generate one VIVARIUM line for an event, or null on any failure */
-export async function generateLine(event: unknown, snapshot: unknown): Promise<string | null> {
+/** generate one line for an event in the given council voice, or null on failure */
+export async function generateLine(
+  event: unknown,
+  snapshot: unknown,
+  persona = "vivarium",
+): Promise<string | null> {
   const c = getClient();
   if (!c) return null;
   try {
@@ -32,7 +36,7 @@ export async function generateLine(event: unknown, snapshot: unknown): Promise<s
       max_tokens: 120,
       // a one-liner needs no thinking; keep latency and cost down
       thinking: { type: "disabled" },
-      system: SYSTEM_PROMPT,
+      system: systemPromptFor(persona),
       messages: [{ role: "user", content: userTurn(event, snapshot) }],
     });
     const text = res.content

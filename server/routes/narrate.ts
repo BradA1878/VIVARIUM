@@ -17,8 +17,8 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 25_000;
 
-function signature(event: { type?: string; res?: string }): string {
-  return `${event.type ?? "?"}:${event.res ?? ""}`;
+function signature(event: { type?: string; res?: string }, persona: string): string {
+  return `${persona}:${event.type ?? "?"}:${event.res ?? ""}`;
 }
 
 narrate.post("/narrate", async (c) => {
@@ -26,7 +26,7 @@ narrate.post("/narrate", async (c) => {
     return c.json({ error: "live narrator unavailable", fallback: "scripted" }, 503);
   }
 
-  let body: { event?: Record<string, unknown>; snapshot?: unknown };
+  let body: { event?: Record<string, unknown>; snapshot?: unknown; persona?: string };
   try {
     body = await c.req.json();
   } catch {
@@ -36,11 +36,12 @@ narrate.post("/narrate", async (c) => {
   if (!event || typeof event !== "object") {
     return c.json({ error: "missing event" }, 400);
   }
+  const persona = typeof body.persona === "string" ? body.persona : "vivarium";
 
   const now = Date.now();
 
-  // cache by event signature — repeats within the window reuse a line
-  const sig = signature(event as { type?: string; res?: string });
+  // cache by persona + event signature — repeats within the window reuse a line
+  const sig = signature(event as { type?: string; res?: string }, persona);
   const cached = cache.get(sig);
   if (cached && now - cached.at < CACHE_TTL_MS) {
     return c.json({ line: cached.line, source: "cache" });
@@ -55,7 +56,7 @@ narrate.post("/narrate", async (c) => {
     return c.json({ error: "rate limited", fallback: "scripted" }, 429);
   }
 
-  const line = await generateLine(event, body.snapshot ?? null);
+  const line = await generateLine(event, body.snapshot ?? null, persona);
   if (!line) {
     return c.json({ error: "generation failed", fallback: "scripted" }, 502);
   }

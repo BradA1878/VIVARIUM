@@ -9,7 +9,7 @@ import type { ColonyEvent, Snapshot } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo } from "@/render/three/placement";
-import { ScriptedNarrator } from "@/agent/narrator";
+import { Council, type Register } from "@/agent/council";
 import { narrateLive, LIVE_ENABLED } from "@/agent/client";
 import { loadBest, persist, clearLocal } from "@/persistence";
 import { clockOf } from "../format";
@@ -19,6 +19,8 @@ export interface TerminalLine {
   text: string;
   sol: number;
   clock: string;
+  speaker: string;
+  register: Register;
 }
 
 // ---- module-singleton reactive state ----------------------------------------
@@ -30,22 +32,28 @@ const hover: Ref<HoverInfo | null> = ref(null);
 
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
-let narrator: ScriptedNarrator | null = null;
+let council: Council | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let msgId = 1;
 
 const AUTOSAVE_MS = 12_000;
 
-/** push a line into VIVARIUM's terminal. Pass the triggering event's sol/tod so
+/** push a line into the council terminal. Pass the triggering event's sol/tod so
  *  the timestamp reflects when the event happened, not when an async (live) line
- *  resolved. */
-export function pushLine(text: string, sol?: number, tod?: number): void {
+ *  resolved, plus who is speaking and in which register. */
+export function pushLine(
+  text: string,
+  sol?: number,
+  tod?: number,
+  speaker = "VIVARIUM",
+  register: Register = "vivarium",
+): void {
   const s = snapshot.value;
   const atSol = sol ?? (s ? s.sol : 1);
   const atTod = tod ?? (s ? s.tod : 0);
   messages.value = [
     ...messages.value,
-    { id: msgId++, text, sol: atSol, clock: clockOf(atTod) },
+    { id: msgId++, text, sol: atSol, clock: clockOf(atTod), speaker, register },
   ].slice(-40);
 }
 
@@ -53,28 +61,26 @@ export function pushLine(text: string, sol?: number, tod?: number): void {
 export function initColony(b: SimBridge, r: ThreeRenderer): void {
   bridge = b;
   renderer = r;
-  narrator = new ScriptedNarrator();
+  council = new Council();
   b.onSnapshot((s) => { snapshot.value = s; });
   r.onHover((info) => { hover.value = info; });
 
-  // the agent layer observes the event stream — VIVARIUM speaks (doc §0, §3.1).
+  // the agent layer observes the event stream — the council speaks (doc §0, §3.3).
   // It uses the event's own sim-time as the gate clock, so cooldowns are stable.
   // The gate short-circuits BEFORE any model call (doc §3.1); a live line falls
-  // back to the scripted bank on any failure — the game never depends on it.
+  // back to the scripted line on any failure — the game never depends on it.
   b.onEvent((e) => {
-    if (!narrator) return;
+    if (!council) return;
     if (!LIVE_ENABLED) {
-      const line = narrator.observe(e, e.t);
-      if (line) pushLine(line, e.sol, e.tod);
+      const u = council.observe(e, snapshot.value, e.t);
+      if (u) pushLine(u.line, e.sol, e.tod, u.speaker, u.register);
       return;
     }
-    if (!narrator.shouldSpeak(e, e.t)) return;
-    void narrateLive(e, snapshot.value).then((live) => {
-      const line = live ?? narrator!.lineFor(e);
-      if (line) {
-        narrator!.commit(e, e.t);
-        pushLine(line, e.sol, e.tod);
-      }
+    const cand = council.shouldSpeak(e, snapshot.value, e.t);
+    if (!cand) return;
+    void narrateLive(e, snapshot.value, cand.persona).then((live) => {
+      council!.commit(cand, e, e.t);
+      pushLine(live ?? cand.line, e.sol, e.tod, cand.speaker, cand.register);
     });
   });
 
@@ -90,7 +96,9 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   }, AUTOSAVE_MS);
 
   // first words
-  setTimeout(() => { if (narrator) pushLine(narrator.bootLine()); }, 900);
+  setTimeout(() => {
+    if (council) { const u = council.bootLine(); pushLine(u.line, undefined, undefined, u.speaker, u.register); }
+  }, 900);
 }
 
 /** tear down the store's timers (called from App on unmount) */
@@ -125,12 +133,14 @@ const controls = {
   storm(): void { bridge?.forceStorm(); },
   reset(): void {
     bridge?.reset();
-    narrator?.reset();
+    council?.reset();
     clearLocal(); // discard the saved colony; autosave will persist the fresh one
     messages.value = [];
     clearTool();
     // re-greet after the colony reseeds
-    setTimeout(() => { if (narrator) pushLine(narrator.bootLine()); }, 600);
+    setTimeout(() => {
+      if (council) { const u = council.bootLine(); pushLine(u.line, undefined, undefined, u.speaker, u.register); }
+    }, 600);
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };

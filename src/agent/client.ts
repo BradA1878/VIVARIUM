@@ -26,12 +26,16 @@ function slim(s: Snapshot | null) {
   };
 }
 
-export async function narrateLive(event: ColonyEvent, snapshot: Snapshot | null): Promise<string | null> {
+export async function narrateLive(
+  event: ColonyEvent,
+  snapshot: Snapshot | null,
+  persona = "vivarium",
+): Promise<string | null> {
   try {
     const res = await fetch("/api/narrate", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ event, snapshot: slim(snapshot) }),
+      body: JSON.stringify({ event, snapshot: slim(snapshot), persona }),
     });
     if (!res.ok) return null; // 429 / 502 / 503 → scripted fallback
     const data = (await res.json()) as { line?: unknown };
