@@ -12,6 +12,7 @@ import type { HoverInfo } from "@/render/three/placement";
 import { Council, type Register } from "@/agent/council";
 import { narrateLive, LIVE_ENABLED } from "@/agent/client";
 import { Sentinel } from "@/agent/sentinel";
+import { Director } from "@/agent/director/director";
 import { loadBest, persist, clearLocal } from "@/persistence";
 import { clockOf } from "../format";
 
@@ -35,6 +36,7 @@ let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
 let council: Council | null = null;
 let sentinel: Sentinel | null = null;
+let director: Director | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let msgId = 1;
 
@@ -83,10 +85,16 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   renderer = r;
   council = new Council();
   sentinel = new Sentinel();
+  director = new Director();
+  // hand hazard control to the Director — the planet becomes a learning antagonist
+  b.setDirector(true);
 
   b.onSnapshot((s) => {
     snapshot.value = s;
     sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
+    // the Director observes and may throw a hazard at the colony's weak seam
+    const strike = director?.decide(s);
+    if (strike) b.triggerHazard(strike.kind, strike.intensity);
   });
   r.onHover((info) => { hover.value = info; });
 
@@ -168,6 +176,8 @@ const controls = {
     bridge?.reset();
     council?.reset();
     sentinel?.reset();
+    director?.reset();
+    bridge?.setDirector(true); // reset() reseeds the colony with the scheduler on
     clearLocal(); // discard the saved colony; autosave will persist the fresh one
     messages.value = [];
     clearTool();
