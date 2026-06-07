@@ -25,6 +25,17 @@ export class ScriptedNarrator {
     return line;
   }
 
+  /** gate check only — does this event clear the cooldowns? (live build runs
+   *  this BEFORE spending a model call, doc §3.1) */
+  shouldSpeak(e: ColonyEvent, now: number): boolean {
+    return this.gate.allow(e, now);
+  }
+
+  /** record that a line was spoken (call after a live OR scripted line is shown) */
+  commit(e: ColonyEvent, now: number): void {
+    this.gate.mark(e, now);
+  }
+
   /** a line for a known event, ignoring the gate (used as the live-build fallback) */
   lineFor(e: ColonyEvent): string | null {
     const bank = LINES[e.type] as Bank | undefined;

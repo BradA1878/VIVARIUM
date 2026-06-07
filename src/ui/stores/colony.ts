@@ -10,6 +10,7 @@ import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo } from "@/render/three/placement";
 import { ScriptedNarrator } from "@/agent/narrator";
+import { narrateLive, LIVE_ENABLED } from "@/agent/client";
 import { clockOf } from "../format";
 
 export interface TerminalLine {
@@ -50,9 +51,24 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 
   // the agent layer observes the event stream — VIVARIUM speaks (doc §0, §3.1).
   // It uses the event's own sim-time as the gate clock, so cooldowns are stable.
+  // The gate short-circuits BEFORE any model call (doc §3.1); a live line falls
+  // back to the scripted bank on any failure — the game never depends on it.
   b.onEvent((e) => {
-    const line = narrator?.observe(e, e.t);
-    if (line) pushLine(line);
+    if (!narrator) return;
+    if (!LIVE_ENABLED) {
+      const line = narrator.observe(e, e.t);
+      if (line) pushLine(line);
+      return;
+    }
+    if (!narrator.shouldSpeak(e, e.t)) return;
+    const at = e.t;
+    void narrateLive(e, snapshot.value).then((live) => {
+      const line = live ?? narrator!.lineFor(e);
+      if (line) {
+        narrator!.commit(e, at);
+        pushLine(line);
+      }
+    });
   });
 
   // first words
