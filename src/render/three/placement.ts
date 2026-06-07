@@ -1,23 +1,33 @@
 /* ============================================================================
-   PlacementController — turns pointer input over the canvas into build/demolish
-   commands. Raycasts the cursor onto the ground plane to find the hovered cell,
-   shows a ghost footprint (cyan = fits, rust = blocked, prototype drawGhost),
-   and routes the actual place/remove through the worker (doc §0: the worker is
-   authoritative; this only previews + commands).
+   PlacementController — turns pointer input over the canvas into build / demolish
+   / rotate / route commands. Raycasts the cursor onto the ground plane to find
+   the hovered cell, shows a ghost (cyan = ok, rust = blocked), and routes the
+   actual mutation through the worker (doc §0: the worker is authoritative; this
+   only previews + commands).
+
+   Three modes:
+   - place: footprint ghost + a door arrow; R rotates; click places with rotation.
+   - demolish: highlight + click removes.
+   - route (the Corridor tool): click a door-building = source, click another =
+     auto-route corridors door→door; clicking empty hand-lays a single corridor.
    ============================================================================ */
 import * as THREE from "three";
-import { DEFS } from "@/engine";
+import type { Side } from "@shared/types";
+import { DEFS, doorCells, SIDE_DELTA } from "@/engine";
 import type { SimBridge } from "@/worker/bridge";
 import { CELL, GridSpace } from "./coords";
 
 export interface HoverInfo {
   gx: number;
   gy: number;
-  /** building under the cursor, if any */
   defId?: string;
 }
 
-type Tool = { kind: "place"; defId: string } | { kind: "demolish" } | null;
+type Tool =
+  | { kind: "place"; defId: string }
+  | { kind: "demolish" }
+  | { kind: "route" }
+  | null;
 
 const CYAN = new THREE.Color("#7fd4e8");
 const RUST = new THREE.Color("#e8784f");
@@ -30,11 +40,14 @@ export class PlacementController {
   private hasPointer = false;
   private hover: { gx: number; gy: number } | null = null;
   private tool: Tool = null;
+  private ghostRot: Side = 0;
+  private routeSource: number | null = null;
 
   private tiles: THREE.Mesh[] = [];
+  private tileGeo: THREE.PlaneGeometry;
   private tileMat: THREE.MeshBasicMaterial;
   private outline: THREE.LineSegments;
-  private currentFoot = "";
+  private arrow: THREE.Mesh;
 
   private hoverCb: ((info: HoverInfo | null) => void) | null = null;
   private lastHoverKey = "";
@@ -45,6 +58,7 @@ export class PlacementController {
     private grid: GridSpace,
     private bridge: SimBridge,
   ) {
+    this.tileGeo = new THREE.PlaneGeometry(CELL * 0.92, CELL * 0.92).rotateX(-Math.PI / 2);
     this.tileMat = new THREE.MeshBasicMaterial({
       color: CYAN, transparent: true, opacity: 0.22, depthWrite: false,
     });
@@ -53,6 +67,13 @@ export class PlacementController {
       og, new THREE.LineBasicMaterial({ color: CYAN, transparent: true, opacity: 0.8 }),
     );
     this.group.add(this.outline);
+
+    // door-direction arrow (apex points +Z; we lookAt() to aim it)
+    const aGeo = new THREE.ConeGeometry(0.14, 0.34, 4).rotateX(Math.PI / 2);
+    this.arrow = new THREE.Mesh(aGeo, new THREE.MeshBasicMaterial({ color: CYAN }));
+    this.arrow.visible = false;
+    this.group.add(this.arrow);
+
     this.group.visible = false;
 
     this.onMove = this.onMove.bind(this);
@@ -66,9 +87,11 @@ export class PlacementController {
   }
 
   // ---- tool state -----------------------------------------------------------
-  setTool(defId: string): void { this.tool = { kind: "place", defId }; this.refreshTiles(); }
-  setDemolish(): void { this.tool = { kind: "demolish" }; this.refreshTiles(); }
-  clearTool(): void { this.tool = null; this.refreshTiles(); }
+  setTool(defId: string): void { this.tool = { kind: "place", defId }; this.ghostRot = 0; this.routeSource = null; }
+  setDemolish(): void { this.tool = { kind: "demolish" }; this.routeSource = null; }
+  setRoute(): void { this.tool = { kind: "route" }; this.routeSource = null; }
+  clearTool(): void { this.tool = null; this.routeSource = null; }
+  rotateGhost(): void { this.ghostRot = ((this.ghostRot + 1) % 4) as Side; }
   onHover(cb: (info: HoverInfo | null) => void): void { this.hoverCb = cb; }
 
   // ---- pointer --------------------------------------------------------------
@@ -82,18 +105,29 @@ export class PlacementController {
 
   private onClick(): void {
     if (!this.hover || !this.tool) return;
-    if (this.tool.kind === "demolish") {
-      this.bridge.remove(this.hover.gx, this.hover.gy);
-    } else {
-      this.bridge.place(this.tool.defId, this.hover.gx, this.hover.gy);
-      // keep the tool active for repeat placement (prototype behaviour)
+    const { gx, gy } = this.hover;
+    if (this.tool.kind === "demolish") { this.bridge.remove(gx, gy); return; }
+    if (this.tool.kind === "place") { this.bridge.place(this.tool.defId, gx, gy, this.ghostRot); return; }
+    if (this.tool.kind === "route") {
+      const b = this.bridge.buildingAt(gx, gy);
+      const isDoor = !!(b && DEFS[b.defId]?.door != null);
+      if (isDoor && b) {
+        if (this.routeSource == null) this.routeSource = b.uid;
+        else if (this.routeSource !== b.uid) { this.bridge.route(this.routeSource, b.uid); this.routeSource = null; }
+        else this.routeSource = null; // clicked the source again → deselect
+      } else if (!b) {
+        this.bridge.place("corridor", gx, gy); // hand-lay a single corridor
+      }
     }
   }
-  private onContext(e: MouseEvent): void { e.preventDefault(); this.clearTool(); }
+  private onContext(e: MouseEvent): void {
+    e.preventDefault();
+    if (this.tool?.kind === "route" && this.routeSource != null) { this.routeSource = null; return; }
+    this.clearTool();
+  }
 
   // ---- per-frame ------------------------------------------------------------
   update(): void {
-    // resolve hovered cell via ground-plane raycast
     if (this.hasPointer) {
       this.ray.setFromCamera(this.ndc, this.camera);
       const hit = new THREE.Vector3();
@@ -104,13 +138,14 @@ export class PlacementController {
     }
 
     this.emitHover();
+    this.arrow.visible = false;
 
-    // ghost is only shown while a tool is active
-    if (!this.tool || !this.hover) { this.group.visible = false; return; }
+    if (!this.tool) { this.group.visible = false; return; }
     this.group.visible = true;
 
-    if (this.tool.kind === "place") this.drawPlaceGhost();
-    else this.drawDemolishGhost();
+    if (this.tool.kind === "place") this.hover ? this.drawPlaceGhost() : this.hideTiles();
+    else if (this.tool.kind === "demolish") this.hover ? this.drawDemolishGhost() : this.hideTiles();
+    else this.drawRouteGhost();
   }
 
   private emitHover(): void {
@@ -126,55 +161,105 @@ export class PlacementController {
     this.hoverCb({ gx: this.hover.gx, gy: this.hover.gy, defId: b?.defId });
   }
 
-  private refreshTiles(): void {
-    const foot = this.tool?.kind === "place" ? DEFS[this.tool.defId]?.foot ?? [1, 1] : [1, 1];
-    const key = `${this.tool?.kind ?? "none"}:${foot[0]}x${foot[1]}`;
-    if (key === this.currentFoot) return;
-    this.currentFoot = key;
-    for (const t of this.tiles) { this.group.remove(t); t.geometry.dispose(); }
-    this.tiles = [];
-    const n = this.tool?.kind === "place" ? foot[0] * foot[1] : 1;
-    const geo = new THREE.PlaneGeometry(CELL * 0.96, CELL * 0.96).rotateX(-Math.PI / 2);
-    for (let i = 0; i < n; i++) {
-      const m = new THREE.Mesh(geo, this.tileMat);
+  // ---- tile pool ------------------------------------------------------------
+  /** ensure `n` tiles exist and return them; hide the rest */
+  private useTiles(n: number, color: THREE.Color): THREE.Mesh[] {
+    while (this.tiles.length < n) {
+      const m = new THREE.Mesh(this.tileGeo, this.tileMat);
       this.tiles.push(m);
       this.group.add(m);
     }
+    this.tileMat.color.copy(color);
+    for (let i = 0; i < this.tiles.length; i++) this.tiles[i].visible = i < n;
+    return this.tiles;
   }
+  private hideTiles(): void { for (const t of this.tiles) t.visible = false; this.hideOutline(); }
+  private hideOutline(): void { this.outline.visible = false; }
 
+  // ---- place ----------------------------------------------------------------
   private drawPlaceGhost(): void {
     const def = DEFS[(this.tool as { defId: string }).defId];
     const ok = this.bridge.canPlace(def.id, this.hover!.gx, this.hover!.gy);
     const col = ok ? CYAN : RUST;
-    this.tileMat.color.copy(col);
+    const tiles = this.useTiles(def.foot[0] * def.foot[1], col);
     (this.outline.material as THREE.LineBasicMaterial).color.copy(col);
 
     let i = 0;
     for (let dx = 0; dx < def.foot[0]; dx++)
       for (let dy = 0; dy < def.foot[1]; dy++) {
         const c = this.grid.cellCenter(this.hover!.gx + dx, this.hover!.gy + dy);
-        const tile = this.tiles[i++];
-        if (tile) tile.position.set(c.x, 0.03, c.z);
+        tiles[i++].position.set(c.x, 0.03, c.z);
       }
     this.setOutlineBox(def.foot[0], def.foot[1], this.hover!.gx, this.hover!.gy, 0.6);
+
+    // door arrow: show where the (rotated) door will face
+    const d = doorCells(def, this.hover!.gx, this.hover!.gy, this.ghostRot);
+    if (d) {
+      const c = this.grid.cellCenter(d.exit[0], d.exit[1]);
+      this.arrow.position.set(c.x, 0.18, c.z);
+      const [dx, dy] = SIDE_DELTA[d.side];
+      this.arrow.lookAt(c.x + dx, 0.18, c.z + dy);
+      (this.arrow.material as THREE.MeshBasicMaterial).color.copy(col);
+      this.arrow.visible = true;
+    }
   }
 
   private drawDemolishGhost(): void {
     const b = this.bridge.buildingAt(this.hover!.gx, this.hover!.gy);
-    this.tileMat.color.copy(RUST);
+    const tiles = this.useTiles(1, RUST);
     (this.outline.material as THREE.LineBasicMaterial).color.copy(RUST);
     const c = this.grid.cellCenter(this.hover!.gx, this.hover!.gy);
-    if (this.tiles[0]) this.tiles[0].position.set(c.x, 0.03, c.z);
-    if (b) {
-      const def = DEFS[b.defId];
-      this.setOutlineBox(def.foot[0], def.foot[1], b.gx, b.gy, 0.5);
-    } else {
-      this.setOutlineBox(1, 1, this.hover!.gx, this.hover!.gy, 0.2);
+    tiles[0].position.set(c.x, 0.03, c.z);
+    if (b) { const def = DEFS[b.defId]; this.setOutlineBox(def.foot[0], def.foot[1], b.gx, b.gy, 0.5); }
+    else this.setOutlineBox(1, 1, this.hover!.gx, this.hover!.gy, 0.2);
+  }
+
+  // ---- route ----------------------------------------------------------------
+  private drawRouteGhost(): void {
+    const hover = this.hover;
+    const b = hover ? this.bridge.buildingAt(hover.gx, hover.gy) : null;
+    const isDoor = !!(b && DEFS[b.defId]?.door != null);
+
+    if (this.routeSource != null) {
+      // a source is picked — preview the path to the hovered target
+      const src = this.bridge.buildingByUid(this.routeSource);
+      if (src) this.outlineBuilding(src.gx, src.gy, src.defId, CYAN);
+      if (isDoor && b && b.uid !== this.routeSource) {
+        const path = this.bridge.previewRoute(this.routeSource, b.uid);
+        if (path) { this.layPath(path, CYAN); return; }
+        this.useTiles(0, RUST); // no route — show source only
+        return;
+      }
+      this.hideTilesKeepOutline();
+      return;
     }
+
+    // no source yet — hint the hovered door-building, or a single-corridor cell
+    this.hideOutline();
+    if (isDoor && b) { this.outlineBuilding(b.gx, b.gy, b.defId, CYAN); this.useTiles(0, CYAN); }
+    else if (hover && !b) { const t = this.useTiles(1, CYAN); const c = this.grid.cellCenter(hover.gx, hover.gy); t[0].position.set(c.x, 0.03, c.z); }
+    else this.useTiles(0, CYAN);
+  }
+
+  private layPath(path: [number, number][], color: THREE.Color): void {
+    const tiles = this.useTiles(path.length, color);
+    for (let i = 0; i < path.length; i++) {
+      const c = this.grid.cellCenter(path[i][0], path[i][1]);
+      tiles[i].position.set(c.x, 0.04, c.z);
+    }
+  }
+
+  private hideTilesKeepOutline(): void { for (const t of this.tiles) t.visible = false; }
+
+  private outlineBuilding(gx: number, gy: number, defId: string, color: THREE.Color): void {
+    const def = DEFS[defId];
+    (this.outline.material as THREE.LineBasicMaterial).color.copy(color);
+    this.setOutlineBox(def.foot[0], def.foot[1], gx, gy, 0.7);
   }
 
   /** redraw the wire box around a footprint */
   private setOutlineBox(fw: number, fh: number, gx: number, gy: number, height: number): void {
+    this.outline.visible = true;
     const c0 = this.grid.cellCenter(gx, gy);
     const x0 = c0.x - CELL / 2, z0 = c0.z - CELL / 2;
     const x1 = x0 + fw * CELL, z1 = z0 + fh * CELL;
@@ -184,9 +269,9 @@ export class PlacementController {
     for (let i = 0; i < 4; i++) {
       const [ax, az] = corners[i];
       const [bx, bz] = corners[(i + 1) % 4];
-      pts.push(ax, y, az, bx, y, bz);        // base ring
-      pts.push(ax, y, az, ax, yh, az);       // vertical
-      pts.push(ax, yh, az, bx, yh, bz);      // top ring
+      pts.push(ax, y, az, bx, y, bz);
+      pts.push(ax, y, az, ax, yh, az);
+      pts.push(ax, yh, az, bx, yh, bz);
     }
     this.outline.geometry.dispose();
     this.outline.geometry = new THREE.BufferGeometry();
@@ -198,9 +283,11 @@ export class PlacementController {
     this.canvas.removeEventListener("pointerleave", this.onLeave);
     this.canvas.removeEventListener("click", this.onClick);
     this.canvas.removeEventListener("contextmenu", this.onContext);
-    for (const t of this.tiles) t.geometry.dispose();
+    this.tileGeo.dispose();
     this.tileMat.dispose();
     this.outline.geometry.dispose();
     (this.outline.material as THREE.Material).dispose();
+    this.arrow.geometry.dispose();
+    (this.arrow.material as THREE.Material).dispose();
   }
 }

@@ -95,6 +95,10 @@ export class SimBridge {
     return this.latest ? buildingAtPredict(this.latest, gx, gy) : null;
   }
 
+  buildingByUid(uid: number): BuildingState | null {
+    return this.latest?.buildings.find((b) => b.uid === uid) ?? null;
+  }
+
   /** predict the corridor path the worker would lay, for the ghost preview */
   previewRoute(fromUid: number, toUid: number): [number, number][] | null {
     if (!this.latest) return null;

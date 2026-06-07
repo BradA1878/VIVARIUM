@@ -42,7 +42,7 @@ describe("routeCorridor (pure BFS)", () => {
   });
 
   it("returns null when fully walled off", () => {
-    const blocked = (x: number, y: number) => y === 1; // a full wall across row 1
+    const blocked = (_x: number, y: number) => y === 1; // a full wall across row 1
     const path = routeCorridor({ N: 5, isBlocked: blocked }, [0, 0], [0, 2]);
     expect(path).toBeNull();
   });

@@ -37,6 +37,9 @@ export interface KitMesh {
   object: THREE.Object3D;
   /** called each frame with current status + a 0..1 pulse phase for glows */
   setStatus(status: BuildingStatus, pulse: number): void;
+  /** corridors only: a 4-bit mask (N=1,E=2,S=4,W=8) of connected neighbours, so
+   *  the mesh can orient as straight / elbow / T / cross / end-cap */
+  setNeighbors?(mask: number): void;
   dispose(): void;
 }
 

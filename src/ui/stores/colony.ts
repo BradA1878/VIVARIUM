@@ -133,7 +133,18 @@ function pick(defId: string): void {
   if (tool.value === defId && !demolish.value) { clearTool(); return; }
   tool.value = defId;
   demolish.value = false;
-  renderer?.setTool(defId);
+  // the Corridor tile is a 2-click auto-route "link" mode, not single placement
+  if (defId === "corridor") renderer?.setRoute();
+  else renderer?.setTool(defId);
+}
+
+/** R — rotate the ghost while placing a building, else rotate the hovered one */
+function rotate(): void {
+  if (tool.value && tool.value !== "corridor" && !demolish.value) {
+    renderer?.rotateGhost();
+  } else if (!tool.value && !demolish.value && hover.value) {
+    bridge?.rotate(hover.value.gx, hover.value.gy);
+  }
 }
 function toggleDemolish(): void {
   const v = !demolish.value;
@@ -174,5 +185,5 @@ export function onColonyEvent(fn: (e: ColonyEvent) => void): () => void {
 }
 
 export function useColony() {
-  return { snapshot, messages, tool, demolish, hover, pick, toggleDemolish, clearTool, controls };
+  return { snapshot, messages, tool, demolish, hover, pick, toggleDemolish, clearTool, rotate, controls };
 }
