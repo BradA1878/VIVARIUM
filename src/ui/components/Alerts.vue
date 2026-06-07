@@ -6,7 +6,7 @@ import { DEFS } from "@/engine";
 
 interface AlertItem {
   k: string;
-  sev: 2 | 3;
+  sev: 1 | 2 | 3;
   txt: string;
   sub: string;
 }
@@ -54,6 +54,16 @@ const items = computed<AlertItem[]>(() => {
   });
   if (brown) {
     out.push({ k: "brown", sev: 2, txt: "BROWNOUT — load shed", sub: "demand exceeds supply" });
+  }
+
+  // Earth resupply window open (doc §2.5) — the one "good" alert
+  if (cur.resupplyT > 0) {
+    out.push({
+      k: "resupply",
+      sev: 1,
+      txt: "RESUPPLY WINDOW — inbound",
+      sub: `delivering · closes in ${fmt(cur.resupplyT)}s`,
+    });
   }
 
   return out.sort((a, b) => b.sev - a.sev);

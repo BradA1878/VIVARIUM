@@ -132,6 +132,24 @@ describe("shortfalls become timers, not instant death (doc §2.4 pass 6)", () =>
   });
 });
 
+describe("Earth resupply windows (doc §2.5)", () => {
+  it("a resupply window opens, fires an event, and tops up a drained pool", () => {
+    const c = new Colony(3);
+    c.removeAt(8, 8); // remove the ice extractor so water only drains
+    let fired = false;
+    let sawOpenWindow = false;
+    const step = 0.2;
+    // RESUPPLY_FIRST is 180s; run a bit past it
+    for (let i = 0; i < 210 / step; i++) {
+      c.tick(step);
+      for (const e of c.drainEvents()) if (e.type === "resupply") fired = true;
+      if (c.snapshot().resupplyT > 0) sawOpenWindow = true;
+    }
+    expect(fired).toBe(true);
+    expect(sawOpenWindow).toBe(true);
+  });
+});
+
 describe("snapshot is a pure value (no shared refs into engine state)", () => {
   it("mutating a snapshot does not change the engine", () => {
     const c = new Colony();

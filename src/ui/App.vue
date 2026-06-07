@@ -5,7 +5,7 @@
    renderer and HUD only observe its snapshot/event stream (doc §0). The HUD is a
    pointer-events:none overlay; only the panels/controls opt back in (doc §4.3).
    ============================================================================ */
-import { ref, onMounted, onUnmounted, shallowRef } from "vue";
+import { ref, computed, onMounted, onUnmounted, shallowRef } from "vue";
 import Boot from "./components/Boot.vue";
 import TopBar from "./components/TopBar.vue";
 import SolClock from "./components/SolClock.vue";
@@ -26,7 +26,8 @@ const bridge = shallowRef<SimBridge | null>(null);
 const ready = ref(false);
 let renderer: ThreeRenderer | null = null;
 
-const { clearTool, controls } = useColony();
+const { snapshot, clearTool, controls } = useColony();
+const storming = computed(() => snapshot.value?.weather === "dust");
 
 function onKey(e: KeyboardEvent): void {
   if (e.key === "Escape") clearTool();
@@ -65,6 +66,7 @@ onUnmounted(() => {
   <div class="app">
     <canvas ref="canvas" class="stage"></canvas>
     <div class="vignette"></div>
+    <div class="storm-veil" :class="{ on: storming }"></div>
 
     <div class="hud" v-if="ready">
       <TopBar />

@@ -71,6 +71,23 @@ button {
   background: radial-gradient(120% 90% at 50% 38%, transparent 45%, rgba(4, 5, 7, 0.55) 100%);
   mix-blend-mode: multiply;
 }
+/* dust-storm screen veil — rust wash that breathes (prototype drawStormVeil) */
+.storm-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(140% 120% at 50% 30%, rgba(150, 86, 52, 0.16) 0%, rgba(120, 60, 36, 0.28) 100%);
+  opacity: 0;
+  transition: opacity 1.6s ease;
+}
+.storm-veil.on {
+  opacity: 1;
+  animation: stormbreathe 4.2s ease-in-out infinite;
+}
+@keyframes stormbreathe {
+  0%, 100% { opacity: 0.78; }
+  50% { opacity: 1; }
+}
 
 /* The HUD is a pointer-events:none overlay; only the controls opt back in. */
 .hud {

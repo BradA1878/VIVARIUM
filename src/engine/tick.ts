@@ -13,7 +13,9 @@ import {
   STORM_DUR_MIN, STORM_DUR_SPAN, STORM_GAP_MIN, STORM_GAP_SPAN,
   ARRIVAL_BATCH, ARRIVAL_GAP_MIN, ARRIVAL_GAP_SPAN, ARRIVAL_RETRY,
   BROWNOUT_DEFICIT, BROWNOUT_LOW, BROWNOUT_RECOVER_FRAC,
+  RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT,
 } from "./tuning";
+import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
 import { recomputeConnectivity } from "./connectivity";
 import type { RNG } from "./rng";
@@ -74,6 +76,22 @@ export function tick(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
     }
   }
   s.solarMul = solarOutput(s);
+
+  // Earth resupply windows (doc §2.5) — a window opens on a schedule and trickles
+  // a batch of resources into the buffers while open. External delivery, so it is
+  // deliberately NOT counted in net flow.
+  if (isFinite(s.nextResupply)) {
+    if (s.resupplyT > 0) {
+      for (const k of RESOURCES) addPool(s, k, (RESUPPLY_AMOUNT[k] / RESUPPLY_WINDOW) * dt);
+      s.resupplyT = Math.max(0, s.resupplyT - dt);
+    }
+    s.nextResupply -= dt;
+    if (s.nextResupply <= 0) {
+      s.resupplyT = RESUPPLY_WINDOW;
+      s.nextResupply = RESUPPLY_GAP;
+      emit({ type: "resupply" });
+    }
+  }
 
   recomputeConnectivity(s);
 

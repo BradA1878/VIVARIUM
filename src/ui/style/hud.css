@@ -87,6 +87,9 @@
 .alert.sev3 .alert-txt { color: var(--crit); }
 .alert.sev2 .alert-txt { color: var(--rust); }
 .alert.sev2 .alert-bar { background: var(--rust); }
+.alert.sev1 { border-color: rgba(127, 212, 232, 0.4); }
+.alert.sev1 .alert-txt { color: var(--cyan); }
+.alert.sev1 .alert-bar { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
 
 /* ---------- VIVARIUM terminal ---------- */
 .bottom-left { position: absolute; left: 16px; bottom: 16px; width: 380px; }

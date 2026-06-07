@@ -84,6 +84,10 @@ export interface Snapshot {
   stormT: number;
   /** current solar multiplier (sun curve × storm), 0..1 */
   solarMul: number;
+  /** seconds until the next Earth resupply window (doc §2.5) */
+  nextResupply: number;
+  /** seconds the current resupply window stays open (0 = none) */
+  resupplyT: number;
   /** seconds remaining before a depleted pool turns lethal; null if safe */
   timers: Record<"oxygen" | "water" | "food", number | null>;
   grace: number;

@@ -10,7 +10,7 @@ import { RESOURCES } from "@shared/types";
 import { DEFS } from "./defs";
 import {
   BASE_CAP, START_AMOUNT, GRID_N, SOL_LENGTH, START_TOD, GRACE,
-  STORM_FIRST, ARRIVALS_TOTAL, ARRIVAL_FIRST, DEFAULT_SEED,
+  STORM_FIRST, ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST, DEFAULT_SEED,
 } from "./tuning";
 import { RNG } from "./rng";
 import { canPlace, cellsFor, idx } from "./grid";
@@ -164,6 +164,8 @@ export class Colony {
       weather: s.weather,
       stormT: s.stormT,
       solarMul: s.solarMul,
+      nextResupply: s.nextResupply,
+      resupplyT: s.resupplyT,
       timers: { ...s.timers },
       grace: s.grace,
       dead: s.dead,
@@ -254,7 +256,7 @@ function freshState(): ColonyState {
     dead: 0,
     arrivalsLeft: ARRIVALS_TOTAL,
     nextArrival: ARRIVAL_FIRST,
-    nextResupply: Infinity, // wired in Phase 6
+    nextResupply: RESUPPLY_FIRST,
     resupplyT: 0,
     paused: false,
     speed: 1,

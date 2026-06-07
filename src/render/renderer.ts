@@ -15,6 +15,7 @@ import { GridSpace } from "./three/coords";
 import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh } from "./three/kit";
 import { PlacementController, type HoverInfo } from "./three/placement";
+import { Atmosphere } from "./three/atmosphere";
 
 interface Placed {
   mesh: KitMesh;
@@ -42,8 +43,10 @@ export class ThreeRenderer {
   private placed = new Map<number, Placed>();
   private bridge: SimBridge;
   private placement: PlacementController;
+  private atmosphere: Atmosphere;
   private raf = 0;
   private running = false;
+  private lastFrame = 0;
 
   constructor(canvas: HTMLCanvasElement, bridge: SimBridge, gridN: number) {
     this.bridge = bridge;
@@ -54,6 +57,8 @@ export class ThreeRenderer {
     this.scene.scene.add(this.buildingsGroup);
     this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
     this.scene.scene.add(this.placement.group);
+    this.atmosphere = new Atmosphere(this.grid);
+    this.scene.scene.add(this.atmosphere.points);
     this.onResize = this.onResize.bind(this);
     window.addEventListener("resize", this.onResize);
   }
@@ -80,14 +85,21 @@ export class ThreeRenderer {
   }
 
   private frame(): void {
+    const now = performance.now();
+    let dt = this.lastFrame ? (now - this.lastFrame) / 1000 : 0.016;
+    if (dt > 0.1) dt = 0.1;
+    this.lastFrame = now;
+
     const snap = this.bridge.latest;
     if (!snap) {
+      this.atmosphere.update(dt, false);
       this.scene.render();
       return;
     }
     this.scene.update(snap.tod, snap.weather === "dust");
     this.reconcile(snap);
     this.placement.update();
+    this.atmosphere.update(dt, snap.weather === "dust");
     this.scene.render();
   }
 
@@ -130,6 +142,7 @@ export class ThreeRenderer {
     cancelAnimationFrame(this.raf);
     window.removeEventListener("resize", this.onResize);
     this.placement.dispose();
+    this.atmosphere.dispose();
     for (const entry of this.placed.values()) entry.mesh.dispose();
     this.placed.clear();
     this.terrain.dispose();

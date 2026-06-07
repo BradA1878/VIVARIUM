@@ -61,6 +61,15 @@ export const ARRIVAL_GAP_SPAN = 40;
 /** retry delay when conditions for an arrival aren't met */
 export const ARRIVAL_RETRY = 12;
 
+/** Earth resupply windows — the campaign arc (doc §2.5). A window opens on a
+ *  schedule and delivers a batch of resources gradually while it's open. */
+export const RESUPPLY_FIRST = 180;
+export const RESUPPLY_GAP = 280;
+export const RESUPPLY_WINDOW = 22;
+export const RESUPPLY_AMOUNT: Record<Resource, number> = {
+  power: 40, water: 60, oxygen: 30, food: 45,
+};
+
 /** brownout latch thresholds */
 export const BROWNOUT_DEFICIT = -0.2;
 export const BROWNOUT_LOW = 2;
