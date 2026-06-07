@@ -11,3 +11,7 @@ design/**/.DS_Store
 npm-debug.log*
 .vite/
 coverage/
+
+# playwright / screenshots
+.playwright-mcp/
+phase*-scene*.png
