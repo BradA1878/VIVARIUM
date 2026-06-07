@@ -36,12 +36,16 @@ let msgId = 1;
 
 const AUTOSAVE_MS = 12_000;
 
-/** push a line into VIVARIUM's terminal (used by the narrator, Phase 7) */
-export function pushLine(text: string): void {
+/** push a line into VIVARIUM's terminal. Pass the triggering event's sol/tod so
+ *  the timestamp reflects when the event happened, not when an async (live) line
+ *  resolved. */
+export function pushLine(text: string, sol?: number, tod?: number): void {
   const s = snapshot.value;
+  const atSol = sol ?? (s ? s.sol : 1);
+  const atTod = tod ?? (s ? s.tod : 0);
   messages.value = [
     ...messages.value,
-    { id: msgId++, text, sol: s ? s.sol : 1, clock: clockOf(s ? s.tod : 0) },
+    { id: msgId++, text, sol: atSol, clock: clockOf(atTod) },
   ].slice(-40);
 }
 
@@ -61,16 +65,15 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     if (!narrator) return;
     if (!LIVE_ENABLED) {
       const line = narrator.observe(e, e.t);
-      if (line) pushLine(line);
+      if (line) pushLine(line, e.sol, e.tod);
       return;
     }
     if (!narrator.shouldSpeak(e, e.t)) return;
-    const at = e.t;
     void narrateLive(e, snapshot.value).then((live) => {
       const line = live ?? narrator!.lineFor(e);
       if (line) {
-        narrator!.commit(e, at);
-        pushLine(line);
+        narrator!.commit(e, e.t);
+        pushLine(line, e.sol, e.tod);
       }
     });
   });
