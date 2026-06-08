@@ -173,13 +173,15 @@ export class Colony {
 
   // ---- starter colony so the sim is alive on load (doc seed) ----------------
   private seedColony(): void {
-    this.place("hub", 4, 4);
+    // doors face the corridor network so the seed reads as connected (rot aims
+    // the door: hub south, hab(3,6) east, hab(6,6) west, electrolysis north)
+    this.place("hub", 4, 4, 0);
     this.place("battery", 3, 3);
     this.place("corridor", 4, 6);
     this.place("corridor", 5, 6);
-    this.place("hab", 3, 6);
-    this.place("hab", 6, 6);
-    this.place("electrolysis", 5, 7);
+    this.place("hab", 3, 6, 3);
+    this.place("hab", 6, 6, 1);
+    this.place("electrolysis", 5, 7, 2);
     this.place("solar", 7, 3);
     this.place("solar", 7, 6);
     this.place("extractor", 8, 8);

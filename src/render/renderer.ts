@@ -6,7 +6,7 @@
    5 Hz sim split). Placement raycasting is layered on in Phase 4.
    ============================================================================ */
 import * as THREE from "three";
-import type { BuildingState, Snapshot } from "@shared/types";
+import type { BuildingDef, BuildingState, Snapshot } from "@shared/types";
 import { DEFS, SIDE_DELTA } from "@/engine";
 import type { SimBridge } from "@/worker/bridge";
 import { SceneManager } from "./three/scene";
@@ -21,6 +21,31 @@ import { HazardFx } from "./three/hazardfx";
 interface Placed {
   mesh: KitMesh;
   defId: string;
+}
+
+/** a visible door on a building's front (its local def.door side), as a child of
+ *  the mesh group so it turns with the building's rotation — this is the cell the
+ *  auto-route connects to, so you can see which way to aim it before linking. */
+function addDoor(group: THREE.Object3D, def: BuildingDef): void {
+  if (def.door == null) return;
+  const [dx, dy] = SIDE_DELTA[def.door];
+  const half = (def.foot[0] * CELL) / 2;
+  const door = new THREE.Group();
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(0.34, 0.32, 0.06),
+    new THREE.MeshStandardMaterial({ color: 0x0b1014, emissive: 0x2c4a55, emissiveIntensity: 0.5, roughness: 0.6, metalness: 0.3 }),
+  );
+  frame.position.y = 0.16;
+  const sill = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.05, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.7 }),
+  );
+  sill.position.y = 0.03;
+  door.add(frame, sill);
+  door.position.set(dx * (half + 0.01), 0, dy * (half + 0.01));
+  door.lookAt(door.position.x + dx, 0, door.position.z + dy); // face outward
+  door.name = "door";
+  group.add(door);
 }
 
 /** prototype status(): the glow that reads a building's health */
@@ -149,6 +174,7 @@ export class ThreeRenderer {
         const mesh = buildKitMesh(def, b.uid, this.materials);
         const c = this.grid.footprintCenter(def, b.gx, b.gy);
         mesh.object.position.copy(c);
+        addDoor(mesh.object, def);
         this.buildingsGroup.add(mesh.object);
         entry = { mesh, defId: b.defId };
         this.placed.set(b.uid, entry);
