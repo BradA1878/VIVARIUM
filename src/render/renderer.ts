@@ -6,8 +6,8 @@
    5 Hz sim split). Placement raycasting is layered on in Phase 4.
    ============================================================================ */
 import * as THREE from "three";
-import type { BuildingDef, BuildingState, Snapshot } from "@shared/types";
-import { DEFS, doorCellsOf, SIDE_DELTA } from "@/engine";
+import type { BuildingState, Snapshot } from "@shared/types";
+import { DEFS, SIDE_DELTA } from "@/engine";
 import type { SimBridge } from "@/worker/bridge";
 import { SceneManager } from "./three/scene";
 import { Terrain } from "./three/terrain";
@@ -21,22 +21,6 @@ import { HazardFx } from "./three/hazardfx";
 interface Placed {
   mesh: KitMesh;
   defId: string;
-}
-
-/** add a small cyan airlock ring on a building's local door side (it then turns
- *  with the building's rotation, landing on the world door side) */
-function addAirlock(group: THREE.Object3D, def: BuildingDef): void {
-  if (def.door == null) return;
-  const [dx, dy] = SIDE_DELTA[def.door];
-  const half = (def.foot[0] * CELL) / 2;
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.16, 0.045, 8, 16),
-    new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.7, roughness: 0.5 }),
-  );
-  ring.position.set(dx * half, 0.18, dy * half);
-  ring.lookAt(ring.position.x + dx, 0.18, ring.position.z + dy); // torus normal → outward
-  ring.name = "airlock";
-  group.add(ring);
 }
 
 /** prototype status(): the glow that reads a building's health */
@@ -58,6 +42,10 @@ export class ThreeRenderer {
   private buildingsGroup = new THREE.Group();
   private materials = createMaterials();
   private placed = new Map<number, Placed>();
+  // airlocks at corridor↔building junctions, keyed "uid:cx,cy:side"
+  private airlocks = new Map<string, THREE.Mesh>();
+  private airlockGeo = new THREE.TorusGeometry(0.22, 0.05, 8, 16);
+  private airlockMat = new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.7, roughness: 0.5 });
   private bridge: SimBridge;
   private placement: PlacementController;
   private atmosphere: Atmosphere;
@@ -161,7 +149,6 @@ export class ThreeRenderer {
         const mesh = buildKitMesh(def, b.uid, this.materials);
         const c = this.grid.footprintCenter(def, b.gx, b.gy);
         mesh.object.position.copy(c);
-        addAirlock(mesh.object, def);
         this.buildingsGroup.add(mesh.object);
         entry = { mesh, defId: b.defId };
         this.placed.set(b.uid, entry);
@@ -174,8 +161,8 @@ export class ThreeRenderer {
       const fill = b.defId === "battery" ? snap.pools.power.amount / snap.pools.power.capacity : undefined;
       entry.mesh.setStatus({ ...st, fill }, pulse);
 
-      // corridors orient to neighbours: connect to adjacent corridors or to a
-      // door whose exit cell is this corridor ("snap to opening")
+      // corridors orient to neighbours: an arm toward each adjacent corridor or
+      // sealed building, so a run reads as one connected pipe meeting the airlocks
       if (entry.mesh.setNeighbors && DEFS[b.defId]?.conduit) {
         let mask = 0;
         for (let s = 0; s < 4; s++) {
@@ -183,15 +170,15 @@ export class ThreeRenderer {
           const n = ownerOf(b.gx + ox, b.gy + oy);
           if (!n) continue;
           const nd = DEFS[n.defId];
-          if (nd?.conduit) mask |= 1 << s;
-          else if (nd?.door != null) {
-            const dc = doorCellsOf(nd, n);
-            if (dc && dc.exit[0] === b.gx && dc.exit[1] === b.gy) mask |= 1 << s;
-          }
+          if (nd && (nd.conduit || nd.requiresPressure || nd.isHub)) mask |= 1 << s;
         }
         entry.mesh.setNeighbors(mask);
       }
     }
+
+    // airlocks render where a corridor actually meets a sealed building, so they
+    // line up with the corridor arms instead of floating on a fixed door side
+    this.updateAirlocks(snap, ownerOf);
 
     // remove vanished buildings
     for (const [uid, entry] of this.placed) {
@@ -203,6 +190,34 @@ export class ThreeRenderer {
     }
   }
 
+  /** place a lit airlock on every building edge that abuts a corridor */
+  private updateAirlocks(snap: Snapshot, ownerOf: (x: number, y: number) => BuildingState | undefined): void {
+    const needed = new Set<string>();
+    for (const b of snap.buildings) {
+      const d = DEFS[b.defId];
+      if (!d || !(d.requiresPressure || d.isHub)) continue; // only sealed buildings have airlocks
+      for (let dx = 0; dx < d.foot[0]; dx++)
+        for (let dy = 0; dy < d.foot[1]; dy++) {
+          const cx = b.gx + dx, cy = b.gy + dy;
+          for (let s = 0; s < 4; s++) {
+            const [ox, oy] = SIDE_DELTA[s];
+            const n = ownerOf(cx + ox, cy + oy);
+            if (!n || !DEFS[n.defId]?.conduit) continue;
+            const key = `${b.uid}:${cx},${cy}:${s}`;
+            needed.add(key);
+            let m = this.airlocks.get(key);
+            if (!m) { m = new THREE.Mesh(this.airlockGeo, this.airlockMat); this.buildingsGroup.add(m); this.airlocks.set(key, m); }
+            const c = this.grid.cellCenter(cx, cy);
+            m.position.set(c.x + ox * 0.5 * CELL, 0.14, c.z + oy * 0.5 * CELL);
+            m.lookAt(m.position.x + ox, 0.14, m.position.z + oy); // torus normal → toward the corridor
+          }
+        }
+    }
+    for (const [key, m] of this.airlocks) {
+      if (!needed.has(key)) { this.buildingsGroup.remove(m); this.airlocks.delete(key); }
+    }
+  }
+
   dispose(): void {
     this.running = false;
     cancelAnimationFrame(this.raf);
@@ -211,6 +226,9 @@ export class ThreeRenderer {
     this.placement.dispose();
     this.atmosphere.dispose();
     this.hazardFx.dispose();
+    this.airlockGeo.dispose();
+    this.airlockMat.dispose();
+    this.airlocks.clear();
     for (const entry of this.placed.values()) entry.mesh.dispose();
     this.placed.clear();
     this.terrain.dispose();
