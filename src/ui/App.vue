@@ -98,7 +98,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <EndScreen />
+    <EndScreen v-if="!booting" />
 
     <Boot v-if="booting" @done="booting = false" />
   </div>

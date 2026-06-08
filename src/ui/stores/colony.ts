@@ -147,9 +147,11 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   });
 
   // load-on-boot: resume the saved colony if one exists (doc §5). The worker
-  // already came up on a fresh seed; a save just replaces it.
+  // already came up on a fresh seed; a save just replaces it. But don't resume
+  // into an already-finished run — a fresh seed is better than a corpse.
   void loadBest().then((save) => {
-    if (save) b.load(save);
+    if (save && !save.state.outcome) b.load(save);
+    else if (save) { clearLocal(); void b.save().then(persist); } // overwrite the finished save everywhere
   });
 
   // autosave on an interval — Mongo when reachable, localStorage always
