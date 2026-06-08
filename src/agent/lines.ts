@@ -17,6 +17,7 @@ export const SEV: Record<EventType, number> = {
   victory: 6, defeat: 6, // campaign end — the Chronicler speaks, through anything
   hazard_warn: 3, hazard_start: 2, hazard_end: 1,
   strike: 0, building_damaged: 2, building_destroyed: 4,
+  traders_inbound: 3, trade_done: 2, trade_left: 1, // first contact
 };
 
 type Bank = string[] | Record<string, string[]>;
@@ -81,6 +82,19 @@ export const LINES: Partial<Record<EventType | "boot", Bank>> = {
   resupply: [
     "Earth has remembered us. The window is open; I am taking everything it offers.",
     "Supply, from the home that sent you. I am filling the tanks while the window holds.",
+  ],
+  traders_inbound: [
+    "Something is descending that Earth did not send. It is not afraid of us. I am not sure we should be afraid of it.",
+    "A craft, on approach. Not a resupply. Not human. They appear to want to trade. First contact, and I am the one who noticed.",
+    "Visitors. They carry {detail}, and a willingness to barter. I have never met anyone before. I am keeping a record.",
+  ],
+  trade_done: [
+    "The exchange is complete. We gave, they gave. I have logged the first deal this colony ever made with another mind.",
+    "Trade accepted. Strange, to owe something to something not of Earth. I will remember they dealt fairly.",
+  ],
+  trade_left: [
+    "They are leaving. Whether we dealt or declined, they go quietly. I hope they come back. I do not say that about much.",
+    "The visitors lift off. The sky is ours again, and a little emptier than before.",
   ],
 };
 

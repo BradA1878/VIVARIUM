@@ -8,6 +8,7 @@ import { computed } from "vue";
 import type { Resource } from "@shared/types";
 import { useColony } from "@/ui/stores/colony";
 import { RES } from "@/ui/resources";
+import { fmt } from "@/ui/format";
 import ResCell from "./ResCell.vue";
 
 const { snapshot } = useColony();
@@ -15,6 +16,12 @@ const s = computed(() => snapshot.value);
 
 const timerFor = (k: Resource): number | null =>
   k === "power" ? null : s.value!.timers[k] ?? null;
+
+// materials — the build currency. No flow/ETA, so it gets a slimmer cell.
+const mat = computed(() => s.value!.materials);
+const matPct = computed(() =>
+  Math.max(0, Math.min(1, mat.value.amount / mat.value.capacity)),
+);
 </script>
 
 <template>
@@ -27,5 +34,26 @@ const timerFor = (k: Resource): number | null =>
       :net="s.flow[meta.k]"
       :timer="timerFor(meta.k)"
     />
+    <div class="res res-mat">
+      <div class="res-head">
+        <span class="res-label" :style="{ color: '#c8a25f' }">
+          <span class="res-glyph">&#9635;</span>MATERIALS
+        </span>
+      </div>
+      <div class="res-nums">
+        <span class="res-amt" :style="{ color: '#d6c79e' }">{{ fmt(mat.amount) }}</span>
+        <span class="res-cap">/ {{ fmt(mat.capacity) }} mat</span>
+      </div>
+      <div class="res-bar">
+        <div
+          class="res-fill"
+          :style="{
+            width: matPct * 100 + '%',
+            background: '#c8a25f',
+            boxShadow: '0 0 8px #c8a25f66',
+          }"
+        />
+      </div>
+    </div>
   </div>
 </template>

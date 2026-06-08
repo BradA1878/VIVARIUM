@@ -22,6 +22,7 @@ export function inBounds(N: number, x: number, y: number): boolean {
 }
 
 export function canPlace(s: ColonyState, def: BuildingDef, gx: number, gy: number): boolean {
+  if ((def.matCost ?? 0) > s.materials.amount) return false; // can't afford it
   for (const [x, y] of cellsFor(def, gx, gy)) {
     if (!inBounds(s.N, x, y)) return false;
     if (s.grid[idx(s.N, x, y)] !== 0) return false;

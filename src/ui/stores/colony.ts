@@ -204,6 +204,18 @@ const controls = {
   togglePause(): void { if (bridge && snapshot.value) bridge.setPaused(!snapshot.value.paused); },
   setSpeed(n: number): void { bridge?.setPaused(false); bridge?.setSpeed(n); },
   storm(): void { bridge?.forceStorm(); },
+  /** F — possess the colonist nearest the colony, or release if already piloting */
+  possessToggle(): void {
+    const s = snapshot.value;
+    if (!bridge || !s) return;
+    if (s.possessed != null) { bridge.possess(null); return; }
+    bridge.setPaused(false); // piloting runs the clock
+    bridge.possessNearest((s.N - 1) / 2, (s.N - 1) / 2);
+  },
+  /** the player's standing WASD direction for the possessed colonist */
+  moveIntent(dx: number, dy: number): void { bridge?.moveIntent(dx, dy); },
+  /** accept/decline a landed alien trade offer */
+  respondTrade(accept: boolean): void { bridge?.respondTrade(accept); },
   reset(): void {
     bridge?.reset();
     council?.reset();

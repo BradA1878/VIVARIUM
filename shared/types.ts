@@ -34,6 +34,8 @@ export interface BuildingDef {
   priority: number;
   /** solar generation at full sun, before sol/storm multipliers */
   solar?: number;
+  /** materials it costs to place (the gather-to-build economy). 0/undefined = free. */
+  matCost?: number;
   /** capacity this building adds to a pool (batteries, tanks, cisterns) */
   caps?: Partial<Record<Resource, number>>;
   /** colonists this building houses */
@@ -94,6 +96,72 @@ export interface HazardView {
   remaining: number;
 }
 
+// ---- embodied colony: astronauts, deposits, trade ---------------------------
+
+/** a surface resource node the possessed colonist mines */
+export type DepositKind = "ice" | "ore" | "cache";
+
+/** which pool a mined deposit unloads into. ore → the build `materials` pool;
+ *  ice → water, cache → food. */
+export const DEPOSIT_YIELD: Record<DepositKind, Resource | "materials"> = {
+  ice: "water",
+  ore: "materials",
+  cache: "food",
+};
+
+export interface DepositView {
+  id: number;
+  gx: number;
+  gy: number;
+  kind: DepositKind;
+  /** units remaining */
+  amount: number;
+  /** initial units (render scale) */
+  max: number;
+}
+
+/** what a colonist is doing — drives the renderer's pose + the auto-AI */
+export type ColonistAct =
+  | "idle"
+  | "toWork"
+  | "working"
+  | "toHome"
+  | "sheltering"
+  | "piloted"
+  | "mining"
+  | "hauling";
+
+/** a colonist as the renderer/HUD sees it. Continuous grid coords; the renderer
+ *  interpolates between snapshots. */
+export interface ColonistView {
+  id: number;
+  x: number;
+  y: number;
+  /** facing angle in radians (world XZ) */
+  facing: number;
+  state: ColonistAct;
+  carryKind: DepositKind | null;
+  carryAmt: number;
+  possessed: boolean;
+}
+
+export type TradePhase = "inbound" | "landed" | "leaving";
+
+/** a live alien trade offer (modeled on the Earth-resupply window) */
+export interface TradeView {
+  id: number;
+  phase: TradePhase;
+  /** what the traders GIVE you */
+  give: { res: Resource | "materials"; amount: number };
+  /** what they TAKE in return */
+  take: { res: Resource | "materials"; amount: number };
+  /** seconds left to decide while landed (0 in other phases) */
+  deadline: number;
+  /** landing cell */
+  gx: number;
+  gy: number;
+}
+
 /** The read-only view of the colony the UI/agent layer consume each frame.
  *  Serializable; carries no functions. */
 export interface Snapshot {
@@ -103,6 +171,16 @@ export interface Snapshot {
   pools: Record<Resource, Pool>;
   /** net per-second flow for each resource (for the HUD readouts) */
   flow: Record<Resource, number>;
+  /** the build currency, gathered as ore (separate from the survival pools) */
+  materials: Pool;
+  /** colonists on the surface (count == population) */
+  colonists: ColonistView[];
+  /** surface resource deposits to mine */
+  deposits: DepositView[];
+  /** the id of the colonist the player is piloting, or null */
+  possessed: number | null;
+  /** a live alien trade offer, or null */
+  trade: TradeView | null;
   population: number;
   housing: number;
   labor: number;
@@ -172,6 +250,10 @@ export type EventType =
   | "casualty"
   | "arrival"
   | "resupply"
+  /** alien traders (doc: first contact) */
+  | "traders_inbound"
+  | "trade_done"
+  | "trade_left"
   /** campaign end states (doc §2.5) */
   | "victory"
   | "defeat"

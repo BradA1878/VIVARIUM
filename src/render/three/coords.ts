@@ -20,6 +20,12 @@ export class GridSpace {
     return new THREE.Vector3(gx * CELL - this.offset(), 0, gy * CELL - this.offset());
   }
 
+  /** world point for fractional (continuous) grid coordinates — colonists,
+   *  trader ships, and anything that moves smoothly between cells live here. */
+  cellPoint(x: number, y: number): THREE.Vector3 {
+    return new THREE.Vector3(x * CELL - this.offset(), 0, y * CELL - this.offset());
+  }
+
   /** world center of a building's footprint (its lower-left cell is gx,gy) */
   footprintCenter(def: BuildingDef, gx: number, gy: number): THREE.Vector3 {
     const cx = gx + (def.foot[0] - 1) / 2;

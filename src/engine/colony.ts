@@ -21,16 +21,26 @@ import { spawnHazard, hazardViews, SCHED_FIRST } from "./hazards";
 import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData } from "./state";
 import { emptyBuilding } from "./state";
+import { reconcileColonists, colonistViews, depositViews, clampMaterials } from "./colonists";
+import { seedDeposits } from "./deposits";
+import { respondTrade as applyRespondTrade, tradeView } from "./trade";
+import {
+  START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN,
+} from "./tuning";
 
 export class Colony {
   private s: ColonyState;
   private rng: RNG;
+  /** a separate stream for the deposit field + trade windows, so the embodied
+   *  layer never perturbs the main hazard/arrival rng (keeps determinism tests). */
+  private envRng: RNG;
   private seed: number;
   private events: ColonyEvent[] = [];
 
   constructor(seed: number = DEFAULT_SEED) {
     this.seed = seed >>> 0;
     this.rng = new RNG(this.seed);
+    this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
     this.s = freshState();
     this.seedColony();
     this.s.started = true;
@@ -43,7 +53,7 @@ export class Colony {
 
   /** advance the sim by dt seconds (caller handles pause/speed) */
   tick(dt: number): void {
-    runTick(this.s, dt, this.rng, this.emit);
+    runTick(this.s, dt, this.rng, this.envRng, this.emit);
   }
 
   /** pull and clear the events emitted since the last drain */
@@ -56,6 +66,7 @@ export class Colony {
 
   reset(): void {
     this.rng = new RNG(this.seed);
+    this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
     this.s = freshState();
     this.events = [];
     this.seedColony();
@@ -74,6 +85,7 @@ export class Colony {
     const b = emptyBuilding(this.s.uidCounter++, defId, gx, gy, rot);
     this.s.buildings.push(b);
     for (const [x, y] of cellsFor(def, gx, gy)) this.s.grid[idx(this.s.N, x, y)] = b.uid;
+    this.s.materials.amount = Math.max(0, this.s.materials.amount - (def.matCost ?? 0)); // pay for it
     this.recomputeCaps();
     this.emit({ type: "build", defId, name: def.name });
     if (def.isHub) this.emit({ type: "hub_online" });
@@ -168,11 +180,28 @@ export class Colony {
   /** hand hazard control to an external Director (engine scheduler stands down) */
   setDirector(on: boolean): void { this.s.directorControlled = on; }
 
+  // ---- embodied control (the player possesses one colonist) -----------------
+  /** possess a colonist by id (null releases). Resets any standing move intent. */
+  possess(id: number | null): void {
+    if (id == null) { this.s.possessed = null; this.s.moveIntent = { dx: 0, dy: 0 }; return; }
+    if (this.s.colonists.some((c) => c.id === id)) {
+      this.s.possessed = id;
+      this.s.moveIntent = { dx: 0, dy: 0 };
+    }
+  }
+  /** the player's standing WASD direction for the possessed colonist */
+  setMoveIntent(dx: number, dy: number): void { this.s.moveIntent = { dx, dy }; }
+  /** accept/decline a landed alien trade offer */
+  respondTrade(accept: boolean): void { applyRespondTrade(this.s, accept, this.emit); }
+
   // ---- capacities -----------------------------------------------------------
   private recomputeCaps(): void { recomputeCaps(this.s); }
 
   // ---- starter colony so the sim is alive on load (doc seed) ----------------
   private seedColony(): void {
+    // the starter buildings are a gift — placement charges materials, so float
+    // the budget high while seeding, then set the real starting stock after.
+    this.s.materials.amount = 9999;
     // doors face the corridor network so the seed reads as connected (rot aims
     // the door: hub south, hab(3,6) east, hab(6,6) west, electrolysis north)
     this.place("hub", 4, 4, 0);
@@ -186,6 +215,10 @@ export class Colony {
     this.place("solar", 7, 6);
     this.place("extractor", 8, 8);
     this.s.population = 4;
+    this.s.materials.amount = START_MATERIALS; // the real starting stock
+    clampMaterials(this.s);
+    reconcileColonists(this.s); // four astronauts, at the hub
+    seedDeposits(this.s, this.envRng); // scatter the resource field
     this.recomputeCaps();
     // seeding emits build events; the colony isn't "speaking" yet, so clear them
     this.events = [];
@@ -204,6 +237,11 @@ export class Colony {
         food: { ...s.pools.food },
       },
       flow: { ...s.flow },
+      materials: { ...s.materials },
+      colonists: colonistViews(s),
+      deposits: depositViews(s),
+      possessed: s.possessed,
+      trade: tradeView(s),
       population: s.population,
       housing: s.housing,
       labor: s.labor,
@@ -240,6 +278,7 @@ export class Colony {
       version: 1,
       seed: this.seed,
       rngState: this.rng.getState(),
+      envRngState: this.envRng.getState(),
       // structuredClone-friendly deep copy; grid is a typed array
       state: {
         ...this.s,
@@ -252,6 +291,11 @@ export class Colony {
           food: { ...this.s.pools.food },
         },
         flow: { ...this.s.flow },
+        materials: { ...this.s.materials },
+        colonists: this.s.colonists.map((c) => ({ ...c })),
+        deposits: this.s.deposits.map((d) => ({ ...d })),
+        moveIntent: { ...this.s.moveIntent },
+        trade: this.s.trade ? { ...this.s.trade, give: { ...this.s.trade.give }, take: { ...this.s.trade.take } } : null,
         timers: { ...this.s.timers },
         hazards: this.s.hazards.map((h) => ({ ...h })),
       },
@@ -261,6 +305,7 @@ export class Colony {
   static load(data: SaveData): Colony {
     const c = new Colony(data.seed);
     c.rng.setState(data.rngState);
+    if (data.envRngState !== undefined) c.envRng.setState(data.envRngState);
     const st = data.state;
     c.s = {
       ...st,
@@ -273,6 +318,11 @@ export class Colony {
         food: { ...st.pools.food },
       },
       flow: { ...st.flow },
+      materials: st.materials ? { ...st.materials } : { amount: START_MATERIALS, capacity: MATERIALS_CAP },
+      colonists: (st.colonists ?? []).map((c2) => ({ ...c2 })),
+      deposits: (st.deposits ?? []).map((d) => ({ ...d })),
+      moveIntent: st.moveIntent ? { ...st.moveIntent } : { dx: 0, dy: 0 },
+      trade: st.trade ? { ...st.trade, give: { ...st.trade.give }, take: { ...st.trade.take } } : null,
       timers: { ...st.timers },
       hazards: (st.hazards ?? []).map((h) => ({ ...h })),
     };
@@ -299,6 +349,17 @@ function freshState(): ColonyState {
       food: { amount: START_AMOUNT.food, capacity: BASE_CAP.food },
     },
     flow: { power: 0, water: 0, oxygen: 0, food: 0 },
+    materials: { amount: START_MATERIALS, capacity: MATERIALS_CAP },
+    colonists: [],
+    deposits: [],
+    possessed: null,
+    moveIntent: { dx: 0, dy: 0 },
+    depositRespawn: DEPOSIT_RESPAWN,
+    trade: null,
+    nextTrade: TRADE_FIRST,
+    colonistCounter: 1,
+    depositCounter: 1,
+    tradeCounter: 1,
     population: 0,
     housing: 0,
     labor: 0,

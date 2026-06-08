@@ -84,3 +84,47 @@ export const BROWNOUT_LOW = 2;
 export const BROWNOUT_RECOVER_FRAC = 0.15;
 
 export const DEFAULT_SEED = 0x5eed1234;
+
+/* ----------------------------------------------------------------------------
+   Embodied colony — astronauts, gathering, the materials economy, traders.
+   Movement is in grid cells; speeds are cells/sec. All deterministic: the
+   possessed colonist integrates the player's moveIntent at PILOT_SPEED, the
+   rest follow a tod/hazard state machine at WALK_SPEED. No Math.random.
+   ---------------------------------------------------------------------------- */
+export const WALK_SPEED = 1.1;   // auto-colonists
+export const PILOT_SPEED = 2.6;  // the colonist you possess
+export const ARRIVE_EPS = 0.14;  // "reached the target" distance
+export const COLONIST_Y = 0;     // ground plane (render uses its own height)
+
+/** gathering */
+export const CARRY_CAP = 20;     // units a colonist can haul
+export const MINE_RATE = 9;      // units/sec mined while standing on a deposit
+export const UNLOAD_RATE = 18;   // units/sec dropped into the pools at base
+export const MINE_RADIUS = 0.75; // cells: how close to a deposit to mine it
+export const BASE_RADIUS = 2.4;  // cells from the hub center to auto-unload
+
+/** the seeded deposit field (uses a SEPARATE env-rng so the main hazard/arrival
+ *  stream is byte-for-byte unchanged) */
+export const DEPOSIT_COUNT = 7;       // deposits scattered at colony start
+export const DEPOSIT_MIN = 45;        // amount = MIN + rand*SPAN
+export const DEPOSIT_SPAN = 70;
+export const DEPOSIT_EDGE = 1;        // keep deposits this many cells off the border
+export const DEPOSIT_CLEAR = 3;       // min cells from the colony center (4,4-ish)
+export const DEPOSIT_RESPAWN = 85;    // seconds between new deposits surfacing
+export const DEPOSIT_FIELD_MAX = 11;  // cap on concurrent deposits
+
+/** materials — the build currency */
+export const START_MATERIALS = 90;
+export const MATERIALS_CAP = 400;
+
+/** alien traders — a window like resupply, but you accept/decline a swap */
+export const TRADE_FIRST = 70;     // seconds to the first traders
+export const TRADE_GAP = 165;      // seconds between trade windows
+export const TRADE_INBOUND = 8;    // telegraph seconds before the ship lands
+export const TRADE_DECIDE = 42;    // seconds the offer stays open while landed
+export const TRADE_LEAVE = 6;      // lift-off seconds after you resolve it
+/** offer sizing: they TAKE take.amount of one resource, GIVE give.amount of another */
+export const TRADE_TAKE_MIN = 18;
+export const TRADE_TAKE_SPAN = 22;
+export const TRADE_GIVE_MIN = 26;
+export const TRADE_GIVE_SPAN = 30;

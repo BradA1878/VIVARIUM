@@ -5,14 +5,19 @@
    showing the building's recipe (produces / consumes / caps / staffing /
    pressure). Ported from the React prototype's Palette + showTip/hideTip.
    ============================================================================ */
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { BuildingDef, Resource } from "@shared/types";
 import { DEFS, ORDER } from "@/engine";
 import { useColony } from "@/ui/stores/colony";
 
-const { tool, demolish, pick, toggleDemolish } = useColony();
+const { snapshot, tool, demolish, pick, toggleDemolish } = useColony();
 
 const defs: BuildingDef[] = ORDER.map((id) => DEFS[id]);
+
+/** materials on hand right now (0 when no snapshot yet) */
+const onHand = computed(() => snapshot.value?.materials.amount ?? 0);
+const costOf = (d: BuildingDef): number => d.matCost ?? 0;
+const affordable = (d: BuildingDef): boolean => onHand.value >= costOf(d);
 
 const hovered = ref<BuildingDef | null>(null);
 const tipPos = ref<{ left: number; bottom: number }>({ left: 0, bottom: 0 });
@@ -48,13 +53,15 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
       <button
         v-for="d in defs"
         :key="d.id"
-        :class="['pal-btn', { sel: tool === d.id && !demolish }]"
+        :class="['pal-btn', { sel: tool === d.id && !demolish, poor: !affordable(d) }]"
+        :disabled="!affordable(d)"
         @click="pick(d.id)"
         @mouseenter="showTip($event, d)"
         @mouseleave="hideTip"
       >
         <span class="pal-glyph">{{ d.glyph }}</span>
         <span class="pal-name">{{ d.name }}</span>
+        <span v-if="costOf(d) > 0" class="pal-cost">&#9635; {{ costOf(d) }}</span>
       </button>
       <button
         :class="['pal-btn', 'demo', { sel: demolish }]"
@@ -82,7 +89,35 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
         <span v-if="hasEntries(hovered.caps)" class="tip-cap">{{ caps(hovered.caps) }}</span>
         <span v-if="hovered.staffing" class="tip-staff">{{ hovered.staffing }} crew</span>
         <span v-if="hovered.requiresPressure" class="tip-press">sealed</span>
+        <span v-if="costOf(hovered) > 0" class="tip-cost">&#9635; {{ costOf(hovered) }} materials</span>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.pal-cost {
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  color: #c8a25f;
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
+/* unaffordable: greyed out, not interactive */
+.pal-btn.poor {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+  cursor: not-allowed;
+}
+.pal-btn.poor:hover {
+  border-color: var(--hair2);
+  background: rgba(255, 255, 255, 0.012);
+}
+.pal-btn.poor .pal-cost { color: var(--crit); }
+.tip-cost {
+  color: #c8a25f;
+  border: 1px solid rgba(200, 162, 95, 0.3);
+  border-radius: 2px;
+  padding: 0 4px;
+}
+</style>

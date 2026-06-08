@@ -28,6 +28,9 @@ export class SimHost {
       case "route": this.colony.route(cmd.fromUid, cmd.toUid); break;
       case "triggerHazard": this.colony.triggerHazard(cmd.kind, cmd.intensity); break;
       case "setDirector": this.colony.setDirector(cmd.value); break;
+      case "possess": this.colony.possess(cmd.id); break;
+      case "moveIntent": this.colony.setMoveIntent(cmd.dx, cmd.dy); break;
+      case "respondTrade": this.colony.respondTrade(cmd.accept); break;
       case "setPaused": this.colony.setPaused(cmd.value); break;
       case "setSpeed": this.colony.setSpeed(cmd.value); break;
       case "forceStorm": this.colony.forceStorm(); break;

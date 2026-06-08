@@ -12,6 +12,7 @@ export interface SaveJSON {
   version: 1;
   seed: number;
   rngState: number;
+  envRngState: number;
   state: Omit<SaveData["state"], "grid"> & { grid: number[] };
 }
 
@@ -21,6 +22,7 @@ export function toJSON(save: SaveData): SaveJSON {
     version: save.version,
     seed: save.seed,
     rngState: save.rngState,
+    envRngState: save.envRngState,
     state: { ...save.state, grid: Array.from(save.state.grid) },
   };
 }

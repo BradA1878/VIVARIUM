@@ -17,11 +17,27 @@ import { buildKitMesh, type KitMesh } from "./three/kit";
 import { PlacementController, type HoverInfo, type SelectInfo } from "./three/placement";
 import { Atmosphere } from "./three/atmosphere";
 import { HazardFx } from "./three/hazardfx";
+import { buildAstronaut, type AstronautMesh } from "./three/kit/astronaut";
+import { buildDeposit, type DepositMesh } from "./three/kit/deposit";
+import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
 
 interface Placed {
   mesh: KitMesh;
   defId: string;
 }
+
+/** a colonist's render record: its mesh plus the interpolated transform we lerp
+ *  toward the snapshot each frame (snapshots arrive ~12fps, we render ~60fps). */
+interface ColonistRec {
+  mesh: AstronautMesh;
+  /** current (smoothed) world position */
+  pos: THREE.Vector3;
+  /** current (smoothed) facing angle */
+  facing: number;
+}
+
+/** colonist states that should show the walking bob */
+const MOVING_STATES = new Set(["toWork", "toHome", "mining", "hauling", "piloted"]);
 
 /** a visible door on a building's front (its local def.door side), as a child of
  *  the mesh group so it turns with the building's rotation — this is the cell the
@@ -80,6 +96,17 @@ export class ThreeRenderer {
   private running = false;
   private lastFrame = 0;
 
+  // embodied colony: astronauts, deposits, the trader saucer
+  private colonists = new Map<number, ColonistRec>();
+  private colonistsGroup = new THREE.Group();
+  private deposits = new Map<number, DepositMesh>();
+  private depositsGroup = new THREE.Group();
+  private alienShip: AlienShipMesh | null = null;
+
+  // follow-cam: lerped focus + ortho extent driven toward the possessed target
+  private camFocus = new THREE.Vector3(0, 0, 0);
+  private camView = 9.5;
+
   constructor(canvas: HTMLCanvasElement, bridge: SimBridge, gridN: number) {
     this.bridge = bridge;
     this.scene = new SceneManager(canvas);
@@ -87,6 +114,8 @@ export class ThreeRenderer {
     this.terrain = new Terrain(this.grid);
     this.scene.scene.add(this.terrain.group);
     this.scene.scene.add(this.buildingsGroup);
+    this.scene.scene.add(this.depositsGroup);
+    this.scene.scene.add(this.colonistsGroup);
     this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
     this.scene.scene.add(this.placement.group);
     this.atmosphere = new Atmosphere(this.grid);
@@ -139,6 +168,10 @@ export class ThreeRenderer {
     }
     this.scene.update(snap.tod, snap.weather === "dust");
     this.reconcile(snap);
+    this.reconcileColonists(snap, dt, now);
+    this.reconcileDeposits(snap, now);
+    this.reconcileTrade(snap, dt, now);
+    this.updateCamera(snap, dt);
     this.placement.update();
     this.atmosphere.update(dt, snap.weather === "dust");
     this.hazardFx.update(dt);
@@ -244,6 +277,117 @@ export class ThreeRenderer {
     }
   }
 
+  /** astronauts: add/remove per colonist id, lerp position + facing toward the
+   *  snapshot (smooth between ~12fps snapshots), bob while moving, and drive the
+   *  possessed ring + carry cube. facing = atan2(dx,dy) in grid space maps to
+   *  group.rotation.y directly (grid +x→world +x, grid +y→world +z). */
+  private reconcileColonists(snap: Snapshot, dt: number, now: number): void {
+    const seen = new Set<number>();
+    const posLerp = 1 - Math.exp(-12 * dt); // frame-rate independent smoothing
+    const pulse = 0.5 + 0.5 * Math.sin(now / 400);
+
+    for (const c of snap.colonists) {
+      seen.add(c.id);
+      let rec = this.colonists.get(c.id);
+      const target = this.grid.cellPoint(c.x, c.y);
+      if (!rec) {
+        const mesh = buildAstronaut();
+        this.colonistsGroup.add(mesh.object);
+        rec = { mesh, pos: target.clone(), facing: c.facing };
+        this.colonists.set(c.id, rec);
+      }
+      // interpolate world position toward the snapshot
+      rec.pos.lerp(target, posLerp);
+      rec.mesh.object.position.copy(rec.pos);
+
+      // smoothly turn toward facing (shortest angular path)
+      let d = c.facing - rec.facing;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      rec.facing += d * posLerp;
+      rec.mesh.object.rotation.y = rec.facing;
+
+      // walking bob on the inner body (only while moving/working on the surface)
+      const moving = MOVING_STATES.has(c.state);
+      rec.mesh.body.position.y = moving ? Math.abs(Math.sin(now / 130 + c.id)) * 0.05 : 0;
+
+      rec.mesh.setState(c.id === snap.possessed, c.carryKind, pulse);
+    }
+
+    for (const [id, rec] of this.colonists) {
+      if (!seen.has(id)) {
+        this.colonistsGroup.remove(rec.mesh.object);
+        rec.mesh.dispose();
+        this.colonists.delete(id);
+      }
+    }
+  }
+
+  /** deposits: a mesh per surface node, scaled by amount/max, removed on vanish */
+  private reconcileDeposits(snap: Snapshot, now: number): void {
+    const seen = new Set<number>();
+    const pulse = 0.5 + 0.5 * Math.sin(now / 600);
+    for (const d of snap.deposits) {
+      seen.add(d.id);
+      let mesh = this.deposits.get(d.id);
+      if (!mesh) {
+        mesh = buildDeposit(d.kind, d.id * 2654435761);
+        const c = this.grid.cellCenter(d.gx, d.gy);
+        mesh.object.position.copy(c);
+        this.depositsGroup.add(mesh.object);
+        this.deposits.set(d.id, mesh);
+      }
+      mesh.setAmount(d.max > 0 ? d.amount / d.max : 0);
+      mesh.setPulse(pulse);
+    }
+    for (const [id, mesh] of this.deposits) {
+      if (!seen.has(id)) {
+        this.depositsGroup.remove(mesh.object);
+        mesh.dispose();
+        this.deposits.delete(id);
+      }
+    }
+  }
+
+  /** the trader saucer: create on first trade, animate by phase, dispose on null */
+  private reconcileTrade(snap: Snapshot, dt: number, now: number): void {
+    const trade = snap.trade;
+    if (!trade) {
+      if (this.alienShip) {
+        this.scene.scene.remove(this.alienShip.object);
+        this.alienShip.dispose();
+        this.alienShip = null;
+      }
+      return;
+    }
+    if (!this.alienShip) {
+      this.alienShip = buildAlienShip();
+      this.scene.scene.add(this.alienShip.object);
+    }
+    const c = this.grid.cellCenter(trade.gx, trade.gy);
+    this.alienShip.object.position.x = c.x;
+    this.alienShip.object.position.z = c.z;
+    this.alienShip.update(trade.phase, dt, now);
+  }
+
+  /** follow-cam: lerp focus + ortho extent toward the possessed colonist (zoomed
+   *  in) or back to the overview (origin, wide) when nothing is piloted. */
+  private updateCamera(snap: Snapshot, dt: number): void {
+    let targetFocus = new THREE.Vector3(0, 0, 0);
+    let targetView = 9.5;
+    if (snap.possessed != null) {
+      const rec = this.colonists.get(snap.possessed);
+      if (rec) {
+        targetFocus = rec.pos.clone();
+        targetView = 5.5;
+      }
+    }
+    const k = 1 - Math.exp(-6 * dt);
+    this.camFocus.lerp(targetFocus, k);
+    this.camView += (targetView - this.camView) * k;
+    this.scene.setView(this.camFocus, this.camView);
+  }
+
   dispose(): void {
     this.running = false;
     cancelAnimationFrame(this.raf);
@@ -257,6 +401,11 @@ export class ThreeRenderer {
     this.airlocks.clear();
     for (const entry of this.placed.values()) entry.mesh.dispose();
     this.placed.clear();
+    for (const rec of this.colonists.values()) rec.mesh.dispose();
+    this.colonists.clear();
+    for (const mesh of this.deposits.values()) mesh.dispose();
+    this.deposits.clear();
+    if (this.alienShip) { this.alienShip.dispose(); this.alienShip = null; }
     this.terrain.dispose();
     this.scene.dispose();
   }

@@ -15,6 +15,9 @@ export type Command =
   | { type: "route"; fromUid: number; toUid: number }
   | { type: "triggerHazard"; kind: HazardKind; intensity?: number }
   | { type: "setDirector"; value: boolean }
+  | { type: "possess"; id: number | null }
+  | { type: "moveIntent"; dx: number; dy: number }
+  | { type: "respondTrade"; accept: boolean }
   | { type: "setPaused"; value: boolean }
   | { type: "setSpeed"; value: number }
   | { type: "forceStorm" }

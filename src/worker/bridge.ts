@@ -75,6 +75,23 @@ export class SimBridge {
   route(fromUid: number, toUid: number): void { this.send({ type: "route", fromUid, toUid }); }
   triggerHazard(kind: HazardKind, intensity?: number): void { this.send({ type: "triggerHazard", kind, intensity }); }
   setDirector(value: boolean): void { this.send({ type: "setDirector", value }); }
+  /** possess a colonist by id (null releases) */
+  possess(id: number | null): void { this.send({ type: "possess", id }); }
+  /** the player's standing WASD direction for the possessed colonist */
+  moveIntent(dx: number, dy: number): void { this.send({ type: "moveIntent", dx, dy }); }
+  /** accept/decline the landed alien trade offer */
+  respondTrade(accept: boolean): void { this.send({ type: "respondTrade", accept }); }
+  /** possess the colonist nearest a grid point (e.g. the camera target); returns its id */
+  possessNearest(gx: number, gy: number): number | null {
+    if (!this.latest || !this.latest.colonists.length) return null;
+    let best = this.latest.colonists[0], bestD = Infinity;
+    for (const c of this.latest.colonists) {
+      const d = (c.x - gx) ** 2 + (c.y - gy) ** 2;
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    this.possess(best.id);
+    return best.id;
+  }
   setPaused(value: boolean): void { this.send({ type: "setPaused", value }); }
   setSpeed(value: number): void { this.send({ type: "setSpeed", value }); }
   forceStorm(): void { this.send({ type: "forceStorm" }); }

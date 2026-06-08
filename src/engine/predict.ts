@@ -24,6 +24,7 @@ export function canPlacePredict(
 ): boolean {
   const def = DEFS[defId];
   if (!def) return false;
+  if ((def.matCost ?? 0) > snap.materials.amount) return false; // can't afford it
   const o = occ ?? occupancy(snap);
   for (const [x, y] of cellsFor(def, gx, gy)) {
     if (x < 0 || y < 0 || x >= snap.N || y >= snap.N) return false;

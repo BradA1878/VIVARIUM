@@ -4,7 +4,10 @@
    extra bookkeeping (storm schedule, arrival timers, brownout latch, uid
    counter) the tick needs but the UI doesn't.
    ============================================================================ */
-import type { BuildingState, HazardKind, HazardPhase, Outcome, Pool, Resource, Side, Weather } from "@shared/types";
+import type {
+  BuildingState, ColonistAct, DepositKind, HazardKind, HazardPhase,
+  Outcome, Pool, Resource, Side, TradePhase, Weather,
+} from "@shared/types";
 
 /** a live hazard with the bookkeeping the tick needs (the HUD sees HazardView) */
 export interface HazardInstance {
@@ -19,6 +22,44 @@ export interface HazardInstance {
   cadence: number;
 }
 
+/** a colonist on the surface (the renderer sees ColonistView). Continuous coords;
+ *  movement is deterministic — possessed integrates moveIntent, the rest follow AI. */
+export interface ColonistInstance {
+  id: number;
+  x: number;
+  y: number;
+  facing: number;
+  state: ColonistAct;
+  carryKind: DepositKind | null;
+  carryAmt: number;
+  /** building uid this colonist is assigned to staff, or null */
+  workUid: number | null;
+  /** hab uid this colonist shelters in, or null */
+  homeUid: number | null;
+}
+
+/** a surface resource node */
+export interface DepositInstance {
+  id: number;
+  gx: number;
+  gy: number;
+  kind: DepositKind;
+  amount: number;
+  max: number;
+}
+
+/** a live alien trade offer */
+export interface TradeInstance {
+  id: number;
+  phase: TradePhase;
+  give: { res: Resource | "materials"; amount: number };
+  take: { res: Resource | "materials"; amount: number };
+  /** seconds left in the current phase */
+  tLeft: number;
+  gx: number;
+  gy: number;
+}
+
 export interface ColonyState {
   N: number;
   /** N*N occupancy grid; cell = building uid, 0 = empty (typed array, doc §1) */
@@ -26,6 +67,26 @@ export interface ColonyState {
   buildings: BuildingState[];
   pools: Record<Resource, Pool>;
   flow: Record<Resource, number>;
+  /** the build currency (gathered as ore), separate from the survival pools */
+  materials: Pool;
+
+  // ---- embodied colony ----
+  colonists: ColonistInstance[];
+  deposits: DepositInstance[];
+  /** id of the possessed colonist, or null */
+  possessed: number | null;
+  /** the player's standing WASD direction for the possessed colonist (normalized) */
+  moveIntent: { dx: number; dy: number };
+  /** seconds until the next deposit surfaces */
+  depositRespawn: number;
+  /** a live alien trade offer, or null */
+  trade: TradeInstance | null;
+  /** seconds to the next trade window */
+  nextTrade: number;
+  /** monotonic id counters */
+  colonistCounter: number;
+  depositCounter: number;
+  tradeCounter: number;
 
   population: number;
   housing: number;
@@ -81,7 +142,16 @@ export interface SaveData {
   version: 1;
   seed: number;
   rngState: number;
+  /** the separate env-rng (deposits + trades) so resume stays deterministic */
+  envRngState: number;
   state: ColonyState;
+}
+
+export function emptyColonist(id: number, x: number, y: number): ColonistInstance {
+  return {
+    id, x, y, facing: 0, state: "idle",
+    carryKind: null, carryAmt: 0, workUid: null, homeUid: null,
+  };
 }
 
 export function emptyBuilding(

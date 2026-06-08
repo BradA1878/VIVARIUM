@@ -18,6 +18,9 @@ import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
 import { recomputeConnectivity } from "./connectivity";
 import { updateHazards, hazardMods, buildingFunctional, type HazardMods } from "./hazards";
+import { stepColonists } from "./colonists";
+import { respawnDeposits } from "./deposits";
+import { updateTrade } from "./trade";
 import type { RNG } from "./rng";
 
 /** event emitter — the colony stamps t/sol/tod before recording */
@@ -51,7 +54,7 @@ export function solarOutput(s: ColonyState): number {
   return Math.max(0, day);
 }
 
-export function tick(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
+export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Emit): void {
   s.t += dt;
 
   // 1. Environment / sol clock --------------------------------------------------
@@ -209,6 +212,13 @@ export function tick(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
   }
 
   s.flow = net;
+
+  // 7b. Embodied colony — surface life on top of the resolved sim state.
+  // Colonists reflect staffing/population (set above); the env-rng drives the
+  // deposit field + trade window without perturbing the main stream.
+  respawnDeposits(s, dt, envRng);
+  updateTrade(s, dt, envRng, emit);
+  stepColonists(s, dt);
 
   // 8. Campaign — the launch-window arc (doc §2.5) -----------------------------
   if (s.outcome === null) {

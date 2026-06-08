@@ -36,6 +36,9 @@ export class SceneManager {
   private ambientLight: THREE.AmbientLight;
   private hemi: THREE.HemisphereLight;
   private viewSize = 9.5;
+  /** the iso vantage direction: camera sits at focus + this offset (doc §4.6) */
+  private readonly isoOffset = new THREE.Vector3(28, 26, 28);
+  private focus = new THREE.Vector3(0, 0, 0);
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -45,7 +48,7 @@ export class SceneManager {
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
     // classic dimetric/iso vantage: look down the (1, 0.85, 1) diagonal
-    this.camera.position.set(28, 26, 28);
+    this.camera.position.copy(this.isoOffset);
     this.camera.lookAt(0, 0, 0);
 
     this.scene.fog = new THREE.Fog(0x0b0e12, 38, 86);
@@ -107,6 +110,26 @@ export class SceneManager {
     this.ambientLight.intensity = 0.18 + amb * 0.5;
     this.ambientLight.color.copy(lerpColor([30, 28, 44], [120, 120, 150], amb));
     this.hemi.intensity = 0.2 + amb * 0.45;
+  }
+
+  /** point the iso camera at `focus` (world space) with the given ortho extent.
+   *  Keeps the fixed iso direction — only the focus point and zoom change. The
+   *  renderer lerps focus + viewSize each frame and calls this for a follow-cam.
+   *  resize() reads the stored viewSize, so aspect stays correct. */
+  setView(focus: THREE.Vector3, viewSize: number): void {
+    this.focus.copy(focus);
+    this.viewSize = viewSize;
+    this.camera.position.copy(focus).add(this.isoOffset);
+    this.camera.lookAt(focus);
+    const canvas = this.renderer.domElement;
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+    const aspect = w / h;
+    this.camera.left = -viewSize * aspect;
+    this.camera.right = viewSize * aspect;
+    this.camera.top = viewSize;
+    this.camera.bottom = -viewSize;
+    this.camera.updateProjectionMatrix();
   }
 
   render(): void {
