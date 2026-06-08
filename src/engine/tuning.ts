@@ -72,7 +72,9 @@ export const RESUPPLY_AMOUNT: Record<Resource, number> = {
 
 /** Campaign arc — the launch-window deadline (doc §2.5). Reach self-sufficiency
  *  before Earth's window closes, or the colony is stranded. */
-export const DEADLINE_SOL = 12; // the launch window closes at the start of this sol
+export const DEADLINE_SOL = 22; // the launch window closes at the start of this sol
+// (widened from 12 once the explore/gather/trade layer landed — a run needs room
+// to go mining and deal with the traders, not just race survival)
 export const TARGET_POP = 8; // colonists required to count as a real settlement
 /** seconds of sustained non-negative net on all life support (excluding resupply)
  *  with the target population, to be judged self-sufficient */
@@ -96,18 +98,18 @@ export const PILOT_SPEED = 2.6;  // the colonist you possess
 export const ARRIVE_EPS = 0.14;  // "reached the target" distance
 export const COLONIST_Y = 0;     // ground plane (render uses its own height)
 
-/** gathering */
+/** gathering — tuned a touch generous so a few minutes out funds an upgrade */
 export const CARRY_CAP = 20;     // units a colonist can haul
-export const MINE_RATE = 9;      // units/sec mined while standing on a deposit
-export const UNLOAD_RATE = 18;   // units/sec dropped into the pools at base
+export const MINE_RATE = 12;     // units/sec mined while standing on a deposit (+33%)
+export const UNLOAD_RATE = 24;   // units/sec dropped into the pools at base
 export const MINE_RADIUS = 0.75; // cells: how close to a deposit to mine it
 export const BASE_RADIUS = 2.4;  // cells from the hub center to auto-unload
 
 /** the seeded deposit field (uses a SEPARATE env-rng so the main hazard/arrival
  *  stream is byte-for-byte unchanged) */
-export const DEPOSIT_COUNT = 7;       // deposits scattered at colony start
-export const DEPOSIT_MIN = 45;        // amount = MIN + rand*SPAN
-export const DEPOSIT_SPAN = 70;
+export const DEPOSIT_COUNT = 8;       // deposits scattered at colony start
+export const DEPOSIT_MIN = 55;        // amount = MIN + rand*SPAN (a little richer)
+export const DEPOSIT_SPAN = 85;
 export const DEPOSIT_EDGE = 1;        // keep deposits this many cells off the border
 export const DEPOSIT_CLEAR = 3;       // min cells from the colony center (4,4-ish)
 export const DEPOSIT_RESPAWN = 85;    // seconds between new deposits surfacing
@@ -130,5 +132,5 @@ export const TRADE_GIVE_MIN = 26;
 export const TRADE_GIVE_SPAN = 30;
 /** some offers hand over permanent alien tech instead of a resource */
 export const TRADE_TECH_CHANCE = 0.4;   // when an un-acquired tech exists
-export const TRADE_TECH_TAKE_MIN = 55;  // the (steeper) price of alien tech
-export const TRADE_TECH_TAKE_SPAN = 45;
+export const TRADE_TECH_TAKE_MIN = 40;  // price of alien tech, in materials (40-70)
+export const TRADE_TECH_TAKE_SPAN = 30;
