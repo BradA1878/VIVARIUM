@@ -35,11 +35,14 @@ const storming = computed(() => snapshot.value?.weather === "dust");
 const flaring = computed(() => snapshot.value?.hazards.some((h) => h.kind === "flare" && h.phase === "active") ?? false);
 
 // WASD piloting — held keys become a standing move-intent for the possessed
-// colonist (north = -y in grid space). Only sent while piloting.
+// colonist. The keys are CAMERA-aligned: W goes "up the screen". The iso camera
+// looks down the (1,·,1) diagonal, so screen-up maps to grid (-1,-1) and
+// screen-right to grid (1,-1). Only sent while piloting.
 const held = new Set<string>();
+const Q = Math.SQRT1_2; // 0.7071 — unit diagonal
 const MOVE_KEYS: Record<string, [number, number]> = {
-  w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
-  arrowup: [0, -1], arrowdown: [0, 1], arrowleft: [-1, 0], arrowright: [1, 0],
+  w: [-Q, -Q], s: [Q, Q], a: [-Q, Q], d: [Q, -Q],
+  arrowup: [-Q, -Q], arrowdown: [Q, Q], arrowleft: [-Q, Q], arrowright: [Q, -Q],
 };
 function sendMove(): void {
   let dx = 0, dy = 0;

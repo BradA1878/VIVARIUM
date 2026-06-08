@@ -147,13 +147,19 @@ export interface ColonistView {
 
 export type TradePhase = "inbound" | "landed" | "leaving";
 
+/** what an offer hands over: a resource, the build currency, or a permanent
+ *  alien tech upgrade (res "tech", with the tech id) */
+export type TradeGive =
+  | { res: Resource | "materials"; amount: number; tech?: undefined }
+  | { res: "tech"; amount: number; tech: string };
+
 /** a live alien trade offer (modeled on the Earth-resupply window) */
 export interface TradeView {
   id: number;
   phase: TradePhase;
-  /** what the traders GIVE you */
-  give: { res: Resource | "materials"; amount: number };
-  /** what they TAKE in return */
+  /** what the traders GIVE you (a resource, materials, or alien tech) */
+  give: TradeGive;
+  /** what they TAKE in return (always a resource or materials) */
   take: { res: Resource | "materials"; amount: number };
   /** seconds left to decide while landed (0 in other phases) */
   deadline: number;
@@ -181,6 +187,8 @@ export interface Snapshot {
   possessed: number | null;
   /** a live alien trade offer, or null */
   trade: TradeView | null;
+  /** ids of permanent alien tech upgrades acquired through trade */
+  acquiredTech: string[];
   population: number;
   housing: number;
   labor: number;

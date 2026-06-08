@@ -6,7 +6,7 @@
    ============================================================================ */
 import type {
   BuildingState, ColonistAct, DepositKind, HazardKind, HazardPhase,
-  Outcome, Pool, Resource, Side, TradePhase, Weather,
+  Outcome, Pool, Resource, Side, TradeGive, TradePhase, Weather,
 } from "@shared/types";
 
 /** a live hazard with the bookkeeping the tick needs (the HUD sees HazardView) */
@@ -52,7 +52,7 @@ export interface DepositInstance {
 export interface TradeInstance {
   id: number;
   phase: TradePhase;
-  give: { res: Resource | "materials"; amount: number };
+  give: TradeGive;
   take: { res: Resource | "materials"; amount: number };
   /** seconds left in the current phase */
   tLeft: number;
@@ -83,6 +83,8 @@ export interface ColonyState {
   trade: TradeInstance | null;
   /** seconds to the next trade window */
   nextTrade: number;
+  /** permanent alien tech upgrades acquired through trade */
+  acquiredTech: string[];
   /** monotonic id counters */
   colonistCounter: number;
   depositCounter: number;

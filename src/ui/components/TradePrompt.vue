@@ -8,10 +8,17 @@
 import { computed } from "vue";
 import { useColony } from "../stores/colony";
 import { fmt } from "../format";
+import { TECH_DEFS } from "@/engine";
 
 const { snapshot, controls } = useColony();
 
 const trade = computed(() => snapshot.value?.trade ?? null);
+
+/** the alien tech being offered, if this is a tech offer */
+const giveTech = computed(() => {
+  const g = trade.value?.give;
+  return g && g.res === "tech" ? TECH_DEFS[g.tech] ?? null : null;
+});
 
 /** what the colony currently holds of the resource the traders want */
 const have = computed(() => {
@@ -34,9 +41,10 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
   <div v-else-if="trade && trade.phase === 'landed'" class="trade trade-panel">
     <div class="trade-title">ALIEN TRADERS</div>
     <div class="trade-offer">
-      <div class="trade-side give">
-        <div class="trade-side-lbl">THEY GIVE</div>
-        <div class="trade-side-val">{{ fmt(trade.give.amount) }} {{ trade.give.res }}</div>
+      <div class="trade-side give" :class="{ tech: giveTech }">
+        <div class="trade-side-lbl">{{ giveTech ? "ALIEN TECH" : "THEY GIVE" }}</div>
+        <div v-if="giveTech" class="trade-side-val tech-name">{{ giveTech.glyph }} {{ giveTech.name }}</div>
+        <div v-else class="trade-side-val">{{ fmt(trade.give.amount) }} {{ trade.give.res }}</div>
       </div>
       <span class="trade-swap">&#8652;</span>
       <div class="trade-side take">
@@ -44,6 +52,7 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
         <div class="trade-side-val">{{ fmt(trade.take.amount) }} {{ trade.take.res }}</div>
       </div>
     </div>
+    <div v-if="giveTech" class="trade-tech-desc">{{ giveTech.desc }}</div>
     <div class="trade-countdown">offer closes in {{ fmt(Math.round(trade.deadline)) }}s</div>
     <div class="trade-actions">
       <button
@@ -132,6 +141,17 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
 }
 .trade-side.give .trade-side-val { color: #9bd6a0; }
 .trade-side.take .trade-side-val { color: var(--rust); }
+.trade-side.tech { border-color: rgba(176, 130, 232, 0.55); }
+.trade-side.tech .trade-side-lbl { color: #b082e8; }
+.trade-side-val.tech-name { color: #c7a6f2; font-size: 11.5px; line-height: 1.25; }
+.trade-tech-desc {
+  font-size: 9.5px;
+  line-height: 1.35;
+  color: var(--dim);
+  margin-bottom: 9px;
+  border-left: 2px solid rgba(176, 130, 232, 0.5);
+  padding-left: 7px;
+}
 .trade-swap {
   align-self: center;
   color: var(--cyan);

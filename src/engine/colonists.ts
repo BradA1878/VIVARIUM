@@ -19,6 +19,9 @@ import {
 } from "./tuning";
 import type { ColonistInstance, ColonyState } from "./state";
 import { emptyColonist } from "./state";
+import { idx, inBounds, cellsFor } from "./grid";
+import { doorCells } from "./doors";
+import { findPath } from "./pathfind";
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
@@ -41,17 +44,54 @@ export function baseCenter(s: ColonyState): Pt {
   return h ? buildingCenter(h) : { x: (s.N - 1) / 2, y: (s.N - 1) / 2 };
 }
 
-/** nearest sealed building's center to a point (shelter target during hazards) */
+/** a free cell to stand at for a building — its door's exit cell if open, else
+ *  the first free orthogonally-adjacent cell, else the (clamped) center. So
+ *  colonists wait at the door instead of standing inside the dome. */
+function accessCell(s: ColonyState, b: { defId: string; gx: number; gy: number; rot?: number }): Pt {
+  const def = DEFS[b.defId];
+  if (def?.door != null) {
+    const dc = doorCells(def, b.gx, b.gy, (b.rot ?? 0) as 0 | 1 | 2 | 3);
+    if (dc) {
+      const [ex, ey] = dc.exit;
+      if (inBounds(s.N, ex, ey) && s.grid[idx(s.N, ex, ey)] === 0) return { x: ex, y: ey };
+    }
+  }
+  if (def) {
+    for (const [cx, cy] of cellsFor(def, b.gx, b.gy)) {
+      for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+        const nx = cx + dx, ny = cy + dy;
+        if (inBounds(s.N, nx, ny) && s.grid[idx(s.N, nx, ny)] === 0) return { x: nx, y: ny };
+      }
+    }
+  }
+  const c = buildingCenter(b);
+  return { x: Math.min(s.N - 1, Math.max(0, c.x)), y: Math.min(s.N - 1, Math.max(0, c.y)) };
+}
+
+/** nearest sealed building's access cell to a point (shelter target in a hazard) */
 function nearestShelter(s: ColonyState, p: Pt): Pt {
-  let best: Pt | null = null, bestD = Infinity;
+  let best: { defId: string; gx: number; gy: number; rot?: number } | null = null, bestD = Infinity;
   for (const b of s.buildings) {
     const d = DEFS[b.defId];
     if (!d || !(d.requiresPressure || d.isHub)) continue;
     const c = buildingCenter(b);
     const dist = (c.x - p.x) ** 2 + (c.y - p.y) ** 2;
-    if (dist < bestD) { bestD = dist; best = c; }
+    if (dist < bestD) { bestD = dist; best = b; }
   }
-  return best ?? baseCenter(s);
+  return best ? accessCell(s, best) : baseCenter(s);
+}
+
+/** an empty cell nearest a point — where new arrivals spawn (not on a building) */
+function freeCellNear(s: ColonyState, p: Pt): Pt {
+  const ri = Math.round(p.x), rj = Math.round(p.y);
+  for (let r = 0; r < s.N; r++) {
+    for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // current ring only
+      const x = ri + dx, y = rj + dy;
+      if (inBounds(s.N, x, y) && s.grid[idx(s.N, x, y)] === 0) return { x, y };
+    }
+  }
+  return p;
 }
 
 /** move a colonist toward a target; returns true once it has arrived */
@@ -78,14 +118,8 @@ export function reconcileColonists(s: ColonyState): void {
     if (removed.id === s.possessed) s.possessed = null;
   }
   while (s.colonists.length < s.population) {
-    const b = baseCenter(s);
-    const i = s.colonists.length;
-    const c = emptyColonist(
-      s.colonistCounter++,
-      b.x + ((i % 2) - 0.5) * 0.5,
-      b.y + (Math.floor(i / 2) % 2 - 0.5) * 0.5,
-    );
-    s.colonists.push(c);
+    const b = freeCellNear(s, baseCenter(s)); // spawn outside, not on the hub
+    s.colonists.push(emptyColonist(s.colonistCounter++, b.x, b.y));
   }
 }
 
@@ -107,7 +141,7 @@ function assign(s: ColonyState): void {
   });
 }
 
-function buildingByUid(s: ColonyState, uid: number | null): { defId: string; gx: number; gy: number } | null {
+function buildingByUid(s: ColonyState, uid: number | null): { defId: string; gx: number; gy: number; rot?: number } | null {
   if (uid == null) return null;
   return s.buildings.find((b) => b.uid === uid) ?? null;
 }
@@ -171,21 +205,25 @@ export function stepColonists(s: ColonyState, dt: number): void {
   for (const c of s.colonists) {
     if (c.id === s.possessed) { pilot(s, c, dt); continue; }
 
-    let target: Pt;
+    let goal: Pt;
     let arriveState: ColonistInstance["state"];
     if (hazardActive) {
-      target = nearestShelter(s, c); arriveState = "sheltering";
+      goal = nearestShelter(s, c); arriveState = "sheltering";
     } else if (day && c.workUid != null) {
       const w = buildingByUid(s, c.workUid);
-      target = w ? buildingCenter(w) : baseCenter(s); arriveState = "working";
+      goal = w ? accessCell(s, w) : baseCenter(s); arriveState = "working";
     } else {
       const home = buildingByUid(s, c.homeUid);
-      target = home ? buildingCenter(home) : baseCenter(s); arriveState = "idle";
+      goal = home ? accessCell(s, home) : freeCellNear(s, baseCenter(s)); arriveState = "idle";
     }
 
-    const movingState: ColonistInstance["state"] =
-      arriveState === "working" ? "toWork" : arriveState === "sheltering" ? "sheltering" : "toHome";
-    c.state = stepToward(c, target, WALK_SPEED, dt) ? arriveState : movingState;
+    if (Math.hypot(goal.x - c.x, goal.y - c.y) <= ARRIVE_EPS) { c.state = arriveState; continue; }
+
+    // route around buildings; walk toward the next cell on the path
+    const path = findPath(s, Math.round(c.x), Math.round(c.y), Math.round(goal.x), Math.round(goal.y));
+    const wp: Pt = path && path.length > 1 ? { x: path[1][0], y: path[1][1] } : goal;
+    stepToward(c, wp, WALK_SPEED, dt);
+    c.state = arriveState === "working" ? "toWork" : arriveState === "sheltering" ? "sheltering" : "toHome";
   }
 }
 

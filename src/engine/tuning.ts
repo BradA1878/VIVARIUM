@@ -128,3 +128,7 @@ export const TRADE_TAKE_MIN = 18;
 export const TRADE_TAKE_SPAN = 22;
 export const TRADE_GIVE_MIN = 26;
 export const TRADE_GIVE_SPAN = 30;
+/** some offers hand over permanent alien tech instead of a resource */
+export const TRADE_TECH_CHANCE = 0.4;   // when an un-acquired tech exists
+export const TRADE_TECH_TAKE_MIN = 55;  // the (steeper) price of alien tech
+export const TRADE_TECH_TAKE_SPAN = 45;

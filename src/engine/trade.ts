@@ -8,10 +8,13 @@ import type { Resource, TradeView } from "@shared/types";
 import {
   TRADE_INBOUND, TRADE_DECIDE, TRADE_LEAVE, TRADE_GAP,
   TRADE_TAKE_MIN, TRADE_TAKE_SPAN, TRADE_GIVE_MIN, TRADE_GIVE_SPAN,
+  TRADE_TECH_CHANCE, TRADE_TECH_TAKE_MIN, TRADE_TECH_TAKE_SPAN,
 } from "./tuning";
 import type { ColonyState } from "./state";
 import type { Emit } from "./tick";
 import type { RNG } from "./rng";
+import { TECH_DEFS, TECH_IDS } from "./techs";
+import { recomputeCaps } from "./caps";
 
 type Tradeable = Resource | "materials";
 const TRADEABLES: Tradeable[] = ["power", "water", "oxygen", "food", "materials"];
@@ -27,17 +30,42 @@ function landingCell(s: ColonyState, rng: RNG): { gx: number; gy: number } {
   return rng.next() < 0.5 ? { gx: edge, gy: along } : { gx: along, gy: edge };
 }
 
+/** never ask for more of a resource than the colony can physically store, or the
+ *  offer would be impossible to accept */
+function clampTake(s: ColonyState, res: Tradeable, amount: number): number {
+  return Math.min(Math.round(amount), Math.floor(poolOf(s, res).capacity));
+}
+
 function makeOffer(s: ColonyState, rng: RNG): void {
   const ti = Math.floor(rng.next() * TRADEABLES.length);
-  let gi = Math.floor(rng.next() * (TRADEABLES.length - 1));
-  if (gi >= ti) gi += 1; // distinct give/take
-  const take = TRADEABLES[ti], give = TRADEABLES[gi];
+  const take = TRADEABLES[ti];
   const { gx, gy } = landingCell(s, rng);
+
+  // some offers hand over permanent alien tech (one we don't already have).
+  // Alien tech is bought with MATERIALS — the gather currency — so the two new
+  // systems tie together: mine ore → materials → trade for tech.
+  const techPool = TECH_IDS.filter((id) => !s.acquiredTech.includes(id));
+  if (techPool.length > 0 && rng.next() < TRADE_TECH_CHANCE) {
+    const tech = techPool[Math.floor(rng.next() * techPool.length)];
+    s.trade = {
+      id: s.tradeCounter++,
+      phase: "inbound",
+      take: { res: "materials", amount: clampTake(s, "materials", TRADE_TECH_TAKE_MIN + rng.next() * TRADE_TECH_TAKE_SPAN) },
+      give: { res: "tech", amount: 1, tech },
+      tLeft: TRADE_INBOUND,
+      gx, gy,
+    };
+    return;
+  }
+
+  // otherwise a plain resource swap (give must differ from take)
+  let gi = Math.floor(rng.next() * (TRADEABLES.length - 1));
+  if (gi >= ti) gi += 1;
   s.trade = {
     id: s.tradeCounter++,
     phase: "inbound",
-    take: { res: take, amount: Math.round(TRADE_TAKE_MIN + rng.next() * TRADE_TAKE_SPAN) },
-    give: { res: give, amount: Math.round(TRADE_GIVE_MIN + rng.next() * TRADE_GIVE_SPAN) },
+    take: { res: take, amount: clampTake(s, take, TRADE_TAKE_MIN + rng.next() * TRADE_TAKE_SPAN) },
+    give: { res: TRADEABLES[gi], amount: Math.round(TRADE_GIVE_MIN + rng.next() * TRADE_GIVE_SPAN) },
     tLeft: TRADE_INBOUND,
     gx, gy,
   };
@@ -50,7 +78,8 @@ export function updateTrade(s: ColonyState, dt: number, rng: RNG, emit: Emit): v
     if (s.nextTrade <= 0) {
       s.nextTrade = TRADE_GAP;
       makeOffer(s, rng);
-      emit({ type: "traders_inbound", detail: s.trade!.give.res });
+      const g = s.trade!.give;
+      emit({ type: "traders_inbound", detail: g.res === "tech" ? TECH_DEFS[g.tech]?.name ?? "tech" : g.res });
     }
     return;
   }
@@ -75,9 +104,16 @@ export function respondTrade(s: ColonyState, accept: boolean, emit: Emit): void 
     const have = poolOf(s, tr.take.res);
     if (have.amount < tr.take.amount) return; // can't pay — leave the offer open
     have.amount -= tr.take.amount;
-    const got = poolOf(s, tr.give.res);
-    got.amount = Math.min(got.capacity, got.amount + tr.give.amount);
-    emit({ type: "trade_done", detail: tr.give.res });
+    if (tr.give.res === "tech") {
+      // a permanent upgrade — bank it and let the caps pass apply any bonus now
+      if (!s.acquiredTech.includes(tr.give.tech)) s.acquiredTech.push(tr.give.tech);
+      recomputeCaps(s);
+      emit({ type: "trade_done", detail: TECH_DEFS[tr.give.tech]?.name ?? tr.give.tech });
+    } else {
+      const got = poolOf(s, tr.give.res);
+      got.amount = Math.min(got.capacity, got.amount + tr.give.amount);
+      emit({ type: "trade_done", detail: tr.give.res });
+    }
   } else {
     emit({ type: "trade_left" });
   }

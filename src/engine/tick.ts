@@ -21,6 +21,7 @@ import { updateHazards, hazardMods, buildingFunctional, type HazardMods } from "
 import { stepColonists } from "./colonists";
 import { respawnDeposits } from "./deposits";
 import { updateTrade } from "./trade";
+import { techPassivePower, techDemandMult } from "./techs";
 import type { RNG } from "./rng";
 
 /** event emitter — the colony stamps t/sol/tod before recording */
@@ -103,6 +104,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
     const def = DEFS[b.defId];
     if (def.solar) gen += def.solar * s.solarMul;
   }
+  gen += techPassivePower(s); // alien fusion cell — flat, day or night
   addPool(s, "power", gen * dt);
   net.power += gen;
 
@@ -164,7 +166,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // 5. Colonist consumption ----------------------------------------------------
   if (s.population > 0) {
     for (const k of ["oxygen", "water", "food"] as const) {
-      const demand = PERSON[k] * s.population;
+      const demand = PERSON[k] * techDemandMult(s, k) * s.population; // alien bioscrubber, etc.
       takePool(s, k, demand * dt);
       net[k] -= demand;
     }

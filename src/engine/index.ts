@@ -7,6 +7,7 @@ export { DEFS, ORDER } from "./defs";
 export { doorCells, doorCellsOf, worldDoorSide, SIDE_DELTA } from "./doors";
 export { planRoute, routeCorridor, type RouteQuery } from "./route";
 export { HAZARD_META, FUNC_THRESHOLD, buildingFunctional, hazardMods } from "./hazards";
+export { TECH_DEFS, TECH_IDS, type TechDef } from "./techs";
 export { RNG } from "./rng";
 export { solarOutput } from "./tick";
 export type { ColonyState, SaveData } from "./state";

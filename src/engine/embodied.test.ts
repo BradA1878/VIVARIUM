@@ -256,6 +256,7 @@ describe("alien trade", () => {
       const c = new Colony(seed);
       if (!runToLanded(c)) continue;
       const tr = c.snapshot().trade!;
+      if (tr.give.res === "tech") continue; // tech offers are covered separately
       const before = c.snapshot();
       const haveTake = amountOf(before, tr.take.res);
       if (haveTake < tr.take.amount) continue; // unaffordable on this seed — try next
@@ -287,7 +288,7 @@ describe("alien trade", () => {
       // a swap would move the give pool by tr.give.amount (>=26) and the take
       // pool by tr.take.amount (>=18); ordinary per-tick demand is a small drift.
       // We capture the give pool BEFORE responding, then prove no jump occurred.
-      const giveBefore = amountOf(c.snapshot(), tr.give.res);
+      const giveBefore = tr.give.res === "tech" ? null : amountOf(c.snapshot(), tr.give.res);
 
       c.respondTrade(false);
       const events = [...c.drainEvents()];
@@ -297,10 +298,46 @@ describe("alien trade", () => {
       const after = c.snapshot();
       // no swap occurred: the give pool did NOT jump up by the offered amount
       // (it can only have drifted down or held roughly flat over a single tick).
-      expect(amountOf(after, tr.give.res)).toBeLessThan(giveBefore + tr.give.amount / 2);
+      if (giveBefore != null && tr.give.res !== "tech") {
+        expect(amountOf(after, tr.give.res)).toBeLessThan(giveBefore + tr.give.amount / 2);
+      }
       // and decisively: no trade_done fired and the offer is leaving, not landed
       expect(events.some((e) => e.type === "trade_done")).toBe(false);
       expect(after.trade?.phase ?? "leaving").not.toBe("landed");
+      tested = true;
+      break;
+    }
+    expect(tested).toBe(true);
+  });
+
+  it("accepting an alien-tech offer banks the upgrade and applies its effect", () => {
+    // hunt across seeds/windows for an affordable landed TECH offer
+    let tested = false;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const) {
+      const c = new Colony(seed);
+      let found = false;
+      const step = 0.2;
+      for (let i = 0; i < 900 / step; i++) { // a few windows
+        c.tick(step); c.drainEvents();
+        const t = c.snapshot().trade;
+        if (t?.phase === "landed" && t.give.res === "tech") { found = true; break; }
+      }
+      if (!found) continue;
+      const tr = c.snapshot().trade!;
+      if (tr.give.res !== "tech") continue;
+      const before = c.snapshot();
+      if (amountOf(before, tr.take.res) < tr.take.amount) continue; // can't pay — next seed
+      const techId = tr.give.tech;
+      const powerCapBefore = before.pools.power.capacity;
+
+      c.respondTrade(true);
+      const events = [...c.drainEvents()];
+      const after = c.snapshot();
+
+      expect(after.acquiredTech).toContain(techId);
+      expect(events.some((e) => e.type === "trade_done")).toBe(true);
+      // a capacity tech bumps a pool cap immediately; otherwise the tech is at least banked
+      if (techId === "capacitor") expect(after.pools.power.capacity).toBeGreaterThan(powerCapBefore);
       tested = true;
       break;
     }
