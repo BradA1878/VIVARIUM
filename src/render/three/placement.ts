@@ -5,11 +5,13 @@
    actual mutation through the worker (doc §0: the worker is authoritative; this
    only previews + commands).
 
-   Three modes:
+   Modes:
    - place: footprint ghost + a door arrow; R rotates; click places with rotation.
    - demolish: highlight + click removes.
    - route (the Corridor tool): click a door-building = source, click another =
      auto-route corridors door→door; clicking empty hand-lays a single corridor.
+   - select (no tool): click a placed building to select it, then click an empty
+     cell to move it, R to rotate, Del to remove. Right-click / Esc deselects.
    ============================================================================ */
 import * as THREE from "three";
 import type { Side } from "@shared/types";
@@ -21,6 +23,11 @@ export interface HoverInfo {
   gx: number;
   gy: number;
   defId?: string;
+}
+
+export interface SelectInfo {
+  uid: number;
+  defId: string;
 }
 
 type Tool =
@@ -42,6 +49,7 @@ export class PlacementController {
   private tool: Tool = null;
   private ghostRot: Side = 0;
   private routeSource: number | null = null;
+  private selectedUid: number | null = null;
 
   private tiles: THREE.Mesh[] = [];
   private tileGeo: THREE.PlaneGeometry;
@@ -50,6 +58,7 @@ export class PlacementController {
   private arrow: THREE.Mesh;
 
   private hoverCb: ((info: HoverInfo | null) => void) | null = null;
+  private selectCb: ((info: SelectInfo | null) => void) | null = null;
   private lastHoverKey = "";
 
   constructor(
@@ -87,12 +96,36 @@ export class PlacementController {
   }
 
   // ---- tool state -----------------------------------------------------------
-  setTool(defId: string): void { this.tool = { kind: "place", defId }; this.ghostRot = 0; this.routeSource = null; }
-  setDemolish(): void { this.tool = { kind: "demolish" }; this.routeSource = null; }
-  setRoute(): void { this.tool = { kind: "route" }; this.routeSource = null; }
-  clearTool(): void { this.tool = null; this.routeSource = null; }
-  rotateGhost(): void { this.ghostRot = ((this.ghostRot + 1) % 4) as Side; }
+  setTool(defId: string): void { this.tool = { kind: "place", defId }; this.ghostRot = 0; this.routeSource = null; this.setSelected(null); }
+  setDemolish(): void { this.tool = { kind: "demolish" }; this.routeSource = null; this.setSelected(null); }
+  setRoute(): void { this.tool = { kind: "route" }; this.routeSource = null; this.setSelected(null); }
+  clearTool(): void { this.tool = null; this.routeSource = null; this.setSelected(null); }
   onHover(cb: (info: HoverInfo | null) => void): void { this.hoverCb = cb; }
+  onSelect(cb: (info: SelectInfo | null) => void): void { this.selectCb = cb; }
+
+  /** R — rotate the ghost while placing, else the selected/hovered building */
+  rotate(): void {
+    if (this.tool?.kind === "place") { this.ghostRot = ((this.ghostRot + 1) % 4) as Side; return; }
+    if (this.selectedUid != null) { this.bridge.rotateUid(this.selectedUid); return; }
+    if (this.hover) { const b = this.bridge.buildingAt(this.hover.gx, this.hover.gy); if (b) this.bridge.rotate(b.gx, b.gy); }
+  }
+
+  /** Del — remove the selected building */
+  removeSelected(): void {
+    if (this.selectedUid == null) return;
+    const b = this.bridge.buildingByUid(this.selectedUid);
+    if (b) this.bridge.remove(b.gx, b.gy);
+    this.setSelected(null);
+  }
+
+  private setSelected(uid: number | null): void {
+    if (this.selectedUid === uid) return;
+    this.selectedUid = uid;
+    if (this.selectCb) {
+      const b = uid != null ? this.bridge.buildingByUid(uid) : null;
+      this.selectCb(b ? { uid: b.uid, defId: b.defId } : null);
+    }
+  }
 
   // ---- pointer --------------------------------------------------------------
   private onMove(e: PointerEvent): void {
@@ -104,8 +137,9 @@ export class PlacementController {
   private onLeave(): void { this.hasPointer = false; this.hover = null; }
 
   private onClick(): void {
-    if (!this.hover || !this.tool) return;
+    if (!this.hover) return;
     const { gx, gy } = this.hover;
+    if (!this.tool) { this.onSelectClick(gx, gy); return; }
     if (this.tool.kind === "demolish") { this.bridge.remove(gx, gy); return; }
     if (this.tool.kind === "place") { this.bridge.place(this.tool.defId, gx, gy, this.ghostRot); return; }
     if (this.tool.kind === "route") {
@@ -120,8 +154,19 @@ export class PlacementController {
       }
     }
   }
+  /** no tool: click a building to select it, click empty to move the selection */
+  private onSelectClick(gx: number, gy: number): void {
+    const b = this.bridge.buildingAt(gx, gy);
+    if (b) {
+      this.setSelected(this.selectedUid === b.uid ? null : b.uid); // toggle / switch
+    } else if (this.selectedUid != null && this.bridge.canMove(this.selectedUid, gx, gy)) {
+      this.bridge.move(this.selectedUid, gx, gy); // relocate, keep it selected
+    }
+  }
+
   private onContext(e: MouseEvent): void {
     e.preventDefault();
+    if (this.selectedUid != null) { this.setSelected(null); return; }
     if (this.tool?.kind === "route" && this.routeSource != null) { this.routeSource = null; return; }
     this.clearTool();
   }
@@ -140,12 +185,26 @@ export class PlacementController {
     this.emitHover();
     this.arrow.visible = false;
 
-    if (!this.tool) { this.group.visible = false; return; }
+    if (!this.tool) {
+      if (this.selectedUid != null) { this.group.visible = true; this.drawSelectGhost(); }
+      else this.group.visible = false;
+      return;
+    }
     this.group.visible = true;
 
     if (this.tool.kind === "place") this.hover ? this.drawPlaceGhost() : this.hideTiles();
     else if (this.tool.kind === "demolish") this.hover ? this.drawDemolishGhost() : this.hideTiles();
     else this.drawRouteGhost();
+  }
+
+  /** aim the door arrow at a cell's outward side */
+  private showArrow(exitGx: number, exitGy: number, side: Side, color: THREE.Color): void {
+    const c = this.grid.cellCenter(exitGx, exitGy);
+    this.arrow.position.set(c.x, 0.18, c.z);
+    const [dx, dy] = SIDE_DELTA[side];
+    this.arrow.lookAt(c.x + dx, 0.18, c.z + dy);
+    (this.arrow.material as THREE.MeshBasicMaterial).color.copy(color);
+    this.arrow.visible = true;
   }
 
   private emitHover(): void {
@@ -194,13 +253,36 @@ export class PlacementController {
 
     // door arrow: show where the (rotated) door will face
     const d = doorCells(def, this.hover!.gx, this.hover!.gy, this.ghostRot);
-    if (d) {
-      const c = this.grid.cellCenter(d.exit[0], d.exit[1]);
-      this.arrow.position.set(c.x, 0.18, c.z);
-      const [dx, dy] = SIDE_DELTA[d.side];
-      this.arrow.lookAt(c.x + dx, 0.18, c.z + dy);
-      (this.arrow.material as THREE.MeshBasicMaterial).color.copy(col);
-      this.arrow.visible = true;
+    if (d) this.showArrow(d.exit[0], d.exit[1], d.side, col);
+  }
+
+  // ---- select / move ---------------------------------------------------------
+  private drawSelectGhost(): void {
+    const sel = this.bridge.buildingByUid(this.selectedUid!);
+    if (!sel) { this.setSelected(null); this.group.visible = false; return; }
+    const def = DEFS[sel.defId];
+
+    // always outline the selected building at its current spot
+    this.outlineBuilding(sel.gx, sel.gy, sel.defId, CYAN);
+
+    const overBuilding = this.hover ? this.bridge.buildingAt(this.hover.gx, this.hover.gy) : null;
+    if (this.hover && !overBuilding) {
+      // hovering empty ground → preview the move
+      const ok = this.bridge.canMove(sel.uid, this.hover.gx, this.hover.gy);
+      const col = ok ? CYAN : RUST;
+      const tiles = this.useTiles(def.foot[0] * def.foot[1], col);
+      let i = 0;
+      for (let dx = 0; dx < def.foot[0]; dx++)
+        for (let dy = 0; dy < def.foot[1]; dy++) {
+          const c = this.grid.cellCenter(this.hover.gx + dx, this.hover.gy + dy);
+          tiles[i++].position.set(c.x, 0.04, c.z);
+        }
+      const d = doorCells(def, this.hover.gx, this.hover.gy, sel.rot);
+      if (d) this.showArrow(d.exit[0], d.exit[1], d.side, col);
+    } else {
+      this.hideTilesKeepOutline();
+      const d = doorCells(def, sel.gx, sel.gy, sel.rot);
+      if (d) this.showArrow(d.exit[0], d.exit[1], d.side, CYAN);
     }
   }
 

@@ -13,7 +13,7 @@ import {
   DEADLINE_SOL, TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
 import { RNG } from "./rng";
-import { canPlace, cellsFor, idx } from "./grid";
+import { canPlace, cellsFor, idx, inBounds } from "./grid";
 import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
 import { recomputeCaps } from "./caps";
@@ -105,6 +105,27 @@ export class Colony {
     for (const [x, y] of path) {
       if (this.s.grid[idx(this.s.N, x, y)] === 0) this.place("corridor", x, y);
     }
+    return true;
+  }
+
+  /** relocate a placed building to a new footprint, if it fits (keeps its uid,
+   *  rotation, integrity, etc.). Connectivity recomputes next tick. */
+  move(uid: number, gx: number, gy: number): boolean {
+    const b = this.s.buildings.find((x) => x.uid === uid);
+    if (!b) return false;
+    const def = DEFS[b.defId];
+    const oldCells = cellsFor(def, b.gx, b.gy);
+    for (const [x, y] of oldCells) this.s.grid[idx(this.s.N, x, y)] = 0;
+    let ok = true;
+    for (const [x, y] of cellsFor(def, gx, gy)) {
+      if (!inBounds(this.s.N, x, y) || this.s.grid[idx(this.s.N, x, y)] !== 0) { ok = false; break; }
+    }
+    if (!ok) { // restore in place
+      for (const [x, y] of oldCells) this.s.grid[idx(this.s.N, x, y)] = b.uid;
+      return false;
+    }
+    for (const [x, y] of cellsFor(def, gx, gy)) this.s.grid[idx(this.s.N, x, y)] = b.uid;
+    b.gx = gx; b.gy = gy;
     return true;
   }
 

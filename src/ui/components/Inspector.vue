@@ -6,10 +6,11 @@ import { computed } from "vue";
 import { useColony } from "@/ui/stores/colony";
 import { DEFS } from "@/engine";
 
-const { tool, demolish, hover } = useColony();
+const { tool, demolish, hover, selected } = useColony();
 
 const linking = computed(() => tool.value === "corridor");
 const toolDef = computed(() => (tool.value && tool.value !== "corridor" ? DEFS[tool.value] : null));
+const selectedDef = computed(() => (selected.value ? DEFS[selected.value.defId] : null));
 const hoverDef = computed(() => (hover.value?.defId ? DEFS[hover.value.defId] : null));
 const hoverHasDoor = computed(() => hoverDef.value?.door != null);
 </script>
@@ -17,6 +18,11 @@ const hoverHasDoor = computed(() => hoverDef.value?.door != null);
 <template>
   <div v-if="demolish" class="inspect demo">
     DEMOLISH — click a structure to remove · right-click to cancel
+  </div>
+  <div v-else-if="selectedDef" class="inspect">
+    <span class="ins-glyph">{{ selectedDef.glyph }}</span>
+    <span class="ins-name">SELECTED {{ selectedDef.name.toUpperCase() }}</span>
+    <span class="ins-hint">click a cell to move{{ selectedDef.door != null ? " · R rotate" : "" }} · Del remove · right-click to drop</span>
   </div>
   <div v-else-if="linking" class="inspect">
     <span class="ins-glyph">===</span>

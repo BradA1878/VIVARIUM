@@ -11,6 +11,7 @@ export type Command =
   | { type: "place"; defId: string; gx: number; gy: number; rot?: number }
   | { type: "remove"; gx: number; gy: number }
   | { type: "rotate"; gx: number; gy: number }
+  | { type: "move"; uid: number; gx: number; gy: number }
   | { type: "route"; fromUid: number; toUid: number }
   | { type: "triggerHazard"; kind: HazardKind; intensity?: number }
   | { type: "setDirector"; value: boolean }

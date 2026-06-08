@@ -28,7 +28,7 @@ const bridge = shallowRef<SimBridge | null>(null);
 const ready = ref(false);
 let renderer: ThreeRenderer | null = null;
 
-const { snapshot, clearTool, rotate, controls } = useColony();
+const { snapshot, clearTool, rotate, removeSelected, controls } = useColony();
 const storming = computed(() => snapshot.value?.weather === "dust");
 const flaring = computed(() => snapshot.value?.hazards.some((h) => h.kind === "flare" && h.phase === "active") ?? false);
 
@@ -36,6 +36,7 @@ function onKey(e: KeyboardEvent): void {
   if (e.key === "Escape") clearTool();
   if (e.key === " ") { e.preventDefault(); controls.togglePause(); }
   if (e.key === "r" || e.key === "R") rotate();
+  if (e.key === "Delete" || e.key === "Backspace") removeSelected();
 }
 
 onMounted(async () => {

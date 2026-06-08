@@ -32,6 +32,21 @@ export function canPlacePredict(
   return true;
 }
 
+/** can building `uid` be relocated to (gx,gy)? (its own cells don't block it) */
+export function canMovePredict(snap: Snapshot, uid: number, gx: number, gy: number): boolean {
+  const b = snap.buildings.find((x) => x.uid === uid);
+  if (!b) return false;
+  const def = DEFS[b.defId];
+  if (!def) return false;
+  const occ = occupancy(snap);
+  for (const [x, y] of cellsFor(def, b.gx, b.gy)) occ.delete(`${x},${y}`); // ignore self
+  for (const [x, y] of cellsFor(def, gx, gy)) {
+    if (x < 0 || y < 0 || x >= snap.N || y >= snap.N) return false;
+    if (occ.has(`${x},${y}`)) return false;
+  }
+  return true;
+}
+
 export function buildingAtPredict(snap: Snapshot, gx: number, gy: number): BuildingState | null {
   for (const b of snap.buildings) {
     const def = DEFS[b.defId];

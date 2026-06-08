@@ -8,7 +8,7 @@ import { ref, shallowRef, type Ref, type ShallowRef } from "vue";
 import type { ColonyEvent, Snapshot } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
-import type { HoverInfo } from "@/render/three/placement";
+import type { HoverInfo, SelectInfo } from "@/render/three/placement";
 import { Council, type Register } from "@/agent/council";
 import { narrateLive, LIVE_ENABLED } from "@/agent/client";
 import { Sentinel } from "@/agent/sentinel";
@@ -36,6 +36,7 @@ const messages: Ref<TerminalLine[]> = ref([]);
 const tool: Ref<string | null> = ref(null);
 const demolish = ref(false);
 const hover: Ref<HoverInfo | null> = ref(null);
+const selected: Ref<SelectInfo | null> = ref(null);
 
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
@@ -101,6 +102,8 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   directorBias = openingBias(playerModel);
   // hand hazard control to the Director — the planet becomes a learning antagonist
   b.setDirector(true);
+
+  r.onSelect((info) => { selected.value = info; });
 
   b.onSnapshot((s) => {
     snapshot.value = s;
@@ -176,14 +179,11 @@ function pick(defId: string): void {
   else renderer?.setTool(defId);
 }
 
-/** R — rotate the ghost while placing a building, else rotate the hovered one */
-function rotate(): void {
-  if (tool.value && tool.value !== "corridor" && !demolish.value) {
-    renderer?.rotateGhost();
-  } else if (!tool.value && !demolish.value && hover.value) {
-    bridge?.rotate(hover.value.gx, hover.value.gy);
-  }
-}
+/** R — rotate the ghost while placing, else the selected/hovered building */
+function rotate(): void { renderer?.rotate(); }
+
+/** Del — remove the currently-selected building */
+function removeSelected(): void { renderer?.removeSelected(); }
 function toggleDemolish(): void {
   const v = !demolish.value;
   demolish.value = v;
@@ -229,5 +229,5 @@ export function onColonyEvent(fn: (e: ColonyEvent) => void): () => void {
 }
 
 export function useColony() {
-  return { snapshot, messages, tool, demolish, hover, pick, toggleDemolish, clearTool, rotate, controls };
+  return { snapshot, messages, tool, demolish, hover, selected, pick, toggleDemolish, clearTool, rotate, removeSelected, controls };
 }

@@ -6,7 +6,7 @@
    ============================================================================ */
 import type { BuildingState, ColonyEvent, HazardKind, Snapshot } from "@shared/types";
 import { DEFS, type SaveData } from "@/engine";
-import { buildingAtPredict, canPlacePredict, occupancy } from "@/engine/predict";
+import { buildingAtPredict, canPlacePredict, canMovePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
 import type { Command, Outbound } from "./protocol";
 
@@ -70,6 +70,8 @@ export class SimBridge {
   place(defId: string, gx: number, gy: number, rot = 0): void { this.send({ type: "place", defId, gx, gy, rot }); }
   remove(gx: number, gy: number): void { this.send({ type: "remove", gx, gy }); }
   rotate(gx: number, gy: number): void { this.send({ type: "rotate", gx, gy }); }
+  rotateUid(uid: number): void { const b = this.buildingByUid(uid); if (b) this.send({ type: "rotate", gx: b.gx, gy: b.gy }); }
+  move(uid: number, gx: number, gy: number): void { this.send({ type: "move", uid, gx, gy }); }
   route(fromUid: number, toUid: number): void { this.send({ type: "route", fromUid, toUid }); }
   triggerHazard(kind: HazardKind, intensity?: number): void { this.send({ type: "triggerHazard", kind, intensity }); }
   setDirector(value: boolean): void { this.send({ type: "setDirector", value }); }
@@ -92,6 +94,9 @@ export class SimBridge {
     if (!this.latest) return false;
     if (!this.occ) this.occ = occupancy(this.latest);
     return canPlacePredict(this.latest, defId, gx, gy, this.occ);
+  }
+  canMove(uid: number, gx: number, gy: number): boolean {
+    return this.latest ? canMovePredict(this.latest, uid, gx, gy) : false;
   }
   buildingAt(gx: number, gy: number): BuildingState | null {
     return this.latest ? buildingAtPredict(this.latest, gx, gy) : null;

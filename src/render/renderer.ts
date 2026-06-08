@@ -14,7 +14,7 @@ import { Terrain } from "./three/terrain";
 import { CELL, GridSpace } from "./three/coords";
 import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh } from "./three/kit";
-import { PlacementController, type HoverInfo } from "./three/placement";
+import { PlacementController, type HoverInfo, type SelectInfo } from "./three/placement";
 import { Atmosphere } from "./three/atmosphere";
 import { HazardFx } from "./three/hazardfx";
 
@@ -90,9 +90,11 @@ export class ThreeRenderer {
   setTool(defId: string): void { this.placement.setTool(defId); }
   setDemolish(): void { this.placement.setDemolish(); }
   setRoute(): void { this.placement.setRoute(); }
-  rotateGhost(): void { this.placement.rotateGhost(); }
+  rotate(): void { this.placement.rotate(); }
+  removeSelected(): void { this.placement.removeSelected(); }
   clearTool(): void { this.placement.clearTool(); }
   onHover(cb: (info: HoverInfo | null) => void): void { this.placement.onHover(cb); }
+  onSelect(cb: (info: SelectInfo | null) => void): void { this.placement.onSelect(cb); }
 
   start(): void {
     if (this.running) return;
