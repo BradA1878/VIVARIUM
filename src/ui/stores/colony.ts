@@ -13,6 +13,7 @@ import { Council, type Register } from "@/agent/council";
 import { narrateLive, LIVE_ENABLED } from "@/agent/client";
 import { Sentinel } from "@/agent/sentinel";
 import { Director } from "@/agent/director/director";
+import { GRID_N } from "@/engine/tuning";
 import {
   loadModel, saveModel, recordOutcome, openingBias,
   type PlayerModel, type Axis,
@@ -148,10 +149,13 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 
   // load-on-boot: resume the saved colony if one exists (doc §5). The worker
   // already came up on a fresh seed; a save just replaces it. But don't resume
-  // into an already-finished run — a fresh seed is better than a corpse.
+  // into an already-finished run, or a save from a DIFFERENT grid size (e.g. an
+  // old 11×11 colony after the map grew to 15×15) — that would strand the colony
+  // and its people in a sub-region of the new world. A fresh seed beats both.
   void loadBest().then((save) => {
-    if (save && !save.state.outcome) b.load(save);
-    else if (save) { clearLocal(); void b.save().then(persist); } // overwrite the finished save everywhere
+    const usable = save && !save.state.outcome && save.state.N === GRID_N;
+    if (usable) b.load(save);
+    else if (save) { clearLocal(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
   });
 
   // autosave on an interval — Mongo when reachable, localStorage always
