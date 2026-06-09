@@ -27,7 +27,7 @@ export const START_AMOUNT: Record<Resource, number> = {
   food: 45,
 };
 
-export const GRID_N = 11;
+export const GRID_N = 15; // buildable area (15×15 = 225 cells; was 11×11 = 121)
 
 /** seconds per sol (compressed) */
 export const SOL_LENGTH = 150;
@@ -107,13 +107,13 @@ export const BASE_RADIUS = 2.4;  // cells from the hub center to auto-unload
 
 /** the seeded deposit field (uses a SEPARATE env-rng so the main hazard/arrival
  *  stream is byte-for-byte unchanged) */
-export const DEPOSIT_COUNT = 8;       // deposits scattered at colony start
+export const DEPOSIT_COUNT = 11;      // deposits scattered at colony start (more, for the bigger map)
 export const DEPOSIT_MIN = 55;        // amount = MIN + rand*SPAN (a little richer)
 export const DEPOSIT_SPAN = 85;
 export const DEPOSIT_EDGE = 1;        // keep deposits this many cells off the border
 export const DEPOSIT_CLEAR = 3;       // min cells from the colony center (4,4-ish)
 export const DEPOSIT_RESPAWN = 85;    // seconds between new deposits surfacing
-export const DEPOSIT_FIELD_MAX = 11;  // cap on concurrent deposits
+export const DEPOSIT_FIELD_MAX = 15;  // cap on concurrent deposits
 
 /** materials — the build currency */
 export const START_MATERIALS = 90;

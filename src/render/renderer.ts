@@ -111,7 +111,7 @@ export class ThreeRenderer {
 
   // follow-cam: lerped focus + ortho extent driven toward the possessed target
   private camFocus = new THREE.Vector3(0, 0, 0);
-  private camView = 9.5;
+  private camView = 13;
 
   constructor(canvas: HTMLCanvasElement, bridge: SimBridge, gridN: number) {
     this.bridge = bridge;
@@ -387,19 +387,37 @@ export class ThreeRenderer {
   /** follow-cam: lerp focus + ortho extent toward the possessed colonist (zoomed
    *  in) or back to the overview (origin, wide) when nothing is piloted. */
   private updateCamera(snap: Snapshot, dt: number): void {
-    let targetFocus = new THREE.Vector3(0, 0, 0);
-    let targetView = 9.5;
-    if (snap.possessed != null) {
-      const rec = this.colonists.get(snap.possessed);
-      if (rec) {
-        targetFocus = rec.pos.clone();
-        targetView = 5.5;
-      }
+    let targetFocus: THREE.Vector3;
+    let targetView: number;
+    const rec = snap.possessed != null ? this.colonists.get(snap.possessed) : undefined;
+    if (rec) {
+      targetFocus = rec.pos.clone();
+      targetView = 5.5;
+    } else {
+      // overview: frame the colony (centroid of its buildings) so it stays
+      // centered wherever it sits on the larger grid, wide enough to see the
+      // buildable area around it
+      targetFocus = this.colonyCentroid(snap);
+      targetView = 13;
     }
     const k = 1 - Math.exp(-6 * dt);
     this.camFocus.lerp(targetFocus, k);
     this.camView += (targetView - this.camView) * k;
     this.scene.setView(this.camFocus, this.camView);
+  }
+
+  /** world-space centroid of all placed buildings (origin if none) */
+  private colonyCentroid(snap: Snapshot): THREE.Vector3 {
+    const c = new THREE.Vector3();
+    let n = 0;
+    for (const b of snap.buildings) {
+      const def = DEFS[b.defId];
+      if (!def) continue;
+      c.add(this.grid.footprintCenter(def, b.gx, b.gy));
+      n++;
+    }
+    if (n > 0) c.divideScalar(n);
+    return c;
   }
 
   dispose(): void {

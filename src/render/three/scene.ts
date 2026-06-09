@@ -35,7 +35,7 @@ export class SceneManager {
   private sun: THREE.DirectionalLight;
   private ambientLight: THREE.AmbientLight;
   private hemi: THREE.HemisphereLight;
-  private viewSize = 9.5;
+  private viewSize = 13;
   /** the iso vantage direction: camera sits at focus + this offset (doc §4.6) */
   private readonly isoOffset = new THREE.Vector3(28, 26, 28);
   private focus = new THREE.Vector3(0, 0, 0);
