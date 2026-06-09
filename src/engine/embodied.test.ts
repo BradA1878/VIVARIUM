@@ -24,9 +24,6 @@ function amountOf(snap: Snapshot, res: Resource | "materials"): number {
   return res === "materials" ? snap.materials.amount : snap.pools[res].amount;
 }
 
-const HUB_CX = 4.5;
-const HUB_CY = 4.5;
-
 describe("colonist roster", () => {
   it("tracks population and is part of the deterministic state", () => {
     const c = new Colony();
@@ -84,7 +81,7 @@ describe("possession + moveIntent", () => {
 });
 
 describe("mining", () => {
-  it("drives onto a deposit, picks up carry, and depletes that deposit", () => {
+  it("walks to a deposit, presses P to pick up a load, depleting it", () => {
     const c = new Colony(7);
     const id = c.snapshot().colonists[0].id;
     c.possess(id);
@@ -93,28 +90,24 @@ describe("mining", () => {
     const depId = dep0.id;
     const depMax = dep0.max;
 
-    // closed-loop: steer toward the deposit each tick from the latest snapshot,
-    // then dwell on it so the auto-miner fills the carry.
-    for (let i = 0; i < 600; i++) {
+    // steer toward the deposit each tick until in pickup range, then press P
+    let inRange = false;
+    for (let i = 0; i < 800; i++) {
       const snap = c.snapshot();
       const dep = snap.deposits.find((d) => d.id === depId);
       const me = snap.colonists.find((k) => k.id === id)!;
-      if (!dep) break; // fully mined → depleted out of the field
+      if (!dep) break;
       const dx = dep.gx - me.x;
       const dy = dep.gy - me.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 0.6) {
-        c.setMoveIntent(Math.sign(dx), Math.sign(dy));
-      } else {
-        c.setMoveIntent(0, 0); // sit on it and mine
-        if (me.carryAmt > 0) break;
-      }
+      if (Math.hypot(dx, dy) <= 1.1) { inRange = true; break; }
+      c.setMoveIntent(Math.sign(dx), Math.sign(dy));
       c.tick(0.1);
       c.drainEvents();
     }
-    // dwell a little longer to bank some carry
+    expect(inRange).toBe(true);
+
     c.setMoveIntent(0, 0);
-    run(c, 1, 0.1);
+    c.interact(); // press P → grab a load
 
     const after = c.snapshot();
     const me = after.colonists.find((k) => k.id === id)!;
@@ -128,66 +121,55 @@ describe("mining", () => {
 });
 
 describe("hauling", () => {
-  it("mines a deposit then unloads it into the matching pool at the hub", () => {
+  it("picks up ore, carries it to the depot, and presses P to drop it into materials", () => {
     const c = new Colony(7);
     const id = c.snapshot().colonists[0].id;
     c.possess(id);
 
-    // ---- phase 1: mine the nearest deposit until carrying something ----
-    const dep0 = c.snapshot().deposits[0];
-    const depId = dep0.id;
-    let mined = false;
-    for (let i = 0; i < 800; i++) {
+    // target an ore deposit → drops into materials (big cap, no demand drain → a
+    // clean assertion that the pool grew)
+    const ore = c.snapshot().deposits.find((d) => d.kind === "ore");
+    expect(ore).toBeTruthy();
+    const depId = ore!.id;
+
+    // ---- phase 1: reach the ore deposit and press P to pick up ----
+    let picked = false;
+    for (let i = 0; i < 900; i++) {
       const snap = c.snapshot();
       const me = snap.colonists.find((k) => k.id === id)!;
-      if (me.carryAmt > 0.5) { mined = true; break; }
-      const dep = snap.deposits.find((d) => d.id === depId)
-        ?? snap.deposits[0]; // if it depleted, target any remaining node
+      const dep = snap.deposits.find((d) => d.id === depId);
       if (!dep) break;
-      const dx = dep.gx - me.x;
-      const dy = dep.gy - me.y;
-      c.setMoveIntent(
-        Math.hypot(dx, dy) > 0.6 ? Math.sign(dx) : 0,
-        Math.hypot(dx, dy) > 0.6 ? Math.sign(dy) : 0,
-      );
-      c.tick(0.1);
-      c.drainEvents();
-    }
-    expect(mined).toBe(true);
-
-    const carrying = c.snapshot().colonists.find((k) => k.id === id)!;
-    const pool = (carrying.carryKind === "ice" ? "water"
-      : carrying.carryKind === "ore" ? "materials" : "food") as Resource | "materials";
-    const carryKind = carrying.carryKind;
-    const poolBefore = amountOf(c.snapshot(), pool);
-    const carryBefore = carrying.carryAmt;
-
-    // ---- phase 2: walk back to the hub center and unload ----
-    let unloaded = false;
-    for (let i = 0; i < 800; i++) {
-      const me = c.snapshot().colonists.find((k) => k.id === id)!;
-      const dx = HUB_CX - me.x;
-      const dy = HUB_CY - me.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist <= 1.8) {
-        c.setMoveIntent(0, 0);
-        run(c, 1, 0.1); // dwell at base so the auto-unloader runs
-        unloaded = true;
-        break;
-      }
+      const dx = dep.gx - me.x, dy = dep.gy - me.y;
+      if (Math.hypot(dx, dy) <= 1.1) { c.setMoveIntent(0, 0); c.interact(); picked = true; break; }
       c.setMoveIntent(Math.sign(dx), Math.sign(dy));
       c.tick(0.1);
       c.drainEvents();
     }
-    expect(unloaded).toBe(true);
+    expect(picked).toBe(true);
+
+    const carrying = c.snapshot().colonists.find((k) => k.id === id)!;
+    expect(carrying.carryAmt).toBeGreaterThan(0);
+    expect(carrying.carryKind).toBe("ore");
+    const poolBefore = amountOf(c.snapshot(), "materials");
+    const carryBefore = carrying.carryAmt;
+
+    // ---- phase 2: carry to the depot and press P to drop ----
+    const depot = c.snapshot().depot;
+    let dropped = false;
+    for (let i = 0; i < 900; i++) {
+      const me = c.snapshot().colonists.find((k) => k.id === id)!;
+      const dx = depot.gx - me.x, dy = depot.gy - me.y;
+      if (Math.hypot(dx, dy) <= 1.3) { c.setMoveIntent(0, 0); c.interact(); dropped = true; break; }
+      c.setMoveIntent(Math.sign(dx), Math.sign(dy));
+      c.tick(0.1);
+      c.drainEvents();
+    }
+    expect(dropped).toBe(true);
 
     const after = c.snapshot();
     const meAfter = after.colonists.find((k) => k.id === id)!;
-    // the colonist may have re-mined a passed deposit while routing home; the
-    // load-bearing facts: its kind is unchanged and the matching pool grew.
-    expect(meAfter.carryAmt).toBeLessThan(carryBefore);
-    expect(amountOf(after, pool)).toBeGreaterThan(poolBefore);
-    expect(carryKind).not.toBeNull();
+    expect(meAfter.carryAmt).toBe(0); // dropped the whole load
+    expect(amountOf(after, "materials")).toBeCloseTo(poolBefore + carryBefore, 5);
   });
 });
 

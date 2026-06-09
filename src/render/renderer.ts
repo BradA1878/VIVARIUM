@@ -20,6 +20,7 @@ import { HazardFx } from "./three/hazardfx";
 import { buildAstronaut, type AstronautMesh } from "./three/kit/astronaut";
 import { buildDeposit, type DepositMesh } from "./three/kit/deposit";
 import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
+import { buildDepot, type DepotMesh } from "./three/depot";
 
 interface Placed {
   mesh: KitMesh;
@@ -108,6 +109,7 @@ export class ThreeRenderer {
   private deposits = new Map<number, DepositMesh>();
   private depositsGroup = new THREE.Group();
   private alienShip: AlienShipMesh | null = null;
+  private depot: DepotMesh | null = null;
 
   // follow-cam: lerped focus + ortho extent driven toward the possessed target
   private camFocus = new THREE.Vector3(0, 0, 0);
@@ -185,6 +187,7 @@ export class ThreeRenderer {
     this.reconcileColonists(snap, dt, now);
     this.reconcileDeposits(snap, now);
     this.reconcileTrade(snap, dt, now);
+    this.reconcileDepot(snap, now);
     this.updateCamera(snap, dt);
     this.placement.update();
     this.atmosphere.update(dt, snap.weather === "dust");
@@ -384,6 +387,22 @@ export class ThreeRenderer {
     this.alienShip.update(trade.phase, dt, now);
   }
 
+  /** the collection depot: a fixed hopper at the depot cell, glowing brighter when
+   *  the possessed colonist is carrying a load and standing in drop range */
+  private reconcileDepot(snap: Snapshot, now: number): void {
+    if (!this.depot) {
+      this.depot = buildDepot();
+      this.scene.scene.add(this.depot.object);
+    }
+    const c = this.grid.cellCenter(snap.depot.gx, snap.depot.gy);
+    this.depot.object.position.set(c.x, 0, c.z);
+    // "ready to receive" when the piloted colonist is carrying + within range
+    let active = 0;
+    const me = snap.possessed != null ? snap.colonists.find((cc) => cc.id === snap.possessed) : undefined;
+    if (me && me.carryAmt > 0 && Math.hypot(snap.depot.gx - me.x, snap.depot.gy - me.y) <= 1.5) active = 1;
+    this.depot.setGlow(active, 0.5 + 0.5 * Math.sin(now / 360));
+  }
+
   /** follow-cam: lerp focus + ortho extent toward the possessed colonist (zoomed
    *  in) or back to the overview (origin, wide) when nothing is piloted. */
   private updateCamera(snap: Snapshot, dt: number): void {
@@ -438,6 +457,7 @@ export class ThreeRenderer {
     for (const mesh of this.deposits.values()) mesh.dispose();
     this.deposits.clear();
     if (this.alienShip) { this.alienShip.dispose(); this.alienShip = null; }
+    if (this.depot) { this.depot.dispose(); this.depot = null; }
     this.terrain.dispose();
     this.scene.dispose();
   }

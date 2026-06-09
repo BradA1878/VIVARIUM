@@ -30,6 +30,7 @@ export class SimHost {
       case "setDirector": this.colony.setDirector(cmd.value); break;
       case "possess": this.colony.possess(cmd.id); break;
       case "moveIntent": this.colony.setMoveIntent(cmd.dx, cmd.dy); break;
+      case "interact": this.colony.interact(); break;
       case "respondTrade": this.colony.respondTrade(cmd.accept); break;
       case "setPaused": this.colony.setPaused(cmd.value); break;
       case "setSpeed": this.colony.setSpeed(cmd.value); break;

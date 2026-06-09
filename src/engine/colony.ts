@@ -21,7 +21,7 @@ import { spawnHazard, hazardViews, SCHED_FIRST } from "./hazards";
 import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData } from "./state";
 import { emptyBuilding } from "./state";
-import { reconcileColonists, colonistViews, depositViews, clampMaterials } from "./colonists";
+import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed } from "./colonists";
 import { seedDeposits } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
 import {
@@ -191,6 +191,8 @@ export class Colony {
   }
   /** the player's standing WASD direction for the possessed colonist */
   setMoveIntent(dx: number, dy: number): void { this.s.moveIntent = { dx, dy }; }
+  /** the player pressed P — pick up from a deposit / drop at the depot */
+  interact(): void { interactPossessed(this.s); }
   /** accept/decline a landed alien trade offer */
   respondTrade(accept: boolean): void { applyRespondTrade(this.s, accept, this.emit); }
 
@@ -217,6 +219,9 @@ export class Colony {
     this.s.population = 4;
     this.s.materials.amount = START_MATERIALS; // the real starting stock
     clampMaterials(this.s);
+    // collection depot: a clear drop-off just off the hub's east side
+    const hubB = this.s.buildings.find((b) => DEFS[b.defId]?.isHub);
+    if (hubB) this.s.depot = { gx: hubB.gx + (DEFS[hubB.defId].foot[0] ?? 2), gy: hubB.gy + 1 };
     reconcileColonists(this.s); // four astronauts, at the hub
     seedDeposits(this.s, this.envRng); // scatter the resource field
     this.recomputeCaps();
@@ -240,6 +245,7 @@ export class Colony {
       materials: { ...s.materials },
       colonists: colonistViews(s),
       deposits: depositViews(s),
+      depot: { ...s.depot },
       possessed: s.possessed,
       trade: tradeView(s),
       acquiredTech: [...s.acquiredTech],
@@ -295,6 +301,7 @@ export class Colony {
         materials: { ...this.s.materials },
         colonists: this.s.colonists.map((c) => ({ ...c })),
         deposits: this.s.deposits.map((d) => ({ ...d })),
+        depot: { ...this.s.depot },
         moveIntent: { ...this.s.moveIntent },
         trade: this.s.trade ? { ...this.s.trade, give: { ...this.s.trade.give }, take: { ...this.s.trade.take } } : null,
         acquiredTech: [...this.s.acquiredTech],
@@ -323,6 +330,7 @@ export class Colony {
       materials: st.materials ? { ...st.materials } : { amount: START_MATERIALS, capacity: MATERIALS_CAP },
       colonists: (st.colonists ?? []).map((c2) => ({ ...c2 })),
       deposits: (st.deposits ?? []).map((d) => ({ ...d })),
+      depot: st.depot ? { ...st.depot } : { gx: 6, gy: 5 },
       moveIntent: st.moveIntent ? { ...st.moveIntent } : { dx: 0, dy: 0 },
       trade: st.trade ? { ...st.trade, give: { ...st.trade.give }, take: { ...st.trade.take } } : null,
       acquiredTech: [...(st.acquiredTech ?? [])],
@@ -355,6 +363,7 @@ function freshState(): ColonyState {
     materials: { amount: START_MATERIALS, capacity: MATERIALS_CAP },
     colonists: [],
     deposits: [],
+    depot: { gx: 6, gy: 5 }, // a clear collection point beside the hub (set in seedColony)
     possessed: null,
     moveIntent: { dx: 0, dy: 0 },
     depositRespawn: DEPOSIT_RESPAWN,

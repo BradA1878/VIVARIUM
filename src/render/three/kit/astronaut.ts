@@ -32,9 +32,14 @@ export interface AstronautMesh {
   dispose(): void;
 }
 
+/** overall figure scale — a person is much smaller than a habitat dome, so keep
+ *  the proportions but shrink the whole figure to read as to-scale on the grid */
+const FIGURE_SCALE = 0.55;
+
 export function buildAstronaut(): AstronautMesh {
   const object = new THREE.Group();
   const body = new THREE.Group();
+  body.scale.setScalar(FIGURE_SCALE);
   object.add(body);
 
   // --- materials (one set per astronaut; disposed on removal) ----------------
@@ -107,7 +112,7 @@ export function buildAstronaut(): AstronautMesh {
   add(new THREE.BoxGeometry(0.21, 0.26, 0.1), packMat, 0, 0.35, -0.14);
 
   // --- possessed ground ring (on the root, so it stays flat + un-bobbed) ------
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 24), ringMat);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.24, 24), ringMat);
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.02;
   ring.visible = false;

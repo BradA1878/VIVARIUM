@@ -73,6 +73,8 @@ export interface ColonyState {
   // ---- embodied colony ----
   colonists: ColonistInstance[];
   deposits: DepositInstance[];
+  /** the collection depot cell — where the possessed colonist drops materials */
+  depot: { gx: number; gy: number };
   /** id of the possessed colonist, or null */
   possessed: number | null;
   /** the player's standing WASD direction for the possessed colonist (normalized) */

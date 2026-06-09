@@ -17,6 +17,7 @@ export type Command =
   | { type: "setDirector"; value: boolean }
   | { type: "possess"; id: number | null }
   | { type: "moveIntent"; dx: number; dy: number }
+  | { type: "interact" }
   | { type: "respondTrade"; accept: boolean }
   | { type: "setPaused"; value: boolean }
   | { type: "setSpeed"; value: number }

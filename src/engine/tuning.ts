@@ -98,12 +98,11 @@ export const PILOT_SPEED = 2.6;  // the colonist you possess
 export const ARRIVE_EPS = 0.14;  // "reached the target" distance
 export const COLONIST_Y = 0;     // ground plane (render uses its own height)
 
-/** gathering — tuned a touch generous so a few minutes out funds an upgrade */
-export const CARRY_CAP = 20;     // units a colonist can haul
-export const MINE_RATE = 12;     // units/sec mined while standing on a deposit (+33%)
-export const UNLOAD_RATE = 24;   // units/sec dropped into the pools at base
-export const MINE_RADIUS = 0.75; // cells: how close to a deposit to mine it
-export const BASE_RADIUS = 2.4;  // cells from the hub center to auto-unload
+/** gathering — explicit pick up / drop (press P). One press fills your hands from
+ *  a deposit; one press at the depot empties them into the pools. */
+export const CARRY_CAP = 20;       // units a colonist can haul in one trip
+export const PICKUP_RADIUS = 1.25; // cells: how close to a deposit to grab a load
+export const DEPOT_RADIUS = 1.5;   // cells: how close to the depot to drop a load
 
 /** the seeded deposit field (uses a SEPARATE env-rng so the main hazard/arrival
  *  stream is byte-for-byte unchanged) */

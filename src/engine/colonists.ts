@@ -14,10 +14,10 @@ import type {
 import { DEPOSIT_YIELD } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  WALK_SPEED, PILOT_SPEED, ARRIVE_EPS, CARRY_CAP, MINE_RATE, UNLOAD_RATE,
-  MINE_RADIUS, BASE_RADIUS, DAY_START, DAY_END, MATERIALS_CAP,
+  WALK_SPEED, PILOT_SPEED, ARRIVE_EPS, CARRY_CAP, PICKUP_RADIUS, DEPOT_RADIUS,
+  DAY_START, DAY_END, MATERIALS_CAP,
 } from "./tuning";
-import type { ColonistInstance, ColonyState } from "./state";
+import type { ColonistInstance, ColonyState, DepositInstance } from "./state";
 import { emptyColonist } from "./state";
 import { idx, inBounds, cellsFor } from "./grid";
 import { doorCells } from "./doors";
@@ -151,7 +151,8 @@ function addToPool(s: ColonyState, target: Resource | "materials", amt: number):
   p.amount = Math.min(p.capacity, p.amount + amt);
 }
 
-/** the possessed colonist: integrate moveIntent, then auto-mine / auto-unload */
+/** the possessed colonist: just integrate the standing moveIntent. Gathering is
+ *  now explicit (interactPossessed), triggered by the player pressing P. */
 function pilot(s: ColonyState, c: ColonistInstance, dt: number): void {
   const { dx, dy } = s.moveIntent;
   const m = Math.hypot(dx, dy);
@@ -161,37 +162,56 @@ function pilot(s: ColonyState, c: ColonistInstance, dt: number): void {
     c.facing = Math.atan2(dx, dy);
   }
   c.state = "piloted";
+}
 
-  // auto-mine: standing on a deposit, carry not full, same kind (or empty-handed)
-  let mined = false;
-  if (c.carryAmt < CARRY_CAP) {
-    for (const dep of s.deposits) {
-      if (dep.amount <= 0) continue;
-      if (c.carryKind && c.carryKind !== dep.kind) continue;
-      const dist = Math.hypot(dep.gx - c.x, dep.gy - c.y);
-      if (dist > MINE_RADIUS) continue;
-      const amt = Math.min(MINE_RATE * dt, dep.amount, CARRY_CAP - c.carryAmt);
-      dep.amount -= amt;
-      c.carryAmt += amt;
-      c.carryKind = dep.kind;
-      c.state = "mining";
-      mined = true;
-      break;
+/** the collection depot's cell center */
+export function depotCenter(s: ColonyState): Pt {
+  return { x: s.depot.gx, y: s.depot.gy };
+}
+
+/** the nearest deposit the possessed colonist could pick up from right now */
+export function depositInReach(s: ColonyState, c: ColonistInstance): DepositInstance | null {
+  if (c.carryAmt >= CARRY_CAP) return null;
+  let best: DepositInstance | null = null, bestD = PICKUP_RADIUS;
+  for (const dep of s.deposits) {
+    if (dep.amount <= 0) continue;
+    if (c.carryKind && c.carryKind !== dep.kind) continue; // hands hold one kind
+    const dist = Math.hypot(dep.gx - c.x, dep.gy - c.y);
+    if (dist <= bestD) { bestD = dist; best = dep; }
+  }
+  return best;
+}
+
+/** explicit pick up / drop for the possessed colonist (the player pressed P).
+ *  Drops the full load at the depot if carrying + in range; otherwise grabs a
+ *  load from the nearest in-range deposit. One press fills or empties the hands. */
+export function interactPossessed(s: ColonyState): "picked" | "dropped" | null {
+  if (s.possessed == null) return null;
+  const c = s.colonists.find((x) => x.id === s.possessed);
+  if (!c) return null;
+
+  // drop the whole load at the depot
+  if (c.carryAmt > 0 && c.carryKind) {
+    const d = depotCenter(s);
+    if (Math.hypot(d.x - c.x, d.y - c.y) <= DEPOT_RADIUS) {
+      addToPool(s, DEPOSIT_YIELD[c.carryKind], c.carryAmt);
+      c.carryAmt = 0;
+      c.carryKind = null;
+      return "dropped";
     }
+  }
+
+  // otherwise fill the hands from the nearest deposit in reach
+  const dep = depositInReach(s, c);
+  if (dep) {
+    const amt = Math.min(dep.amount, CARRY_CAP - c.carryAmt);
+    dep.amount -= amt;
+    c.carryAmt += amt;
+    c.carryKind = dep.kind;
     s.deposits = s.deposits.filter((d) => d.amount > 0.001);
+    return "picked";
   }
-
-  // auto-unload: carrying, near the hub → drop into the matching pool
-  if (!mined && c.carryAmt > 0) {
-    const b = baseCenter(s);
-    if (Math.hypot(b.x - c.x, b.y - c.y) <= BASE_RADIUS && c.carryKind) {
-      const amt = Math.min(UNLOAD_RATE * dt, c.carryAmt);
-      addToPool(s, DEPOSIT_YIELD[c.carryKind], amt);
-      c.carryAmt -= amt;
-      c.state = "hauling";
-      if (c.carryAmt <= 0.001) { c.carryAmt = 0; c.carryKind = null; }
-    }
-  }
+  return null;
 }
 
 /** the tick's colonist pass — runs after staffing/casualties are resolved */

@@ -218,6 +218,8 @@ const controls = {
   },
   /** the player's standing WASD direction for the possessed colonist */
   moveIntent(dx: number, dy: number): void { bridge?.moveIntent(dx, dy); },
+  /** P — pick up from a deposit / drop at the depot */
+  interact(): void { bridge?.interact(); },
   /** accept/decline a landed alien trade offer */
   respondTrade(accept: boolean): void { bridge?.respondTrade(accept); },
   reset(): void {

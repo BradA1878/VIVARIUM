@@ -79,6 +79,8 @@ export class SimBridge {
   possess(id: number | null): void { this.send({ type: "possess", id }); }
   /** the player's standing WASD direction for the possessed colonist */
   moveIntent(dx: number, dy: number): void { this.send({ type: "moveIntent", dx, dy }); }
+  /** the player pressed P — pick up from a deposit / drop at the depot */
+  interact(): void { this.send({ type: "interact" }); }
   /** accept/decline the landed alien trade offer */
   respondTrade(accept: boolean): void { this.send({ type: "respondTrade", accept }); }
   /** possess the colonist nearest a grid point (e.g. the camera target); returns its id */

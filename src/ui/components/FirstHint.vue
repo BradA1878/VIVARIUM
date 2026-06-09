@@ -29,8 +29,8 @@ function dismiss(): void {
     <ol class="hint-steps">
       <li><b>Build</b> from the palette along the bottom. Each building costs <b>materials</b>.</li>
       <li>Out of materials? <b>Press F</b> to step into one of your astronauts — the view drops in close.</li>
-      <li>Use the <b>Arrow keys</b> (or WASD) to walk out to a glowing <b>deposit</b> on the ground, and walk onto it to mine.</li>
-      <li>Walk <b>back to the dome</b> to drop off your haul, then <b>press F</b> again to zoom back out.</li>
+      <li>Use the <b>Arrow keys</b> (or WASD) to walk to a glowing <b>deposit</b>, then press <b>P</b> to pick up a load.</li>
+      <li>Carry it to the <b>collection depot</b> (the glowing hopper by the hub) and press <b>P</b> to drop it in. <b>F</b> zooms back out.</li>
     </ol>
 
     <p class="hint-foot">Space = pause · R = rotate · click a building then the corridor tile then another to link them.</p>

@@ -56,6 +56,7 @@ function onKey(e: KeyboardEvent): void {
   const k = e.key.toLowerCase();
   if (e.key === "Escape") clearTool();
   if (e.key === "f" || e.key === "F") { e.preventDefault(); controls.possessToggle(); held.clear(); return; }
+  if (piloting.value && (k === "p" || k === "e")) { e.preventDefault(); controls.interact(); return; } // pick up / drop
   if (piloting.value && MOVE_KEYS[k]) {
     e.preventDefault();
     if (!held.has(k)) { held.add(k); sendMove(); }

@@ -183,6 +183,8 @@ export interface Snapshot {
   colonists: ColonistView[];
   /** surface resource deposits to mine */
   deposits: DepositView[];
+  /** the collection depot cell — where the possessed colonist drops materials */
+  depot: { gx: number; gy: number };
   /** the id of the colonist the player is piloting, or null */
   possessed: number | null;
   /** a live alien trade offer, or null */
