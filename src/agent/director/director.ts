@@ -22,13 +22,16 @@ export interface DirectorContext {
   comfort?: number;
 }
 
-const BASE_GAP = 110;     // sim-seconds between strikes early on
-const MIN_GAP = 48;       // floor as it escalates
-const FIRST_STRIKE = 120; // leave the player a sol or so to settle in
+const BASE_GAP = 180;     // sim-seconds between hazards early on
+const MIN_GAP = 105;      // floor even late — never faster than ~1.7 min apart
+const SOL_RAMP = 4;       // gap shrinks this much per sol (gentle, for the long arc)
+const FIRST_STRIKE = 150; // leave the player a sol+ to settle in
+const REPEAT_PENALTY = 0.4; // discourage throwing the same hazard twice running
 
 export class Director {
   private lastStrike = 0;
   private armed = false;
+  private lastKind: HazardKind | null = null;
 
   /** decide whether to throw a hazard this observation, or null to wait */
   decide(s: Snapshot, jitter: () => number = Math.random, ctx: DirectorContext = {}): Strike | null {
@@ -49,23 +52,26 @@ export class Director {
     let best: HazardKind = "dust", bestV = -Infinity;
     for (const k of Object.keys(scores) as HazardKind[]) {
       const bias = ctx.bias ? 1 + (ctx.bias[k] - 1) * biasWeight : 1;
-      const v = scores[k] * bias + jitter() * 0.3;
+      let v = scores[k] * bias + jitter() * 0.3;
+      if (k === this.lastKind) v *= REPEAT_PENALTY; // variety — don't spam one kind
       if (v > bestV) { bestV = v; best = k; }
     }
 
     this.lastStrike = s.t;
+    this.lastKind = best;
     return { kind: best, intensity: this.intensity(s, comfort) };
   }
 
   reset(): void {
     this.lastStrike = 0;
     this.armed = false;
+    this.lastKind = null;
   }
 
   /** strikes come faster as the colony matures — and faster still when the
    *  player has grown comfortable (the planet stops letting you settle) */
   private gap(s: Snapshot, comfort: number): number {
-    return Math.max(MIN_GAP, (BASE_GAP - s.sol * 5) * (1 - 0.35 * comfort));
+    return Math.max(MIN_GAP, (BASE_GAP - s.sol * SOL_RAMP) * (1 - 0.3 * comfort));
   }
 
   /** and harder, also nudged up by comfort */

@@ -45,4 +45,33 @@ describe("decide pacing", () => {
     const d2 = new Director(); const late = d2.decide(snap((s) => { s.t = 200; s.sol = 9; }), () => 0);
     expect(late!.intensity).toBeGreaterThan(early!.intensity);
   });
+
+  it("paces and varies hazards over a full campaign (no single-kind barrage)", () => {
+    // deterministic jitter so the simulated run is reproducible
+    let z = 99 >>> 0;
+    const jitter = () => (z = (z * 1103515245 + 12345) >>> 0) / 2 ** 32;
+    const d = new Director();
+    const built = new Colony(); // a sprawling sealed layout makes meteor the top seam
+    built.place("corridor", 2, 6);
+    built.place("corridor", 6, 7);
+    built.place("greenhouse", 6, 8);
+
+    const strikes: { t: number; kind: string }[] = [];
+    for (let t = 0; t <= 3300; t += 4) {
+      const s = built.snapshot();
+      s.t = t; s.sol = 1 + Math.floor(t / 150);
+      if (strikes.length && t - strikes[strikes.length - 1].t < 28) continue; // a hazard occupies the window
+      const strike = d.decide(s, jitter);
+      if (strike) strikes.push({ t, kind: strike.kind });
+    }
+
+    // never two hazards inside the floor gap
+    for (let i = 1; i < strikes.length; i++) {
+      expect(strikes[i].t - strikes[i - 1].t).toBeGreaterThanOrEqual(100);
+    }
+    // anti-repetition + jitter keep it from being all one kind
+    expect(new Set(strikes.map((x) => x.kind)).size).toBeGreaterThanOrEqual(2);
+    // a 22-sol run isn't a barrage
+    expect(strikes.length).toBeLessThanOrEqual(34);
+  });
 });
