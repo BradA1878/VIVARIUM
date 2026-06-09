@@ -1,14 +1,15 @@
 /* ============================================================================
-   Astronaut — a low-poly EVA figure, one per colonist. A white capsule torso, a
-   small visor-helmet sphere (faint emissive, on the FRONT so heading reads), and
-   a backpack box (on the BACK). The figure is built so its local +Z is "forward":
-   the renderer sets group.rotation.y = colonist.facing (facing = atan2(dx,dy) in
-   grid space, which maps directly because grid +x→world +x, grid +y→world +z).
+   Astronaut — a low-poly EVA figure, one per colonist. Built to actually READ as
+   an astronaut at iso scale: a bulky white suit torso, two arms and two legs (so
+   it's a figure, not a pill), a round helmet with a clear dark visor on the FRONT
+   (+Z), a life-support backpack on the BACK (−Z), and a little antenna. The figure
+   faces local +Z; the renderer sets group.rotation.y = colonist.facing (atan2(dx,dy)
+   in grid space, which maps directly because grid +x→world +x, grid +y→world +z).
 
    The possessed colonist gets a bright cyan ground ring and a brighter emissive
-   skin; a carried resource floats as a glowing cube above the head. Everything is
-   procedural and disposable — the renderer owns the per-id lifecycle, this owns
-   the geometry/material lifetime via dispose().
+   suit; a carried resource floats as a glowing cube above the head. Everything is
+   procedural and disposable — the renderer owns the per-id lifecycle, this owns the
+   geometry/material lifetime via dispose().
    ============================================================================ */
 import * as THREE from "three";
 import type { DepositKind } from "@shared/types";
@@ -38,80 +39,83 @@ export function buildAstronaut(): AstronautMesh {
 
   // --- materials (one set per astronaut; disposed on removal) ----------------
   const suitMat = new THREE.MeshStandardMaterial({
-    color: 0xeef1f4,
-    roughness: 0.55,
-    metalness: 0.15,
-    emissive: 0x223036,
-    emissiveIntensity: 0.0,
+    color: 0xeef1f4, roughness: 0.6, metalness: 0.12,
+    emissive: 0x223036, emissiveIntensity: 0.0,
+  });
+  const trimMat = new THREE.MeshStandardMaterial({ // boots, joints, chest panel
+    color: 0x3a4048, roughness: 0.7, metalness: 0.4,
   });
   const visorMat = new THREE.MeshStandardMaterial({
-    color: 0x0c1418,
-    roughness: 0.25,
-    metalness: 0.5,
-    emissive: 0x2c4a55,
-    emissiveIntensity: 0.6,
+    color: 0x0b1318, roughness: 0.18, metalness: 0.7,
+    emissive: 0x2c4a55, emissiveIntensity: 0.65,
   });
   const packMat = new THREE.MeshStandardMaterial({
-    color: 0x8a929c,
-    roughness: 0.6,
-    metalness: 0.6,
+    color: 0x9aa2ac, roughness: 0.55, metalness: 0.55,
+  });
+  const accentMat = new THREE.MeshStandardMaterial({ // antenna tip
+    color: 0x7fd4e8, emissive: 0x7fd4e8, emissiveIntensity: 1.0, roughness: 0.4,
   });
   const carryMat = new THREE.MeshStandardMaterial({
-    color: 0x7fd4e8,
-    emissive: 0x7fd4e8,
-    emissiveIntensity: 1.0,
-    roughness: 0.4,
-    metalness: 0.1,
-    transparent: true,
-    opacity: 0.92,
+    color: 0x7fd4e8, emissive: 0x7fd4e8, emissiveIntensity: 1.0,
+    roughness: 0.4, metalness: 0.1, transparent: true, opacity: 0.92,
   });
   const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x7fd4e8,
-    transparent: true,
-    opacity: 0.85,
-    side: THREE.DoubleSide,
+    color: 0x7fd4e8, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
   });
 
-  // --- torso: a capsule, feet near y=0 ---------------------------------------
-  const torsoGeo = new THREE.CapsuleGeometry(0.13, 0.26, 4, 8);
-  const torso = new THREE.Mesh(torsoGeo, suitMat);
-  torso.position.y = 0.26;
-  torso.castShadow = true;
-  body.add(torso);
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, cast = true): THREE.Mesh => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = cast;
+    body.add(m);
+    return m;
+  };
 
-  // --- helmet sphere on top --------------------------------------------------
-  const helmetGeo = new THREE.SphereGeometry(0.12, 12, 10);
-  const helmet = new THREE.Mesh(helmetGeo, suitMat);
-  helmet.position.y = 0.52;
-  helmet.castShadow = true;
-  body.add(helmet);
+  // --- legs + boots (feet at y≈0) --------------------------------------------
+  for (const sx of [-1, 1]) {
+    add(new THREE.CapsuleGeometry(0.05, 0.12, 3, 6), suitMat, sx * 0.07, 0.13, 0);
+    add(new THREE.BoxGeometry(0.1, 0.05, 0.13), trimMat, sx * 0.07, 0.03, 0.015); // boot
+  }
 
-  // --- visor on the FRONT (+Z) so the figure has a clear heading -------------
-  const visorGeo = new THREE.SphereGeometry(0.085, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62);
-  const visor = new THREE.Mesh(visorGeo, visorMat);
-  visor.position.set(0, 0.5, 0.06);
-  visor.rotation.x = Math.PI / 2.2; // tilt the cap to face forward
-  body.add(visor);
+  // --- torso: a bulky EVA suit (wider than tall reads "suited") ---------------
+  const torso = add(new THREE.CapsuleGeometry(0.135, 0.13, 5, 10), suitMat, 0, 0.34, 0);
+  torso.scale.set(1.05, 1, 0.85);
+  add(new THREE.BoxGeometry(0.11, 0.1, 0.04), trimMat, 0, 0.32, 0.12, false); // chest panel
 
-  // --- backpack on the BACK (−Z) ---------------------------------------------
-  const packGeo = new THREE.BoxGeometry(0.18, 0.22, 0.1);
-  const pack = new THREE.Mesh(packGeo, packMat);
-  pack.position.set(0, 0.3, -0.14);
-  pack.castShadow = true;
-  body.add(pack);
+  // --- shoulders + arms (angled slightly out) --------------------------------
+  for (const sx of [-1, 1]) {
+    add(new THREE.SphereGeometry(0.06, 8, 8), suitMat, sx * 0.155, 0.43, 0); // shoulder
+    const arm = add(new THREE.CapsuleGeometry(0.045, 0.16, 3, 6), suitMat, sx * 0.18, 0.31, 0);
+    arm.rotation.z = sx * 0.22;
+    add(new THREE.SphereGeometry(0.05, 8, 8), trimMat, sx * 0.2, 0.21, 0); // glove
+  }
 
-  // --- possessed ground ring (hidden unless piloted) -------------------------
-  const ringGeo = new THREE.RingGeometry(0.22, 0.32, 24);
-  const ring = new THREE.Mesh(ringGeo, ringMat);
+  // --- neck → helmet ---------------------------------------------------------
+  add(new THREE.CylinderGeometry(0.055, 0.07, 0.05, 8), trimMat, 0, 0.46, 0, false);
+  const helmet = add(new THREE.SphereGeometry(0.115, 14, 12), suitMat, 0, 0.57, 0);
+  helmet.scale.set(1, 0.95, 1);
+
+  // --- visor: a dark reflective lens across the FRONT of the helmet -----------
+  const visor = add(new THREE.SphereGeometry(0.1, 14, 12), visorMat, 0, 0.565, 0.045, false);
+  visor.scale.set(0.92, 0.62, 0.55);
+
+  // --- antenna ---------------------------------------------------------------
+  add(new THREE.CylinderGeometry(0.006, 0.006, 0.09, 5), trimMat, 0.07, 0.69, -0.02, false);
+  add(new THREE.SphereGeometry(0.018, 8, 8), accentMat, 0.07, 0.74, -0.02, false);
+
+  // --- life-support backpack on the BACK (−Z) --------------------------------
+  add(new THREE.BoxGeometry(0.21, 0.26, 0.1), packMat, 0, 0.35, -0.14);
+
+  // --- possessed ground ring (on the root, so it stays flat + un-bobbed) ------
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.22, 0.32, 24), ringMat);
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.02;
   ring.visible = false;
-  object.add(ring); // on the root: stays flat on the ground, doesn't bob
+  object.add(ring);
 
   // --- carry cube above the head (hidden unless carrying) --------------------
-  const carryGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
-  const carry = new THREE.Mesh(carryGeo, carryMat);
-  carry.position.y = 0.72;
+  const carry = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), carryMat);
+  carry.position.y = 0.84;
   carry.visible = false;
   body.add(carry);
 
@@ -119,7 +123,6 @@ export function buildAstronaut(): AstronautMesh {
     object,
     body,
     setState(possessed, carryKind, pulse) {
-      // possessed: bright cyan ring + brighter suit emissive
       ring.visible = possessed;
       if (possessed) {
         ringMat.opacity = 0.55 + 0.35 * pulse;
@@ -128,7 +131,6 @@ export function buildAstronaut(): AstronautMesh {
       } else {
         suitMat.emissiveIntensity = 0.0;
       }
-      // carried resource cube
       if (carryKind) {
         carry.visible = true;
         const col = CARRY_COLOR[carryKind];

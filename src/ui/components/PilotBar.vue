@@ -32,7 +32,7 @@ const hint = computed(() => {
   if (!p) return "";
   if (p.state === "mining") return "mining…";
   if (p.state === "hauling") return "unloading…";
-  return "WASD to move · walk onto a deposit to mine · return to base to unload";
+  return "Arrow keys / WASD to move · walk onto a deposit to mine · return to base to unload";
 });
 </script>
 

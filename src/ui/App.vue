@@ -19,6 +19,7 @@ import Inspector from "./components/Inspector.vue";
 import Palette from "./components/Palette.vue";
 import TradePrompt from "./components/TradePrompt.vue";
 import PilotBar from "./components/PilotBar.vue";
+import FirstHint from "./components/FirstHint.vue";
 import { SimBridge } from "@/worker/bridge";
 import { Tuning } from "@/engine";
 import type { ThreeRenderer } from "@/render/renderer";
@@ -132,8 +133,25 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <div v-if="!booting" class="hint-layer">
+      <FirstHint />
+    </div>
+
     <EndScreen v-if="!booting" />
 
     <Boot v-if="booting" @done="booting = false" />
   </div>
 </template>
+
+<style scoped>
+/* the first-time hint sits centered near the top; only the card itself is
+   interactive (the card opts back into pointer events) */
+.hint-layer {
+  position: absolute;
+  top: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 60;
+}
+</style>
