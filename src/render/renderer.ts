@@ -95,6 +95,12 @@ export class ThreeRenderer {
   private raf = 0;
   private running = false;
   private lastFrame = 0;
+  // frame-rate cap — the sim is slow + iso, so ~30fps is plenty and saves a lot
+  // of GPU/battery vs rendering at a 120Hz display's full rate (and lower while
+  // paused, since almost nothing animates then).
+  private lastRender = 0;
+  private static readonly FPS_ACTIVE = 30;
+  private static readonly FPS_PAUSED = 12;
 
   // embodied colony: astronauts, deposits, the trader saucer
   private colonists = new Map<number, ColonistRec>();
@@ -141,10 +147,18 @@ export class ThreeRenderer {
   start(): void {
     if (this.running) return;
     this.running = true;
-    const loop = () => {
+    const loop = (t: number) => {
       if (!this.running) return;
-      this.frame();
       this.raf = requestAnimationFrame(loop);
+      // don't render an off-screen tab at all (belt-and-suspenders: rAF already
+      // throttles hidden tabs, but this is explicit)
+      if (typeof document !== "undefined" && document.hidden) return;
+      // cap the frame rate — render at most FPS_ACTIVE (FPS_PAUSED when paused)
+      const fps = this.bridge.latest?.paused ? ThreeRenderer.FPS_PAUSED : ThreeRenderer.FPS_ACTIVE;
+      const minGap = 1000 / fps - 1; // small slack so we lock cleanly to a divisor of the display rate
+      if (t - this.lastRender < minGap) return;
+      this.lastRender = t;
+      this.frame();
     };
     this.raf = requestAnimationFrame(loop);
   }

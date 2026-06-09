@@ -42,7 +42,10 @@ export class SceneManager {
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    // cap the device pixel ratio at 1.5: on a Retina display 2.0 renders 4× the
+    // pixels of 1×, a big GPU/battery cost for low-poly iso art that reads fine
+    // at 1.5 (≈2.25× pixels). Saves ~45% of fill vs 2.0.
+    this.renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
