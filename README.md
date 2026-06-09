@@ -1,22 +1,41 @@
 # VIVARIUM
 
 A 3D Mars-colony survival sim, narrated by the colony AI that keeps it alive —
-**VIVARIUM**. Resource balance is the whole game: power → water → oxygen → food,
-with batteries and tanks as the buffers that carry the colony through the dark.
-Built as a hidden Easter egg for bradanderson.org.
+**VIVARIUM**. Resource balance is the whole game: **power → water → oxygen → food**,
+with batteries and tanks as the buffers that carry the colony through the dark. A
+council of AI voices narrates your watch, and the planet's tactician picks the
+hazard that presses your weakest seam. Built as a hidden Easter egg for
+bradanderson.org.
 
-See [`Docs/Planning/vivarium-design.md`](Docs/Planning/vivarium-design.md) for the
-full design. The original feel-and-mechanics prototype lives in `design/`.
+> Vite + Vue 3 + TypeScript · three.js renderer · a deterministic sim in a Web
+> Worker · optional TensorFlow.js · optional Node/Hono backend.
 
-## The one rule (doc §0)
+## Quick start
 
-Two layers, with a hard wall between them:
+```bash
+npm install
+npm run dev          # Vite dev server → http://localhost:5180
+```
 
-1. **The Engine** — deterministic, synchronous, ~5 Hz. Runs start to finish with
-   no network, no LLM, no async. Lives in a **Web Worker**. Fully playable alone.
-2. **The Agent Layer** — VIVARIUM. Asynchronous, event-driven, *optional*. It
-   only *observes* the engine's snapshot + event stream and narrates. It never
-   reaches into the tick; the engine never `await`s it.
+The game is **fully playable with no server and no env vars** — the narrator falls
+back to scripted lines and saves go to localStorage. The heavy three.js renderer is
+lazy-loaded behind the colony view, so it never lands on the host page until opened.
+
+## The one rule everything hangs on
+
+Two layers, with a **hard wall** between them:
+
+1. **The Engine** (`src/engine/`) — a **deterministic, synchronous** simulation.
+   Same seed + same inputs → same future. It runs inside a **Web Worker** and
+   imports no three.js, Vue, DOM, `fetch`, `await`, `Math.random`, `Date.now`, or
+   `@tensorflow/*`. This purity powers replay, exact save/resume, and the
+   determinism tests. Fully playable on its own.
+2. **The Agent layer + UI** (everything else, main thread) — only ever *observe*
+   the worker's `Snapshot` + `ColonyEvent` stream and issue typed `Command`s back.
+   They never reach into the tick; the engine never `await`s them.
+
+Almost every design decision in the codebase follows from this. See
+[docs/architecture.md](docs/architecture.md).
 
 ## Architecture
 
@@ -25,52 +44,61 @@ src/
   engine/        pure deterministic sim (no DOM / three / async) — runs in the worker
   worker/        sim.worker.ts hosts the engine; bridge.ts is the main-thread client
   render/        three.js renderer — iso camera, Mars terrain, procedural building kit
-  ui/            Vue 3 HUD overlay (pointer-events:none) reading a reactive store
-  agent/         VIVARIUM's agent layer (see below)
+  ui/            Vue 3 HUD overlay reading a single reactive store (stores/colony.ts)
+  agent/         the agent layer:
     council/     the Council — VIVARIUM, Watcher, Strategist, Chronicler
-    worldmodel/  causal graph of the colony (the Memgraph-deferred model)
-    sentinel/    TensorFlow.js anomaly detection (the Watcher's eyes)
+    worldmodel/  causal graph of the colony; diagnoseShortfall()
+    sentinel/    TensorFlow.js anomaly detection (lazy-loaded, degrades to no-op)
+    director/    the antagonist — picks hazards, escalates, cross-run memory
   persistence/   save serialization, localStorage + Mongo adapters
 server/          Node + Hono — live MXF narrator endpoint + Mongo persistence
-shared/          the neutral vocabulary spoken across the wall (events, snapshot)
+shared/          the neutral vocabulary spoken across the wall (types.ts)
 ```
 
-The engine lives in the worker; the renderer, HUD, and agent layer live on the
-main thread and only consume the worker's output.
+## What's in the box
 
-## The agent layer — a council, not a voice (doc §3.3, §7)
+- **A colony that's a system, not an equation.** The tick is *ordered passes* —
+  solar → power-by-priority brownout shedding → production gates → colonist demand →
+  shortfall/grace/casualty → resupply → campaign. Pools (batteries, cisterns, tanks)
+  are buffers that decouple the passes. The whole tech tree is **data** in
+  `engine/defs.ts`; balancing is editing numbers, never engine logic.
+- **An embodied crew.** Colonists are real entities. Press **F** to possess the
+  nearest one and **WASD** to drive it; it auto-mines surface deposits
+  (ice → water, ore → materials, cache → food) and unloads at the hub. **Materials**
+  is the build currency, so going out to gather funds your expansion.
+- **Pressure, corridors, and doors.** The seal flood-fills from a Pressure Hub
+  through corridors; pressurized buildings have a rotatable door, and the Corridor
+  tile is a 2-click door-to-door auto-router.
+- **Alien traders.** A ship arrives on a window and offers a resource swap or
+  permanent **alien tech** (capacity / passive-power / demand upgrades) for
+  materials. Accept or decline while it's on the ground.
+- **A council, not a voice.** Four AI narrators — **VIVARIUM** (the keeper), the
+  **Watcher** (reads a causal world model and a TF.js anomaly Sentinel to say *why*
+  a pool is failing), the **Strategist** (what to build next), and the **Chronicler**
+  (the long memory). They arbitrate so one speaks per beat.
+- **The Director.** A non-deterministic antagonist that watches the colony and picks
+  the hazard that presses your weakest seam, escalating over the sols — yet stays
+  outside the wall, proposing hazards via a `Command` the deterministic engine logs.
+- **The campaign.** Earth's launch window closes at the start of **Sol 22**. Grow to
+  a real settlement — the target population, self-sustaining on all life support
+  without resupply for a sustained stretch — before then, and you win. Let the window
+  close, or lose everyone, and the watch ends.
 
-VIVARIUM is a chorus of four agents that share a causal model of the colony and
-arbitrate so only one speaks per beat:
+For how it all plays, see [docs/gameplay.md](docs/gameplay.md).
 
-- **VIVARIUM** — the keeper. Serif italic; speaks to most events.
-- **The Watcher** — a Sentinel-class anomaly intelligence. Reads the causal
-  **world model** (`agent/worldmodel`) to name *why* a pool is failing — it
-  traces a shortfall down the cascade to its root (oxygen → starved electrolysis
-  → water → the storm took the light). Its "eyes" are a **TensorFlow.js**
-  autoencoder (`agent/sentinel`) that learns the colony's normal telemetry and
-  flags drift the fixed-threshold alerts miss.
-- **The Strategist** — reads bottlenecks and recommends the next build.
-- **The Chronicler** — the long memory: milestone sols, the dead, the campaign's
-  last entry.
+## Documentation
 
-Each voice has its own register in the terminal and, in the live build, its own
-pinned system prompt. The world model is an in-memory graph with a `WorldStore`
-seam where a Memgraph-backed store can drop in later.
+Full docs live in [`docs/`](docs/README.md):
 
-## Run it
+- [**Architecture**](docs/architecture.md) — the hard wall, data flow, and the worker protocol.
+- [**The Engine**](docs/engine.md) — buildings-as-data, the ordered tick, the seeded RNG, save/resume.
+- [**The Agent Layer**](docs/agent-layer.md) — the Council, world model, Sentinel, Director, and live narrator.
+- [**Gameplay**](docs/gameplay.md) — the loop, building order, possession & mining, trade, the campaign.
+- [**Rendering**](docs/rendering.md) — the three.js renderer, the procedural kit, the camera.
+- [**Development**](docs/development.md) — commands, layout, extension recipes, testing, the Playwright hook.
+- [**Design doc**](docs/planning/vivarium-design.md) — the original starting point (the codebase has grown past it).
 
-```bash
-npm install
-npm run dev          # Vite dev server → http://localhost:5180
-```
-
-The three.js renderer is lazy-loaded behind the colony view, so the heavy bundle
-stays off the main page (doc §1). The game is fully playable with **no server and
-no env vars** — the narrator falls back to scripted lines and saves go to
-localStorage.
-
-### Optional: live narrator + Mongo persistence
+## Optional: live narrator + Mongo persistence
 
 ```bash
 cp .env.example .env   # then fill in the values below
@@ -84,44 +112,29 @@ npm run server         # Node + Hono on :8787 (Vite proxies /api → here)
 | `VITE_LIVE_NARRATOR` | Set to `1` to opt the **client** into live generation (default off → pure scripted, no network). |
 | `MONGODB_URI` / `MONGODB_DB` | Networked save state. Falls back to localStorage if unreachable. |
 
-The `gate()` short-circuits on event type / severity / cooldown **before** any
-model call, and the endpoint is rate-limited and caches by event signature — so a
-public, auth-free toy can't become a cost faucet (doc §3.2).
+The narrator `gate()` short-circuits on event type / severity / cooldown **before**
+any model call, and the endpoint is rate-limited and caches by event signature — so a
+public, auth-free toy can't become a cost faucet. See
+[docs/agent-layer.md](docs/agent-layer.md).
 
-## Test
+## Test & build
 
 ```bash
 npm test             # Vitest — engine determinism, worker loop, narrator gate, save round-trip
-npm run typecheck    # vue-tsc
+npm run typecheck    # vue-tsc (covers src/, shared/, server/)
 npm run build        # type-check + production build
 ```
 
-The engine is deterministic and replayable: same seed + same dt sequence → same
+The engine is deterministic and replayable: same seed + same `dt` sequence → same
 future, and a save resumes bit-identically.
-
-## Play
-
-- **Build palette** (bottom center) — place a Pressure Hub first, then corridors
-  to carry the seal, habitats, solar arrays + batteries for power, an ice
-  extractor and electrolysis for water→oxygen, hydroponics for food. Right-click
-  cancels; the ghost shows valid (cyan) / blocked (rust).
-- Watch power fall at dusk and the battery carry the colony through the night.
-- Trigger a dust storm (top bar) — solar guts to ~12%.
-- Let a pool empty and the grace timer counts down to a casualty.
-- Earth resupply windows arrive on a schedule and refill the buffers.
-
-**The campaign (doc §2.5).** Earth's launch window closes at Sol 12. Reach a real
-settlement — the target population, sustaining itself on all life support without
-resupply for a sustained stretch — before then, and you win. Let the window close
-on an unfinished colony, or lose everyone, and the watch ends. The objective panel
-tracks both clocks; the Chronicler writes the last entry.
 
 ## Notes
 
-- **Procedural kit, not Blender.** The doc calls for a Blender→glTF kit; this
+- **Procedural kit, not Blender.** The design calls for a Blender → glTF kit; this
   environment can't run Blender, so the buildings are procedural three.js meshes
   reproducing the prototype silhouettes. `render/three/kit/` keeps a `GLTFLoader`
   seam so real `.glb` assets can drop in later with no call-site changes.
-- **Easter-egg embedding.** Standalone, `index.html` boots the game directly. On
-  the host site it sits behind a trigger; mounting `App.vue` is the integration
-  point, and the renderer chunk is already split out for lazy load.
+- **Easter-egg embedding.** Standalone, `index.html` boots the game directly. On the
+  host site it sits behind a trigger; mounting `App.vue` is the integration point,
+  and the renderer chunk is already split out for lazy load.
+- This is a personal project — a hidden Easter egg for bradanderson.org.

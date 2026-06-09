@@ -55,4 +55,4 @@ The fastest correctness loop is `npm run typecheck && npm test`. For anything vi
 
 ## Scope note
 
-Treat `Docs/Planning/vivarium-design.md` as the project's *starting point*, not a spec — the codebase has deliberately grown past it. Don't gate ideas as "out of scope." Surface genuine engineering tradeoffs (above all, anything that would compromise engine determinism) as informed choices, not vetoes.
+Treat `docs/planning/vivarium-design.md` as the project's *starting point*, not a spec — the codebase has deliberately grown past it. Don't gate ideas as "out of scope." Surface genuine engineering tradeoffs (above all, anything that would compromise engine determinism) as informed choices, not vetoes.
