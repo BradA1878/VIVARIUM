@@ -22,6 +22,7 @@ import { emptyColonist } from "./state";
 import { idx, inBounds, cellsFor } from "./grid";
 import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
+import { ROLE_BUILDING, nameOf, roleOf } from "./roster";
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
@@ -124,19 +125,31 @@ export function reconcileColonists(s: ColonyState): void {
 }
 
 /** assign each colonist a job (a staffed building slot) + a home, deterministically.
- *  Slots come from buildings that need staffing, in uid order; colonists fill them
- *  in id order. Surplus colonists idle at a hab. */
+ *  Slots come from buildings that need staffing, in uid order; pass 1 hands each
+ *  slot the lowest-id unclaimed colonist whose role matches the building, pass 2
+ *  backfills the rest in id order. Surplus colonists idle at a hab. */
 function assign(s: ColonyState): void {
-  const slots: number[] = [];
   const byUid = [...s.buildings].sort((a, b) => a.uid - b.uid);
+  const slots: { uid: number; defId: string }[] = [];
   for (const b of byUid) {
     const d = DEFS[b.defId];
-    if (d && d.staffing > 0) for (let k = 0; k < d.staffing; k++) slots.push(b.uid);
+    if (d && d.staffing > 0) for (let k = 0; k < d.staffing; k++) slots.push({ uid: b.uid, defId: b.defId });
   }
   const habs = byUid.filter((b) => (DEFS[b.defId]?.popCap ?? 0) > 0);
   const colonists = [...s.colonists].sort((a, b) => a.id - b.id);
+
+  const workers: (ColonistInstance | null)[] = slots.map(() => null);
+  const free = [...colonists];
+  const claim = (i: number, match: (c: ColonistInstance) => boolean): void => {
+    const j = free.findIndex(match);
+    if (j >= 0) workers[i] = free.splice(j, 1)[0];
+  };
+  slots.forEach((slot, i) => claim(i, (c) => ROLE_BUILDING[roleOf(c.id)] === slot.defId));
+  slots.forEach((_, i) => { if (!workers[i]) claim(i, () => true); });
+
+  for (const c of colonists) c.workUid = null;
+  workers.forEach((c, i) => { if (c) c.workUid = slots[i].uid; });
   colonists.forEach((c, i) => {
-    c.workUid = i < slots.length ? slots[i] : null;
     c.homeUid = habs.length ? habs[i % habs.length].uid : (hub(s)?.gx != null ? null : null);
   });
 }
@@ -249,7 +262,8 @@ export function stepColonists(s: ColonyState, dt: number): void {
 
 export function colonistViews(s: ColonyState): ColonistView[] {
   return s.colonists.map((c) => ({
-    id: c.id, x: c.x, y: c.y, facing: c.facing, state: c.state,
+    id: c.id, name: nameOf(c.id), role: roleOf(c.id),
+    x: c.x, y: c.y, facing: c.facing, state: c.state,
     carryKind: c.carryKind, carryAmt: c.carryAmt, possessed: c.id === s.possessed,
   }));
 }

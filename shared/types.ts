@@ -120,6 +120,10 @@ export interface DepositView {
   max: number;
 }
 
+/** a colonist's trade — a pure derivation of its id (engine/roster.ts), so it
+ *  costs no RNG draws and survives save/load for free */
+export type ColonistRole = "miner" | "engineer" | "botanist" | "medic";
+
 /** what a colonist is doing — drives the renderer's pose + the auto-AI */
 export type ColonistAct =
   | "idle"
@@ -135,6 +139,9 @@ export type ColonistAct =
  *  interpolates between snapshots. */
 export interface ColonistView {
   id: number;
+  /** deterministic display name, derived from the id */
+  name: string;
+  role: ColonistRole;
   x: number;
   y: number;
   /** facing angle in radians (world XZ) */

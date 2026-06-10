@@ -156,6 +156,13 @@ export const UFO_MIN_POP = 3;       // never abducts at/below this population
 export const DEFLECTOR_BLOCK = 0.5; // per online deflector, before alien tech
 
 /* ----------------------------------------------------------------------------
+   The colonist roster — roles are pure id derivations (engine/roster.ts). A
+   staffed building whose workers match its trade produces more; eff scales
+   produces only, never consumes.
+   ---------------------------------------------------------------------------- */
+export const ROLE_BONUS = 0.25; // eff = 1 + ROLE_BONUS × matched/staffing
+
+/* ----------------------------------------------------------------------------
    In-colony births — the settlement grows from within when it's thriving (surplus
    + spare housing + a population floor + no active life-support crisis). Uncapped,
    but rare. Uses the MAIN rng, like Earth arrivals which it mirrors.

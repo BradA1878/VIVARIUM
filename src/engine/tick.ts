@@ -14,12 +14,14 @@ import {
   BROWNOUT_DEFICIT, BROWNOUT_LOW, BROWNOUT_RECOVER_FRAC,
   RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT,
   BIRTH_MIN_POP, BIRTH_GAP_MIN, BIRTH_GAP_SPAN, BIRTH_RETRY,
+  ROLE_BONUS,
 } from "./tuning";
 import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
 import { recomputeConnectivity } from "./connectivity";
 import { updateHazards, hazardMods, buildingFunctional, type HazardMods } from "./hazards";
 import { stepColonists } from "./colonists";
+import { roleMatchCount } from "./roster";
 import { respawnDeposits } from "./deposits";
 import { updateTrade } from "./trade";
 import { updateUfo } from "./ufo";
@@ -157,10 +159,17 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
       takePool(s, r, rate * dt);
       net[r] -= rate;
     }
+    // role-matched staffing works the recipe harder — scales produces only,
+    // never consumes (moraleMult joins this product in a later commit)
+    let eff = 1;
+    if (d.staffing > 0) {
+      const matched = roleMatchCount(s, b.uid, b.defId);
+      eff = 1 + ROLE_BONUS * (Math.min(matched, d.staffing) / d.staffing);
+    }
     for (const k in d.produces) {
       const r = k as Resource;
-      addPool(s, r, d.produces[r]! * dt);
-      net[r] += d.produces[r]!;
+      addPool(s, r, d.produces[r]! * eff * dt);
+      net[r] += d.produces[r]! * eff;
     }
     b.util = 1;
   }
