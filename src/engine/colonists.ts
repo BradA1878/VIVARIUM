@@ -15,10 +15,10 @@ import { DEPOSIT_YIELD } from "@shared/types";
 import { DEFS } from "./defs";
 import {
   WALK_SPEED, PILOT_SPEED, ARRIVE_EPS, CARRY_CAP, PICKUP_RADIUS, DEPOT_RADIUS,
-  DAY_START, DAY_END, MATERIALS_CAP,
+  DAY_START, DAY_END, MATERIALS_CAP, INJURED_SPEED, INJURED_PILOT_FACTOR,
 } from "./tuning";
 import type { ColonistInstance, ColonyState, DepositInstance } from "./state";
-import { emptyColonist } from "./state";
+import { buildingFunctional, emptyColonist } from "./state";
 import { idx, inBounds, cellsFor } from "./grid";
 import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
@@ -26,7 +26,7 @@ import { ROLE_BUILDING, nameOf, roleOf } from "./roster";
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
-interface Pt { x: number; y: number }
+export interface Pt { x: number; y: number }
 
 /** continuous center of a building's footprint, in grid-cell coords */
 function buildingCenter(b: { defId: string; gx: number; gy: number }): Pt {
@@ -48,7 +48,7 @@ export function baseCenter(s: ColonyState): Pt {
 /** a free cell to stand at for a building — its door's exit cell if open, else
  *  the first free orthogonally-adjacent cell, else the (clamped) center. So
  *  colonists wait at the door instead of standing inside the dome. */
-function accessCell(s: ColonyState, b: { defId: string; gx: number; gy: number; rot?: number }): Pt {
+export function accessCell(s: ColonyState, b: { defId: string; gx: number; gy: number; rot?: number }): Pt {
   const def = DEFS[b.defId];
   if (def?.door != null) {
     const dc = doorCells(def, b.gx, b.gy, (b.rot ?? 0) as 0 | 1 | 2 | 3);
@@ -67,6 +67,19 @@ function accessCell(s: ColonyState, b: { defId: string; gx: number; gy: number; 
   }
   const c = buildingCenter(b);
   return { x: Math.min(s.N - 1, Math.max(0, c.x)), y: Math.min(s.N - 1, Math.max(0, c.y)) };
+}
+
+/** nearest treatable medbay's access cell to a point (functional + online), or
+ *  null — the triage target for the wounded (engine/injury.ts does the healing) */
+function nearestMedbay(s: ColonyState, p: Pt): Pt | null {
+  let best: Pt | null = null, bestD = Infinity;
+  for (const b of s.buildings) {
+    if (b.defId !== "medbay" || !b.online || !buildingFunctional(b)) continue;
+    const cell = accessCell(s, b);
+    const dist = (cell.x - p.x) ** 2 + (cell.y - p.y) ** 2;
+    if (dist < bestD) { bestD = dist; best = cell; }
+  }
+  return best;
 }
 
 /** nearest sealed building's access cell to a point (shelter target in a hazard) */
@@ -127,7 +140,8 @@ export function reconcileColonists(s: ColonyState): void {
 /** assign each colonist a job (a staffed building slot) + a home, deterministically.
  *  Slots come from buildings that need staffing, in uid order; pass 1 hands each
  *  slot the lowest-id unclaimed colonist whose role matches the building, pass 2
- *  backfills the rest in id order. Surplus colonists idle at a hab. */
+ *  backfills the rest in id order. The injured are off shift — eligible for
+ *  neither pass. Surplus colonists idle at a hab. */
 function assign(s: ColonyState): void {
   const byUid = [...s.buildings].sort((a, b) => a.uid - b.uid);
   const slots: { uid: number; defId: string }[] = [];
@@ -139,7 +153,7 @@ function assign(s: ColonyState): void {
   const colonists = [...s.colonists].sort((a, b) => a.id - b.id);
 
   const workers: (ColonistInstance | null)[] = slots.map(() => null);
-  const free = [...colonists];
+  const free = colonists.filter((c) => c.injury <= 0);
   const claim = (i: number, match: (c: ColonistInstance) => boolean): void => {
     const j = free.findIndex(match);
     if (j >= 0) workers[i] = free.splice(j, 1)[0];
@@ -169,9 +183,10 @@ function addToPool(s: ColonyState, target: Resource | "materials", amt: number):
 function pilot(s: ColonyState, c: ColonistInstance, dt: number): void {
   const { dx, dy } = s.moveIntent;
   const m = Math.hypot(dx, dy);
+  const speed = c.injury > 0 ? PILOT_SPEED * INJURED_PILOT_FACTOR : PILOT_SPEED;
   if (m > 0.0001) {
-    c.x = clamp(c.x + (dx / m) * PILOT_SPEED * dt, 0, s.N - 1);
-    c.y = clamp(c.y + (dy / m) * PILOT_SPEED * dt, 0, s.N - 1);
+    c.x = clamp(c.x + (dx / m) * speed * dt, 0, s.N - 1);
+    c.y = clamp(c.y + (dy / m) * speed * dt, 0, s.N - 1);
     c.facing = Math.atan2(dx, dy);
   }
   c.state = "piloted";
@@ -242,6 +257,12 @@ export function stepColonists(s: ColonyState, dt: number): void {
     let arriveState: ColonistInstance["state"];
     if (hazardActive) {
       goal = nearestShelter(s, c); arriveState = "sheltering";
+    } else if (c.injury > 0) {
+      // the wounded limp to triage — a treatable medbay's door, else home
+      const home = buildingByUid(s, c.homeUid);
+      goal = nearestMedbay(s, c)
+        ?? (home ? accessCell(s, home) : freeCellNear(s, baseCenter(s)));
+      arriveState = "recovering";
     } else if (day && c.workUid != null) {
       const w = buildingByUid(s, c.workUid);
       goal = w ? accessCell(s, w) : baseCenter(s); arriveState = "working";
@@ -255,15 +276,18 @@ export function stepColonists(s: ColonyState, dt: number): void {
     // route around buildings; walk toward the next cell on the path
     const path = findPath(s, Math.round(c.x), Math.round(c.y), Math.round(goal.x), Math.round(goal.y));
     const wp: Pt = path && path.length > 1 ? { x: path[1][0], y: path[1][1] } : goal;
-    stepToward(c, wp, WALK_SPEED, dt);
-    c.state = arriveState === "working" ? "toWork" : arriveState === "sheltering" ? "sheltering" : "toHome";
+    stepToward(c, wp, c.injury > 0 ? INJURED_SPEED : WALK_SPEED, dt);
+    c.state = arriveState === "working" ? "toWork"
+      : arriveState === "sheltering" ? "sheltering"
+      : arriveState === "recovering" ? "toMedbay"
+      : "toHome";
   }
 }
 
 export function colonistViews(s: ColonyState): ColonistView[] {
   return s.colonists.map((c) => ({
     id: c.id, name: nameOf(c.id), role: roleOf(c.id),
-    x: c.x, y: c.y, facing: c.facing, state: c.state,
+    x: c.x, y: c.y, facing: c.facing, state: c.state, injury: c.injury,
     carryKind: c.carryKind, carryAmt: c.carryAmt, possessed: c.id === s.possessed,
   }));
 }

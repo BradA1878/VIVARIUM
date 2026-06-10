@@ -8,9 +8,9 @@
    ============================================================================ */
 import type { UfoView } from "@shared/types";
 import type { ColonyState, UfoInstance } from "./state";
+import { buildingFunctional } from "./state";
 import type { Emit } from "./tick";
 import type { RNG } from "./rng";
-import { buildingFunctional } from "./hazards";
 import { techDeflectorBoost } from "./techs";
 import { bumpMorale } from "./morale";
 import {

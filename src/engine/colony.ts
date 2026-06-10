@@ -333,7 +333,7 @@ export class Colony {
       },
       flow: { ...st.flow },
       materials: st.materials ? { ...st.materials } : { amount: START_MATERIALS, capacity: MATERIALS_CAP },
-      colonists: (st.colonists ?? []).map((c2) => ({ ...c2 })),
+      colonists: (st.colonists ?? []).map((c2) => ({ ...c2, injury: c2.injury ?? 0 })),
       deposits: (st.deposits ?? []).map((d) => ({ ...d })),
       depot: st.depot ? { ...st.depot } : { gx: 6, gy: 5 },
       moveIntent: st.moveIntent ? { ...st.moveIntent } : { dx: 0, dy: 0 },

@@ -32,6 +32,8 @@ export interface ColonistInstance {
   state: ColonistAct;
   carryKind: DepositKind | null;
   carryAmt: number;
+  /** base-seconds of recovery remaining; 0 = healthy (engine/injury.ts) */
+  injury: number;
   /** building uid this colonist is assigned to staff, or null */
   workUid: number | null;
   /** hab uid this colonist shelters in, or null */
@@ -179,7 +181,7 @@ export interface SaveData {
 export function emptyColonist(id: number, x: number, y: number): ColonistInstance {
   return {
     id, x, y, facing: 0, state: "idle",
-    carryKind: null, carryAmt: 0, workUid: null, homeUid: null,
+    carryKind: null, carryAmt: 0, injury: 0, workUid: null, homeUid: null,
   };
 }
 
@@ -195,4 +197,12 @@ export function emptyBuilding(
     online: false, connected: false, staffed: false, fed: false, util: 0,
     integrity: 1, faulted: 0,
   };
+}
+
+export const FUNC_THRESHOLD = 0.45; // below this integrity → non-functional
+
+/** can this building operate? (intact + not faulted) — lives on this leaf so
+ *  hazards/injury/colonists/tick can all use it without a runtime import cycle */
+export function buildingFunctional(b: BuildingState): boolean {
+  return b.integrity >= FUNC_THRESHOLD && b.faulted <= 0;
 }

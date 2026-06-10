@@ -75,6 +75,14 @@ export const DEFS: Record<string, BuildingDef> = {
     requiresPressure: true, priority: 30, door: 2,
     desc: "Food, plus a little oxygen. Needs two workers. Shed first in a brownout.",
   },
+  medbay: {
+    id: "medbay", name: "Med-Bay", glyph: "MED",
+    foot: [1, 1], h: 18, color: "#46333b",
+    cost: { power: 0 }, matCost: 26,
+    staffing: 1, consumes: { power: 4 }, produces: {},
+    requiresPressure: true, priority: 60, door: 2,
+    desc: "Triage for strike wounds. Heals fastest at its door, under a medic.",
+  },
   cistern: {
     id: "cistern", name: "Water Cistern", glyph: "CIS",
     foot: [1, 1], h: 16, color: "#2a3a40",
@@ -104,5 +112,5 @@ export const DEFS: Record<string, BuildingDef> = {
 /** Palette display order (doc §4.4 table order). */
 export const ORDER: string[] = [
   "hub", "corridor", "hab", "solar", "battery",
-  "extractor", "electrolysis", "greenhouse", "cistern", "o2tank", "deflector",
+  "extractor", "electrolysis", "greenhouse", "medbay", "cistern", "o2tank", "deflector",
 ];

@@ -39,7 +39,7 @@ interface ColonistRec {
 }
 
 /** colonist states that should show the walking bob */
-const MOVING_STATES = new Set(["toWork", "toHome", "mining", "hauling", "piloted"]);
+const MOVING_STATES = new Set(["toWork", "toHome", "toMedbay", "mining", "hauling", "piloted"]);
 
 /** a visible door on a building's front (its local def.door side), as a child of
  *  the mesh group so it turns with the building's rotation — this is the cell the

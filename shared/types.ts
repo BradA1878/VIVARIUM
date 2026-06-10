@@ -131,6 +131,8 @@ export type ColonistAct =
   | "working"
   | "toHome"
   | "sheltering"
+  | "toMedbay"
+  | "recovering"
   | "piloted"
   | "mining"
   | "hauling";
@@ -147,6 +149,8 @@ export interface ColonistView {
   /** facing angle in radians (world XZ) */
   facing: number;
   state: ColonistAct;
+  /** base-seconds of recovery remaining; 0 = healthy */
+  injury: number;
   carryKind: DepositKind | null;
   carryAmt: number;
   possessed: boolean;
@@ -284,6 +288,9 @@ export type EventType =
   | "crit_start"
   | "crit_clear"
   | "casualty"
+  /** a strike wounded a colonist / an injury finished healing (colonist id payload) */
+  | "colonist_injured"
+  | "colonist_recovered"
   /** colony morale crossed below its low threshold / recovered past ok (latched) */
   | "morale_low"
   | "morale_recovered"
@@ -323,6 +330,8 @@ export interface ColonyEvent {
   secs?: number;
   n?: number;
   pop?: number;
+  /** colonist id for colonist_injured / colonist_recovered */
+  id?: number;
   /** free-text detail (e.g. the Sentinel's anomalous feature, or a hazard kind) */
   detail?: string;
   /** anomaly magnitude in standard deviations above learned-normal */

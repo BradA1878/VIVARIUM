@@ -18,9 +18,11 @@ import {
 } from "./tuning";
 import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
+import { buildingFunctional } from "./state";
 import { recomputeConnectivity } from "./connectivity";
-import { updateHazards, hazardMods, buildingFunctional, type HazardMods } from "./hazards";
+import { updateHazards, hazardMods, type HazardMods } from "./hazards";
 import { stepColonists } from "./colonists";
+import { updateInjuries, injuredCount } from "./injury";
 import { roleMatchCount } from "./roster";
 import { bumpMorale, moraleMult, updateMorale } from "./morale";
 import { respawnDeposits } from "./deposits";
@@ -97,8 +99,8 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
 
   recomputeConnectivity(s);
 
-  // labor pool = housed population
-  s.labor = s.population;
+  // labor pool = housed population, less the wounded (triage pulls them off shift)
+  s.labor = Math.max(0, s.population - injuredCount(s));
   s.laborUsed = 0;
 
   const net: Record<Resource, number> = { power: 0, water: 0, oxygen: 0, food: 0 };
@@ -243,6 +245,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   respawnDeposits(s, dt, envRng);
   updateTrade(s, dt, envRng, emit);
   updateUfo(s, dt, envRng, emit);
+  updateInjuries(s, dt, emit); // before stepColonists: the healed rejoin assign now
   stepColonists(s, dt);
 
   // 8. Campaign — the launch-window arc (doc §2.5) -----------------------------

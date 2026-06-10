@@ -21,6 +21,7 @@ export const SEV: Record<EventType, number> = {
   ufo_inbound: 4, abducted: 5, abduction_blocked: 3, ufo_left: 1, // the abductor
   birth: 2, // the colony grows from within
   morale_low: 3, morale_recovered: 2, // the colony's mood (latched, like brownout)
+  colonist_injured: 3, colonist_recovered: 2, // strike wounds + the medbay loop
 };
 
 type Bank = string[] | Record<string, string[]>;

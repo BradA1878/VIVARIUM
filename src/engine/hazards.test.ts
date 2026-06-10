@@ -4,7 +4,8 @@
    ============================================================================ */
 import { describe, it, expect } from "vitest";
 import { Colony } from "./index";
-import { hazardMods, buildingFunctional } from "./hazards";
+import { hazardMods } from "./hazards";
+import { buildingFunctional } from "./state";
 import type { ColonyState } from "./state";
 import type { ColonyEvent } from "@shared/types";
 

@@ -183,6 +183,21 @@ export const MORALE_BUMP = {
 };
 
 /* ----------------------------------------------------------------------------
+   Injuries + the Med-Bay — meteor/quake strikes wound nearby colonists, not just
+   buildings. Injury = base-seconds of recovery left; healing is a pure rate
+   (zero RNG draws). A second hit while wounded kills. The wounded leave the
+   labor pool and limp to a medbay, which heals faster — faster still with a
+   medic on its slot.
+   ---------------------------------------------------------------------------- */
+export const INJURY_RADIUS = 1.6;        // cells: colonists this close to a strike are hit
+export const INJURY_RECOVERY = 30;       // base seconds a fresh injury takes to heal
+export const MEDBAY_HEAL_MULT = 3;       // healing rate within reach of a working medbay
+export const MEDIC_HEAL_BONUS = 0.5;     // extra factor when a medic staffs that medbay
+export const HEAL_RADIUS = 1.6;          // cells: how close to the medbay's door to count
+export const INJURED_SPEED = 0.55;       // wounded walk speed (cells/sec)
+export const INJURED_PILOT_FACTOR = 0.5; // possessed-while-wounded speed factor
+
+/* ----------------------------------------------------------------------------
    In-colony births — the settlement grows from within when it's thriving (surplus
    + spare housing + a population floor + no active life-support crisis). Uncapped,
    but rare. Uses the MAIN rng, like Earth arrivals which it mirrors.

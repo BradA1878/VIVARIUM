@@ -10,6 +10,7 @@ import type { ColonyEvent, HazardKind, HazardView } from "@shared/types";
 import { DEFS } from "./defs";
 import { idx, removeBuilding } from "./grid";
 import { recomputeCaps } from "./caps";
+import { applyStrikeInjuries } from "./injury";
 import type { ColonyState, HazardInstance } from "./state";
 import type { BuildingState } from "@shared/types";
 import type { RNG } from "./rng";
@@ -40,7 +41,6 @@ const SCHED_GAP_MIN = 70, SCHED_GAP_SPAN = 70;
 // damage / effect tuning
 const METEOR_DMG = 0.55;
 const QUAKE_DMG = 0.4;
-export const FUNC_THRESHOLD = 0.45; // below this integrity → non-functional
 const REPAIR_RATE = 0.02;           // integrity/sec self-repair
 const FLARE_DRAIN = 6;              // power/sec siphon at full intensity
 const FLARE_FAULT_CHANCE = 0.3;     // per-sec at full intensity
@@ -137,15 +137,22 @@ function applyActive(s: ColonyState, h: HazardInstance, dt: number, rng: RNG, em
   }
 }
 
-/** a strike at a random cell — damages a building if one is there */
+/** a strike at a random cell — damages a building if one is there; either way
+ *  it wounds the colonists near the impact (near-misses still hurt) */
 function strikeCell(s: ColonyState, rng: RNG, emit: Emit, dmg: number, cause: HazardKind): void {
   const x = (rng.next() * s.N) | 0, y = (rng.next() * s.N) | 0;
   const id = s.grid[idx(s.N, x, y)];
   if (id !== 0) {
     const b = s.buildings.find((bb) => bb.uid === id);
-    if (b) { damageBuilding(s, b, dmg, emit, cause); emit({ type: "strike", gx: x, gy: y, hit: true, detail: cause }); return; }
+    if (b) {
+      damageBuilding(s, b, dmg, emit, cause);
+      emit({ type: "strike", gx: x, gy: y, hit: true, detail: cause });
+      applyStrikeInjuries(s, x, y, emit);
+      return;
+    }
   }
   emit({ type: "strike", gx: x, gy: y, hit: false, detail: cause });
+  applyStrikeInjuries(s, x, y, emit);
 }
 
 /** a strike aimed at a filtered building (quakes hit infrastructure) */
@@ -155,6 +162,7 @@ function strikeTarget(s: ColonyState, rng: RNG, emit: Emit, dmg: number, cause: 
   const b = targets[(rng.next() * targets.length) | 0];
   damageBuilding(s, b, dmg, emit, cause);
   emit({ type: "strike", gx: b.gx, gy: b.gy, hit: true, detail: cause });
+  applyStrikeInjuries(s, b.gx, b.gy, emit);
 }
 
 export function damageBuilding(s: ColonyState, b: BuildingState, amount: number, emit: Emit, cause: string): void {
@@ -185,11 +193,6 @@ export function hazardMods(s: ColonyState): HazardMods {
     else if (h.kind === "flare") powerDrain += FLARE_DRAIN * h.intensity;
   }
   return { solarFactor, pressurePowerMult, powerDrain };
-}
-
-/** can this building operate? (intact + not faulted) */
-export function buildingFunctional(b: BuildingState): boolean {
-  return b.integrity >= FUNC_THRESHOLD && b.faulted <= 0;
 }
 
 export function hazardViews(s: ColonyState): HazardView[] {
