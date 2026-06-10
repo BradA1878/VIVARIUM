@@ -24,8 +24,9 @@ import { emptyBuilding } from "./state";
 import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed } from "./colonists";
 import { seedDeposits } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
+import { ufoView } from "./ufo";
 import {
-  START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN,
+  START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
 } from "./tuning";
 
 export class Colony {
@@ -248,6 +249,7 @@ export class Colony {
       depot: { ...s.depot },
       possessed: s.possessed,
       trade: tradeView(s),
+      ufo: ufoView(s),
       acquiredTech: [...s.acquiredTech],
       population: s.population,
       housing: s.housing,
@@ -304,6 +306,7 @@ export class Colony {
         depot: { ...this.s.depot },
         moveIntent: { ...this.s.moveIntent },
         trade: this.s.trade ? { ...this.s.trade, give: { ...this.s.trade.give }, take: { ...this.s.trade.take } } : null,
+        ufo: this.s.ufo ? { ...this.s.ufo } : null,
         acquiredTech: [...this.s.acquiredTech],
         timers: { ...this.s.timers },
         hazards: this.s.hazards.map((h) => ({ ...h })),
@@ -333,6 +336,10 @@ export class Colony {
       depot: st.depot ? { ...st.depot } : { gx: 6, gy: 5 },
       moveIntent: st.moveIntent ? { ...st.moveIntent } : { dx: 0, dy: 0 },
       trade: st.trade ? { ...st.trade, give: { ...st.trade.give }, take: { ...st.trade.take } } : null,
+      ufo: st.ufo ? { ...st.ufo } : null,
+      nextUfo: st.nextUfo ?? UFO_FIRST,
+      nextBirth: st.nextBirth ?? BIRTH_FIRST,
+      ufoCounter: st.ufoCounter ?? 1,
       acquiredTech: [...(st.acquiredTech ?? [])],
       timers: { ...st.timers },
       hazards: (st.hazards ?? []).map((h) => ({ ...h })),
@@ -369,10 +376,14 @@ function freshState(): ColonyState {
     depositRespawn: DEPOSIT_RESPAWN,
     trade: null,
     nextTrade: TRADE_FIRST,
+    ufo: null,
+    nextUfo: UFO_FIRST,
+    nextBirth: BIRTH_FIRST,
     acquiredTech: [],
     colonistCounter: 1,
     depositCounter: 1,
     tradeCounter: 1,
+    ufoCounter: 1,
     population: 0,
     housing: 0,
     labor: 0,

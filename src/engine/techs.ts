@@ -18,6 +18,8 @@ export interface TechDef {
   passivePower?: number;
   /** multiplier on per-colonist demand (e.g. oxygen 0.82 = 18% less) */
   demandMult?: Partial<Record<"oxygen" | "water" | "food", number>>;
+  /** added to each Deflector Array's per-unit abduction-block chance */
+  deflectorBoost?: number;
 }
 
 export const TECH_DEFS: Record<string, TechDef> = {
@@ -45,6 +47,11 @@ export const TECH_DEFS: Record<string, TechDef> = {
     id: "bioscrubber", name: "Bioscrubber", glyph: "✿",
     desc: "Living air filter. Colonists need 18% less oxygen.",
     demandMult: { oxygen: 0.82 },
+  },
+  aegis: {
+    id: "aegis", name: "Aegis Resonator", glyph: "⛨",
+    desc: "Tunes your deflectors to alien frequencies. Each Deflector Array wards off abductors far better.",
+    deflectorBoost: 0.3,
   },
 };
 
@@ -75,4 +82,11 @@ export function techDemandMult(s: ColonyState, k: "oxygen" | "water" | "food"): 
     if (dm != null) m *= dm;
   }
   return m;
+}
+
+/** summed abduction-block boost from acquired techs (added per Deflector Array) */
+export function techDeflectorBoost(s: ColonyState): number {
+  let b = 0;
+  for (const id of s.acquiredTech) b += TECH_DEFS[id]?.deflectorBoost ?? 0;
+  return b;
 }

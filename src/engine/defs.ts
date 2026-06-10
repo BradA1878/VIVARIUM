@@ -91,10 +91,18 @@ export const DEFS: Record<string, BuildingDef> = {
     requiresPressure: false, priority: 0, caps: { oxygen: 130 },
     desc: "Reserve oxygen. Counts down the suffocation timer for you.",
   },
+  deflector: {
+    id: "deflector", name: "Deflector Array", glyph: "DFL",
+    foot: [1, 1], h: 20, color: "#3a2c44",
+    cost: { power: 0 }, matCost: 30,
+    staffing: 0, consumes: { power: 3.5 }, produces: {},
+    requiresPressure: false, priority: 35,
+    desc: "Wards off abductors while powered. Sheds early in a brownout — keep it lit.",
+  },
 };
 
 /** Palette display order (doc §4.4 table order). */
 export const ORDER: string[] = [
   "hub", "corridor", "hab", "solar", "battery",
-  "extractor", "electrolysis", "greenhouse", "cistern", "o2tank",
+  "extractor", "electrolysis", "greenhouse", "cistern", "o2tank", "deflector",
 ];

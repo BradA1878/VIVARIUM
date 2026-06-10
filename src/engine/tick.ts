@@ -13,6 +13,7 @@ import {
   ARRIVAL_BATCH, ARRIVAL_GAP_MIN, ARRIVAL_GAP_SPAN, ARRIVAL_RETRY,
   BROWNOUT_DEFICIT, BROWNOUT_LOW, BROWNOUT_RECOVER_FRAC,
   RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT,
+  BIRTH_MIN_POP, BIRTH_GAP_MIN, BIRTH_GAP_SPAN, BIRTH_RETRY,
 } from "./tuning";
 import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
@@ -21,6 +22,7 @@ import { updateHazards, hazardMods, buildingFunctional, type HazardMods } from "
 import { stepColonists } from "./colonists";
 import { respawnDeposits } from "./deposits";
 import { updateTrade } from "./trade";
+import { updateUfo } from "./ufo";
 import { techPassivePower, techDemandMult } from "./techs";
 import type { RNG } from "./rng";
 
@@ -213,6 +215,10 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
     }
   }
 
+  // 7c. Births — the settlement grows from within when it's thriving (surplus +
+  // spare housing + a population floor + no active crisis). Rare; main rng.
+  maybeBirth(s, net, dt, rng, emit);
+
   s.flow = net;
 
   // 7b. Embodied colony — surface life on top of the resolved sim state.
@@ -220,6 +226,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // deposit field + trade window without perturbing the main stream.
   respawnDeposits(s, dt, envRng);
   updateTrade(s, dt, envRng, emit);
+  updateUfo(s, dt, envRng, emit);
   stepColonists(s, dt);
 
   // 8. Campaign — the launch-window arc (doc §2.5) -----------------------------
@@ -247,6 +254,26 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
       s.paused = true;
       emit({ type: "defeat", detail: "window" });
     }
+  }
+}
+
+/** a rare in-colony birth: the settlement grows from within when it's thriving —
+ *  a surplus on every life-support resource, spare housing, a real population, and
+ *  no active crisis. Mirrors Earth arrivals but uncapped, rarer, and self-driven.
+ *  Counts toward the campaign's targetPop like any colonist. (main rng) */
+export function maybeBirth(s: ColonyState, net: Record<Resource, number>, dt: number, rng: RNG, emit: Emit): void {
+  s.nextBirth -= dt;
+  if (s.nextBirth > 0) return;
+  const thriving = net.oxygen > 0 && net.water > 0 && net.food > 0;
+  const room = s.population + 1 <= s.housing;
+  const settled = s.population >= BIRTH_MIN_POP;
+  const calm = s.timers.oxygen == null && s.timers.water == null && s.timers.food == null;
+  if (thriving && room && settled && calm) {
+    s.population += 1;
+    s.nextBirth = BIRTH_GAP_MIN + rng.next() * BIRTH_GAP_SPAN;
+    emit({ type: "birth", n: 1, pop: s.population });
+  } else {
+    s.nextBirth = BIRTH_RETRY;
   }
 }
 

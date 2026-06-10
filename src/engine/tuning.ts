@@ -133,3 +133,35 @@ export const TRADE_GIVE_SPAN = 30;
 export const TRADE_TECH_CHANCE = 0.4;   // when an un-acquired tech exists
 export const TRADE_TECH_TAKE_MIN = 40;  // price of alien tech, in materials (40-70)
 export const TRADE_TECH_TAKE_SPAN = 30;
+
+/* ----------------------------------------------------------------------------
+   The evil UFO — a rare hostile abductor. Scheduling + the abduction roll use the
+   SEPARATE env-rng (like deposits + traders), so the main hazard/arrival stream is
+   byte-identical. Rare by design; safety floors keep it from being a cheap loss.
+   ---------------------------------------------------------------------------- */
+export const UFO_FIRST = 240;       // seconds to the first possible UFO
+export const UFO_GAP_MIN = 240;     // gap between visits = MIN + rand*SPAN (rare)
+export const UFO_GAP_SPAN = 200;
+export const UFO_RETRY = 20;        // re-check delay when conditions aren't met
+export const UFO_INBOUND = 6;       // telegraph seconds before it hovers
+export const UFO_HOVER = 5;         // seconds locked on, beam down, before the grab
+export const UFO_LEAVE = 5;         // lift-off seconds after the abduction beat
+export const UFO_MIN_SOL = 3;       // never appears before this sol
+export const UFO_MIN_POP = 3;       // never abducts at/below this population
+
+/** the abduction deterrent. Each ONLINE + functional Deflector Array blocks the
+ *  grab with base probability DEFLECTOR_BLOCK; the Aegis Resonator tech adds its
+ *  own `deflectorBoost` (techs.ts) on top, per deflector. Multiple deflectors stack
+ *  with diminishing returns (1 − Π(1 − perDeflector)). */
+export const DEFLECTOR_BLOCK = 0.5; // per online deflector, before alien tech
+
+/* ----------------------------------------------------------------------------
+   In-colony births — the settlement grows from within when it's thriving (surplus
+   + spare housing + a population floor + no active life-support crisis). Uncapped,
+   but rare. Uses the MAIN rng, like Earth arrivals which it mirrors.
+   ---------------------------------------------------------------------------- */
+export const BIRTH_FIRST = 180;     // seconds to the first possible birth
+export const BIRTH_GAP_MIN = 240;   // gap between births = MIN + rand*SPAN (rare)
+export const BIRTH_GAP_SPAN = 200;
+export const BIRTH_RETRY = 15;      // re-check delay when conditions aren't met
+export const BIRTH_MIN_POP = 4;     // need a real settlement before it grows itself

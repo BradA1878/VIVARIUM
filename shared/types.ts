@@ -168,6 +168,21 @@ export interface TradeView {
   gy: number;
 }
 
+/** the evil UFO's lifecycle: descend → hover with a beam on its target → leave */
+export type UfoPhase = "inbound" | "hovering" | "leaving";
+
+/** a live hostile UFO (a rare abductor — sibling of the trader, but it takes a
+ *  colonist instead of bartering). The renderer positions the beam over `targetId`. */
+export interface UfoView {
+  id: number;
+  phase: UfoPhase;
+  /** the colonist the beam is locked onto, or null (target lost / already taken) */
+  targetId: number | null;
+  /** last-known cell of the target — a fallback hover point for the renderer */
+  gx: number;
+  gy: number;
+}
+
 /** The read-only view of the colony the UI/agent layer consume each frame.
  *  Serializable; carries no functions. */
 export interface Snapshot {
@@ -189,6 +204,8 @@ export interface Snapshot {
   possessed: number | null;
   /** a live alien trade offer, or null */
   trade: TradeView | null;
+  /** a live hostile UFO abduction in progress, or null */
+  ufo: UfoView | null;
   /** ids of permanent alien tech upgrades acquired through trade */
   acquiredTech: string[];
   population: number;
@@ -264,6 +281,13 @@ export type EventType =
   | "traders_inbound"
   | "trade_done"
   | "trade_left"
+  /** the evil UFO — a rare hostile abductor */
+  | "ufo_inbound"
+  | "abducted"
+  | "abduction_blocked"
+  | "ufo_left"
+  /** a colonist born in-colony as the settlement thrives */
+  | "birth"
   /** campaign end states (doc §2.5) */
   | "victory"
   | "defeat"

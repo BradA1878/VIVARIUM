@@ -6,7 +6,7 @@
    ============================================================================ */
 import type {
   BuildingState, ColonistAct, DepositKind, HazardKind, HazardPhase,
-  Outcome, Pool, Resource, Side, TradeGive, TradePhase, Weather,
+  Outcome, Pool, Resource, Side, TradeGive, TradePhase, UfoPhase, Weather,
 } from "@shared/types";
 
 /** a live hazard with the bookkeeping the tick needs (the HUD sees HazardView) */
@@ -60,6 +60,20 @@ export interface TradeInstance {
   gy: number;
 }
 
+/** a live hostile UFO — the abductor. Lifecycle mirrors the trader's, but it
+ *  takes a colonist (the renderer sees UfoView). */
+export interface UfoInstance {
+  id: number;
+  phase: UfoPhase;
+  /** seconds left in the current phase */
+  tLeft: number;
+  /** the colonist id the beam is locked onto, or null once the target is lost */
+  targetId: number | null;
+  /** last-known cell of the target — updated each tick while it exists */
+  gx: number;
+  gy: number;
+}
+
 export interface ColonyState {
   N: number;
   /** N*N occupancy grid; cell = building uid, 0 = empty (typed array, doc §1) */
@@ -85,12 +99,19 @@ export interface ColonyState {
   trade: TradeInstance | null;
   /** seconds to the next trade window */
   nextTrade: number;
+  /** a live hostile UFO, or null */
+  ufo: UfoInstance | null;
+  /** seconds to the next UFO appearance */
+  nextUfo: number;
+  /** seconds to the next possible in-colony birth */
+  nextBirth: number;
   /** permanent alien tech upgrades acquired through trade */
   acquiredTech: string[];
   /** monotonic id counters */
   colonistCounter: number;
   depositCounter: number;
   tradeCounter: number;
+  ufoCounter: number;
 
   population: number;
   housing: number;
