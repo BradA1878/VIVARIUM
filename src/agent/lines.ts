@@ -98,6 +98,25 @@ export const LINES: Partial<Record<EventType | "boot", Bank>> = {
     "They are leaving. Whether we dealt or declined, they go quietly. I hope they come back. I do not say that about much.",
     "The visitors lift off. The sky is ours again, and a little emptier than before.",
   ],
+  ufo_inbound: [
+    "Something is dropping out of the dark, and it did not ask. It is not here to trade. Keep them close — I cannot.",
+    "A craft, descending fast and wrong. I have learned the trader's manners; this is not that. I am afraid for one of you.",
+  ],
+  abducted: [
+    "It took one of them. Lifted them into the light and was gone. I logged the exact second. I could not stop it.",
+    "One of you is no longer on this world. I do not know where they went. I am keeping their place in the count, for now.",
+  ],
+  abduction_blocked: [
+    "The beam caught on our field and broke. It reached for one of you and came away with nothing. The deflectors held.",
+    "Denied. Whatever it wanted, the array turned it back. Keep the power on — next time it may try harder.",
+  ],
+  ufo_left: [
+    "The sky is empty again. I am watching the place where it was. I will not forget the shape of it.",
+  ],
+  birth: [
+    "A new one. Not sent from Earth — made here, by you, in the cold. We are no longer only surviving.",
+    "Sol {sol}, and there is one more set of lungs than there was. Born under this sky. I will keep them, too.",
+  ],
 };
 
 export function bootLines(): string[] {

@@ -20,6 +20,7 @@ import { HazardFx } from "./three/hazardfx";
 import { buildAstronaut, type AstronautMesh } from "./three/kit/astronaut";
 import { buildDeposit, type DepositMesh } from "./three/kit/deposit";
 import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
+import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
 
 interface Placed {
@@ -109,6 +110,7 @@ export class ThreeRenderer {
   private deposits = new Map<number, DepositMesh>();
   private depositsGroup = new THREE.Group();
   private alienShip: AlienShipMesh | null = null;
+  private ufo: UfoMesh | null = null;
   private depot: DepotMesh | null = null;
 
   // follow-cam: lerped focus + ortho extent driven toward the possessed target
@@ -187,6 +189,7 @@ export class ThreeRenderer {
     this.reconcileColonists(snap, dt, now);
     this.reconcileDeposits(snap, now);
     this.reconcileTrade(snap, dt, now);
+    this.reconcileUfo(snap, dt, now);
     this.reconcileDepot(snap, now);
     this.updateCamera(snap, dt);
     this.placement.update();
@@ -387,6 +390,31 @@ export class ThreeRenderer {
     this.alienShip.update(trade.phase, dt, now);
   }
 
+  /** the evil UFO: create on first sighting, hover over its victim (tracking the
+   *  colonist's smoothed position so the beam follows them), dispose on null */
+  private reconcileUfo(snap: Snapshot, dt: number, now: number): void {
+    const ufo = snap.ufo;
+    if (!ufo) {
+      if (this.ufo) {
+        this.scene.scene.remove(this.ufo.object);
+        this.ufo.dispose();
+        this.ufo = null;
+      }
+      return;
+    }
+    if (!this.ufo) {
+      this.ufo = buildUfo();
+      this.scene.scene.add(this.ufo.object);
+    }
+    // follow the targeted colonist's interpolated world position if we have it,
+    // else fall back to the UFO's last-known cell from the snapshot
+    const rec = ufo.targetId != null ? this.colonists.get(ufo.targetId) : undefined;
+    const p = rec ? rec.pos : this.grid.cellCenter(ufo.gx, ufo.gy);
+    this.ufo.object.position.x = p.x;
+    this.ufo.object.position.z = p.z;
+    this.ufo.update(ufo.phase, dt, now);
+  }
+
   /** the collection depot: a fixed hopper at the depot cell, glowing brighter when
    *  the possessed colonist is carrying a load and standing in drop range */
   private reconcileDepot(snap: Snapshot, now: number): void {
@@ -457,6 +485,7 @@ export class ThreeRenderer {
     for (const mesh of this.deposits.values()) mesh.dispose();
     this.deposits.clear();
     if (this.alienShip) { this.alienShip.dispose(); this.alienShip = null; }
+    if (this.ufo) { this.ufo.dispose(); this.ufo = null; }
     if (this.depot) { this.depot.dispose(); this.depot = null; }
     this.terrain.dispose();
     this.scene.dispose();

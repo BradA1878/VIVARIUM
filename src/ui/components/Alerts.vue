@@ -72,6 +72,17 @@ const items = computed<AlertItem[]>(() => {
     out.push({ k: "brown", sev: 2, txt: "BROWNOUT — load shed", sub: "demand exceeds supply" });
   }
 
+  // the evil UFO — a rare hostile abductor overhead
+  if (cur.ufo && cur.ufo.phase !== "leaving") {
+    const grabbing = cur.ufo.phase === "hovering";
+    out.push({
+      k: "ufo",
+      sev: 3,
+      txt: grabbing ? "UFO — ABDUCTING" : "UFO INBOUND — abductor",
+      sub: grabbing ? "deflectors are the only defense" : "an unknown craft, descending",
+    });
+  }
+
   // Earth resupply window open (doc §2.5) — the one "good" alert
   if (cur.resupplyT > 0) {
     out.push({
