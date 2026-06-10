@@ -27,6 +27,7 @@ import { respondTrade as applyRespondTrade, tradeView } from "./trade";
 import { ufoView } from "./ufo";
 import {
   START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
+  MORALE_START,
 } from "./tuning";
 
 export class Colony {
@@ -268,6 +269,7 @@ export class Colony {
       timers: { ...s.timers },
       grace: s.grace,
       dead: s.dead,
+      morale: s.morale,
       deadlineSol: s.deadlineSol,
       targetPop: s.targetPop,
       selfSufficientFor: s.selfSufficientFor,
@@ -340,6 +342,8 @@ export class Colony {
       nextUfo: st.nextUfo ?? UFO_FIRST,
       nextBirth: st.nextBirth ?? BIRTH_FIRST,
       ufoCounter: st.ufoCounter ?? 1,
+      morale: st.morale ?? MORALE_START,
+      moraleLatch: st.moraleLatch ?? false,
       acquiredTech: [...(st.acquiredTech ?? [])],
       timers: { ...st.timers },
       hazards: (st.hazards ?? []).map((h) => ({ ...h })),
@@ -415,5 +419,7 @@ function freshState(): ColonyState {
     started: false,
     uidCounter: 1,
     brownLatch: false,
+    morale: MORALE_START,
+    moraleLatch: false,
   };
 }

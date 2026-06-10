@@ -160,6 +160,10 @@ export interface ColonyState {
   uidCounter: number;
   /** brownout latch — kept on state so it serializes with the colony */
   brownLatch: boolean;
+  /** colony morale in [moraleFloor, 1] — drivers live in engine/morale.ts */
+  morale: number;
+  /** morale_low latch — mirrors brownLatch, serializes with the colony */
+  moraleLatch: boolean;
 }
 
 /** Save payload: state plus the RNG seed/state for a bit-identical resume. */

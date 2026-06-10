@@ -14,7 +14,7 @@ import {
   BROWNOUT_DEFICIT, BROWNOUT_LOW, BROWNOUT_RECOVER_FRAC,
   RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT,
   BIRTH_MIN_POP, BIRTH_GAP_MIN, BIRTH_GAP_SPAN, BIRTH_RETRY,
-  ROLE_BONUS,
+  ROLE_BONUS, MORALE_BUMP,
 } from "./tuning";
 import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
@@ -22,6 +22,7 @@ import { recomputeConnectivity } from "./connectivity";
 import { updateHazards, hazardMods, buildingFunctional, type HazardMods } from "./hazards";
 import { stepColonists } from "./colonists";
 import { roleMatchCount } from "./roster";
+import { bumpMorale, moraleMult, updateMorale } from "./morale";
 import { respawnDeposits } from "./deposits";
 import { updateTrade } from "./trade";
 import { updateUfo } from "./ufo";
@@ -159,13 +160,14 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
       takePool(s, r, rate * dt);
       net[r] -= rate;
     }
-    // role-matched staffing works the recipe harder — scales produces only,
-    // never consumes (moraleMult joins this product in a later commit)
-    let eff = 1;
+    // role-matched staffing + colony mood work the recipe harder — eff scales
+    // produces only, never consumes
+    let roleMult = 1;
     if (d.staffing > 0) {
       const matched = roleMatchCount(s, b.uid, b.defId);
-      eff = 1 + ROLE_BONUS * (Math.min(matched, d.staffing) / d.staffing);
+      roleMult = 1 + ROLE_BONUS * (Math.min(matched, d.staffing) / d.staffing);
     }
+    const eff = moraleMult(s) * roleMult;
     for (const k in d.produces) {
       const r = k as Resource;
       addPool(s, r, d.produces[r]! * eff * dt);
@@ -198,6 +200,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
           s.dead += lost;
           s.timers[k] = s.grace * 0.5;
           emit({ type: "casualty", res: k, n: lost });
+          bumpMorale(s, -MORALE_BUMP.casualty);
         }
       }
     } else if (s.timers[k] != null) {
@@ -209,6 +212,9 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // brownout latch (any pressurized consumer shed purely for power)
   detectBrownout(s, net, emit);
 
+  // 6b. Morale — continuous drivers + the latched low/recovered thresholds -----
+  updateMorale(s, dt, emit);
+
   // 7. Arrivals — only on a real surplus with housing --------------------------
   s.nextArrival -= dt;
   if (s.arrivalsLeft > 0 && s.nextArrival <= 0) {
@@ -219,6 +225,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
       s.arrivalsLeft -= 1;
       s.nextArrival = ARRIVAL_GAP_MIN + rng.next() * ARRIVAL_GAP_SPAN;
       emit({ type: "arrival", n: ARRIVAL_BATCH, pop: s.population });
+      bumpMorale(s, MORALE_BUMP.arrival);
     } else {
       s.nextArrival = ARRIVAL_RETRY;
     }
@@ -281,6 +288,7 @@ export function maybeBirth(s: ColonyState, net: Record<Resource, number>, dt: nu
     s.population += 1;
     s.nextBirth = BIRTH_GAP_MIN + rng.next() * BIRTH_GAP_SPAN;
     emit({ type: "birth", n: 1, pop: s.population });
+    bumpMorale(s, MORALE_BUMP.birth);
   } else {
     s.nextBirth = BIRTH_RETRY;
   }

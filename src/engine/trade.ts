@@ -6,7 +6,7 @@
    ============================================================================ */
 import type { Resource, TradeView } from "@shared/types";
 import {
-  TRADE_INBOUND, TRADE_DECIDE, TRADE_LEAVE, TRADE_GAP,
+  MORALE_BUMP, TRADE_INBOUND, TRADE_DECIDE, TRADE_LEAVE, TRADE_GAP,
   TRADE_TAKE_MIN, TRADE_TAKE_SPAN, TRADE_GIVE_MIN, TRADE_GIVE_SPAN,
   TRADE_TECH_CHANCE, TRADE_TECH_TAKE_MIN, TRADE_TECH_TAKE_SPAN,
 } from "./tuning";
@@ -15,6 +15,7 @@ import type { Emit } from "./tick";
 import type { RNG } from "./rng";
 import { TECH_DEFS, TECH_IDS } from "./techs";
 import { recomputeCaps } from "./caps";
+import { bumpMorale } from "./morale";
 
 type Tradeable = Resource | "materials";
 const TRADEABLES: Tradeable[] = ["power", "water", "oxygen", "food", "materials"];
@@ -114,6 +115,7 @@ export function respondTrade(s: ColonyState, accept: boolean, emit: Emit): void 
       got.amount = Math.min(got.capacity, got.amount + tr.give.amount);
       emit({ type: "trade_done", detail: tr.give.res });
     }
+    bumpMorale(s, MORALE_BUMP.trade);
   } else {
     emit({ type: "trade_left" });
   }

@@ -239,6 +239,8 @@ export interface Snapshot {
   timers: Record<"oxygen" | "water" | "food", number | null>;
   grace: number;
   dead: number;
+  /** colony morale, clamped to [floor, 1] — scales production, never movement */
+  morale: number;
 
   // ---- campaign (doc §2.5) ----
   /** the sol Earth's launch window closes; reach self-sufficiency before then */
@@ -282,6 +284,9 @@ export type EventType =
   | "crit_start"
   | "crit_clear"
   | "casualty"
+  /** colony morale crossed below its low threshold / recovered past ok (latched) */
+  | "morale_low"
+  | "morale_recovered"
   | "arrival"
   | "resupply"
   /** alien traders (doc: first contact) */

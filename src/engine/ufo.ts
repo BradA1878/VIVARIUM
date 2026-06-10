@@ -12,8 +12,9 @@ import type { Emit } from "./tick";
 import type { RNG } from "./rng";
 import { buildingFunctional } from "./hazards";
 import { techDeflectorBoost } from "./techs";
+import { bumpMorale } from "./morale";
 import {
-  DEFLECTOR_BLOCK, UFO_GAP_MIN, UFO_GAP_SPAN, UFO_RETRY,
+  DEFLECTOR_BLOCK, MORALE_BUMP, UFO_GAP_MIN, UFO_GAP_SPAN, UFO_RETRY,
   UFO_INBOUND, UFO_HOVER, UFO_LEAVE, UFO_MIN_SOL, UFO_MIN_POP,
 } from "./tuning";
 
@@ -66,6 +67,7 @@ function resolveAbduction(s: ColonyState, u: UfoInstance, rng: RNG, emit: Emit):
   if (s.possessed === victim.id) s.possessed = null; // safety; we never target it
   s.population = Math.max(0, s.population - 1);
   emit({ type: "abducted" });
+  bumpMorale(s, -MORALE_BUMP.abducted);
 }
 
 /** the tick's UFO pass — schedule a visit, advance its lifecycle, abduct. Runs on

@@ -163,6 +163,26 @@ export const DEFLECTOR_BLOCK = 0.5; // per online deflector, before alien tech
 export const ROLE_BONUS = 0.25; // eff = 1 + ROLE_BONUS × matched/staffing
 
 /* ----------------------------------------------------------------------------
+   Colony morale — one colony-level scalar in [MORALE_FLOOR, 1], a pure function
+   of state (zero RNG draws). Crises and brownouts drain it, calm and campaign
+   progress restore it, and the big emits step it. moraleMult scales produces
+   only — morale never slows movement (no death spiral by design).
+   ---------------------------------------------------------------------------- */
+export const MORALE_START = 0.7;
+export const MORALE_FLOOR = 0.15;
+export const MORALE_EFF = 0.35;            // eff = 1 + EFF × (morale − START)
+export const MORALE_LOW_T = 0.35;          // crossing below latches + emits morale_low
+export const MORALE_OK_T = 0.55;           // recovering above emits morale_recovered
+export const MORALE_CRISIS_RATE = 0.012;   // per second, per active shortfall timer
+export const MORALE_BROWNOUT_RATE = 0.004; // per second while the brownout latch is on
+export const MORALE_CALM_RATE = 0.005;     // per second with no timers + no brownout
+export const MORALE_PROGRESS_RATE = 0.004; // per second while selfSufficientFor > 0
+/** step sizes at the big emits (casualty/abducted/injured apply as negatives) */
+export const MORALE_BUMP = {
+  casualty: 0.12, abducted: 0.15, injured: 0.04, birth: 0.10, arrival: 0.08, trade: 0.05,
+};
+
+/* ----------------------------------------------------------------------------
    In-colony births — the settlement grows from within when it's thriving (surplus
    + spare housing + a population floor + no active life-support crisis). Uncapped,
    but rare. Uses the MAIN rng, like Earth arrivals which it mirrors.

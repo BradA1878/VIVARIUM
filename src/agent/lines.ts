@@ -20,6 +20,7 @@ export const SEV: Record<EventType, number> = {
   traders_inbound: 3, trade_done: 2, trade_left: 1, // first contact
   ufo_inbound: 4, abducted: 5, abduction_blocked: 3, ufo_left: 1, // the abductor
   birth: 2, // the colony grows from within
+  morale_low: 3, morale_recovered: 2, // the colony's mood (latched, like brownout)
 };
 
 type Bank = string[] | Record<string, string[]>;
