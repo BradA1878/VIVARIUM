@@ -20,6 +20,10 @@ export interface TechDef {
   demandMult?: Partial<Record<"oxygen" | "water" | "food", number>>;
   /** added to each Deflector Array's per-unit abduction-block chance */
   deflectorBoost?: number;
+  /** multiplies the injury recovery rate (engine/injury.ts) */
+  healRateMult?: number;
+  /** raises the colony's morale floor (engine/morale.ts moraleFloor) */
+  moraleFloor?: number;
 }
 
 export const TECH_DEFS: Record<string, TechDef> = {
@@ -52,6 +56,16 @@ export const TECH_DEFS: Record<string, TechDef> = {
     id: "aegis", name: "Aegis Resonator", glyph: "⛨",
     desc: "Tunes your deflectors to alien frequencies. Each Deflector Array wards off abductors far better.",
     deflectorBoost: 0.3,
+  },
+  medigel: {
+    id: "medigel", name: "Medi-Gel", glyph: "✚",
+    desc: "Alien tissue weave that knits a wound from within. The injured heal twice as fast.",
+    healRateMult: 2,
+  },
+  harmonizer: {
+    id: "harmonizer", name: "Harmonizer", glyph: "♬",
+    desc: "A standing resonance the crew can feel in their bones. Morale never sinks as low.",
+    moraleFloor: 0.45,
   },
 };
 
@@ -89,4 +103,20 @@ export function techDeflectorBoost(s: ColonyState): number {
   let b = 0;
   for (const id of s.acquiredTech) b += TECH_DEFS[id]?.deflectorBoost ?? 0;
   return b;
+}
+
+/** product of injury heal-rate multipliers from acquired techs (medi-gel).
+ *  Tolerates minimal test states that omit acquiredTech. */
+export function techHealRateMult(s: ColonyState): number {
+  let m = 1;
+  for (const id of s.acquiredTech ?? []) m *= TECH_DEFS[id]?.healRateMult ?? 1;
+  return m;
+}
+
+/** the highest tech-raised morale floor (0 with none acquired — harmonizer).
+ *  Tolerates minimal test states that omit acquiredTech. */
+export function techMoraleFloor(s: ColonyState): number {
+  let f = 0;
+  for (const id of s.acquiredTech ?? []) f = Math.max(f, TECH_DEFS[id]?.moraleFloor ?? 0);
+  return f;
 }

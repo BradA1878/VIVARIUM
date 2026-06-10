@@ -4,13 +4,13 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, Side, Snapshot,
+  BuildingDef, BuildingState, ColonyEvent, Difficulty, Side, Snapshot,
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  BASE_CAP, START_AMOUNT, GRID_N, SOL_LENGTH, START_TOD, GRACE,
+  BASE_CAP, START_AMOUNT, GRID_N, SOL_LENGTH, START_TOD,
   ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
-  DEADLINE_SOL, TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
+  TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
 import { RNG } from "./rng";
 import { canPlace, cellsFor, idx, inBounds } from "./grid";
@@ -27,7 +27,7 @@ import { respondTrade as applyRespondTrade, tradeView } from "./trade";
 import { ufoView } from "./ufo";
 import {
   START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
-  MORALE_START,
+  MORALE_START, DIFFICULTY,
 } from "./tuning";
 
 export class Colony {
@@ -39,11 +39,11 @@ export class Colony {
   private seed: number;
   private events: ColonyEvent[] = [];
 
-  constructor(seed: number = DEFAULT_SEED) {
+  constructor(seed: number = DEFAULT_SEED, difficulty: Difficulty = "normal") {
     this.seed = seed >>> 0;
     this.rng = new RNG(this.seed);
     this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
-    this.s = freshState();
+    this.s = freshState(difficulty);
     this.seedColony();
     this.s.started = true;
   }
@@ -66,10 +66,11 @@ export class Colony {
     return out;
   }
 
-  reset(): void {
+  /** restart from the seed; omitting the difficulty keeps the current one */
+  reset(difficulty?: Difficulty): void {
     this.rng = new RNG(this.seed);
     this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
-    this.s = freshState();
+    this.s = freshState(difficulty ?? this.s.difficulty);
     this.events = [];
     this.seedColony();
     this.s.started = true;
@@ -219,7 +220,7 @@ export class Colony {
     this.place("solar", 7, 6);
     this.place("extractor", 8, 8);
     this.s.population = 4;
-    this.s.materials.amount = START_MATERIALS; // the real starting stock
+    this.s.materials.amount = DIFFICULTY[this.s.difficulty].startMaterials; // the real starting stock
     clampMaterials(this.s);
     // collection depot: a clear drop-off just off the hub's east side
     const hubB = this.s.buildings.find((b) => DEFS[b.defId]?.isHub);
@@ -270,6 +271,7 @@ export class Colony {
       grace: s.grace,
       dead: s.dead,
       morale: s.morale,
+      difficulty: s.difficulty,
       deadlineSol: s.deadlineSol,
       targetPop: s.targetPop,
       selfSufficientFor: s.selfSufficientFor,
@@ -344,6 +346,7 @@ export class Colony {
       ufoCounter: st.ufoCounter ?? 1,
       morale: st.morale ?? MORALE_START,
       moraleLatch: st.moraleLatch ?? false,
+      difficulty: st.difficulty ?? "normal",
       acquiredTech: [...(st.acquiredTech ?? [])],
       timers: { ...st.timers },
       hazards: (st.hazards ?? []).map((h) => ({ ...h })),
@@ -358,8 +361,9 @@ export class Colony {
   }
 }
 
-function freshState(): ColonyState {
+function freshState(difficulty: Difficulty): ColonyState {
   const N = GRID_N;
+  const prof = DIFFICULTY[difficulty];
   return {
     N,
     grid: new Int32Array(N * N),
@@ -371,7 +375,7 @@ function freshState(): ColonyState {
       food: { amount: START_AMOUNT.food, capacity: BASE_CAP.food },
     },
     flow: { power: 0, water: 0, oxygen: 0, food: 0 },
-    materials: { amount: START_MATERIALS, capacity: MATERIALS_CAP },
+    materials: { amount: prof.startMaterials, capacity: MATERIALS_CAP },
     colonists: [],
     deposits: [],
     depot: { gx: 6, gy: 5 }, // a clear collection point beside the hub (set in seedColony)
@@ -381,7 +385,7 @@ function freshState(): ColonyState {
     trade: null,
     nextTrade: TRADE_FIRST,
     ufo: null,
-    nextUfo: UFO_FIRST,
+    nextUfo: UFO_FIRST * prof.ufoGapMult,
     nextBirth: BIRTH_FIRST,
     acquiredTech: [],
     colonistCounter: 1,
@@ -401,9 +405,9 @@ function freshState(): ColonyState {
     nextHazard: SCHED_FIRST,
     directorControlled: false,
     timers: { oxygen: null, water: null, food: null },
-    grace: GRACE,
+    grace: prof.grace,
     dead: 0,
-    deadlineSol: DEADLINE_SOL,
+    deadlineSol: prof.deadlineSol,
     targetPop: TARGET_POP,
     selfSufficientFor: 0,
     selfSufficiencyGoal: SELF_SUFFICIENCY_GOAL,
@@ -421,5 +425,6 @@ function freshState(): ColonyState {
     brownLatch: false,
     morale: MORALE_START,
     moraleLatch: false,
+    difficulty,
   };
 }

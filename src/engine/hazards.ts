@@ -8,6 +8,7 @@
    ============================================================================ */
 import type { ColonyEvent, HazardKind, HazardView } from "@shared/types";
 import { DEFS } from "./defs";
+import { difficultyProfile } from "./tuning";
 import { idx, removeBuilding } from "./grid";
 import { recomputeCaps } from "./caps";
 import { applyStrikeInjuries } from "./injury";
@@ -49,10 +50,14 @@ const COLDSNAP_HEAT = 1.6;          // pressurized power draw ×… at full inte
 
 const ORDER: HazardKind[] = ["dust", "meteor", "flare", "coldsnap", "quake"];
 
-/** spawn a hazard in its telegraph phase; returns the chosen intensity */
+/** spawn a hazard in its telegraph phase; returns the chosen intensity.
+ *  Difficulty scales the drawn-or-passed value AFTER the draw (then clamps), so
+ *  rng draw counts are identical across difficulties — and Director-driven
+ *  intensities scale coherently too. */
 export function spawnHazard(s: ColonyState, kind: HazardKind, rng: RNG, intensity?: number): number {
   const m = HAZARD_META[kind];
-  const inten = clamp01(intensity ?? m.intMin + rng.next() * m.intSpan);
+  const inten = clamp01((intensity ?? m.intMin + rng.next() * m.intSpan)
+    * difficultyProfile(s.difficulty).hazardIntensityMult);
   s.hazards.push({
     kind, phase: "telegraph", tLeft: m.warn,
     activeDur: m.activeMin + rng.next() * m.activeSpan,
@@ -76,7 +81,9 @@ export function updateHazards(s: ColonyState, dt: number, rng: RNG, emit: Emit):
       const kind = pickKind(rng);
       spawnHazard(s, kind, rng);
       emit({ type: "hazard_warn", kind, detail: kind, secs: Math.round(HAZARD_META[kind].warn) });
-      s.nextHazard = SCHED_GAP_MIN + rng.next() * SCHED_GAP_SPAN;
+      // gap mult applies after the draw — same draw count on every difficulty
+      s.nextHazard = (SCHED_GAP_MIN + rng.next() * SCHED_GAP_SPAN)
+        * difficultyProfile(s.difficulty).hazardGapMult;
     }
   }
 

@@ -11,6 +11,7 @@ import type { Emit } from "./tick";
 import { accessCell } from "./colonists";
 import { roleMatchCount } from "./roster";
 import { bumpMorale } from "./morale";
+import { techHealRateMult } from "./techs";
 import {
   INJURY_RADIUS, INJURY_RECOVERY, MEDBAY_HEAL_MULT, MEDIC_HEAL_BONUS,
   HEAL_RADIUS, MORALE_BUMP,
@@ -53,10 +54,11 @@ export function applyStrikeInjuries(s: ColonyState, gx: number, gy: number, emit
 }
 
 /** the tick's recovery pass — everyone heals at the base rate; a medbay in
- *  reach multiplies it. Runs before stepColonists so the just-healed can take a
- *  work slot the same tick. */
+ *  reach multiplies it, alien medi-gel multiplies the whole rate. Runs before
+ *  stepColonists so the just-healed can take a work slot the same tick. */
 export function updateInjuries(s: ColonyState, dt: number, emit: Emit): void {
   const stations = medbayStations(s);
+  const techMult = techHealRateMult(s);
   for (const c of s.colonists) {
     if (c.injury <= 0) continue;
     let rate = 1;
@@ -64,7 +66,7 @@ export function updateInjuries(s: ColonyState, dt: number, emit: Emit): void {
       if (Math.hypot(c.x - st.x, c.y - st.y) > HEAL_RADIUS) continue;
       rate = Math.max(rate, MEDBAY_HEAL_MULT * (st.matched ? 1 + MEDIC_HEAL_BONUS : 1));
     }
-    c.injury -= rate * dt;
+    c.injury -= rate * techMult * dt;
     if (c.injury <= 0) {
       c.injury = 0;
       emit({ type: "colonist_recovered", id: c.id });

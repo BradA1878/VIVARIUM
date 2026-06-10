@@ -7,6 +7,10 @@
 
 export type Resource = "power" | "water" | "oxygen" | "food";
 
+/** campaign difficulty — the profiles (grace, deadline, hazard/UFO scaling,
+ *  starting materials) live in engine/tuning.ts DIFFICULTY */
+export type Difficulty = "easy" | "normal" | "hard";
+
 export const RESOURCES: Resource[] = ["power", "water", "oxygen", "food"];
 
 /** A side of a footprint / a rotation step. N=0, E=1, S=2, W=3. Grid deltas:
@@ -245,6 +249,8 @@ export interface Snapshot {
   dead: number;
   /** colony morale, clamped to [floor, 1] — scales production, never movement */
   morale: number;
+  /** the active difficulty profile (chosen at reset, persisted in state) */
+  difficulty: Difficulty;
 
   // ---- campaign (doc §2.5) ----
   /** the sol Earth's launch window closes; reach self-sufficiency before then */

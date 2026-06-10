@@ -16,6 +16,7 @@ import { bumpMorale } from "./morale";
 import {
   DEFLECTOR_BLOCK, MORALE_BUMP, UFO_GAP_MIN, UFO_GAP_SPAN, UFO_RETRY,
   UFO_INBOUND, UFO_HOVER, UFO_LEAVE, UFO_MIN_SOL, UFO_MIN_POP,
+  difficultyProfile,
 } from "./tuning";
 
 const DEFLECTOR_ID = "deflector";
@@ -79,7 +80,9 @@ export function updateUfo(s: ColonyState, dt: number, rng: RNG, emit: Emit): voi
     if (s.nextUfo <= 0) {
       if (ufoEligible(s)) {
         spawnUfo(s, rng, emit);
-        s.nextUfo = UFO_GAP_MIN + rng.next() * UFO_GAP_SPAN;
+        // gap mult applies after the draw — same draw count on every difficulty
+        s.nextUfo = (UFO_GAP_MIN + rng.next() * UFO_GAP_SPAN)
+          * difficultyProfile(s.difficulty).ufoGapMult;
       } else {
         s.nextUfo = UFO_RETRY;
       }

@@ -60,6 +60,16 @@ describe("SimHost", () => {
     expect(removed).toBe(base);
   });
 
+  it("reset with a difficulty switches it; plain reset keeps it", () => {
+    const host = new SimHost(3);
+    const snapOf = (msgs: Outbound[]) =>
+      (msgs[0] as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    expect(snapOf([host.snapshotMessage()]).difficulty).toBe("normal");
+
+    expect(snapOf(host.applyCommand({ type: "reset", difficulty: "hard" })).difficulty).toBe("hard");
+    expect(snapOf(host.applyCommand({ type: "reset" })).difficulty).toBe("hard"); // omitted → unchanged
+  });
+
   it("save returns a SaveData reply that load restores", () => {
     const host = new SimHost(99);
     for (let i = 0; i < 40; i++) host.step(0.05);

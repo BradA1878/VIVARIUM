@@ -2,7 +2,7 @@
    Tuning knobs — the balance lives here, never in the engine logic (doc §2.1).
    These are the values the prototype settled on (doc §4.4).
    ============================================================================ */
-import type { Resource } from "@shared/types";
+import type { Difficulty, Resource } from "@shared/types";
 
 /** Per-colonist life-support demand, per second (doc §4.4). */
 export const PERSON: Record<"oxygen" | "water" | "food", number> = {
@@ -207,3 +207,35 @@ export const BIRTH_GAP_MIN = 240;   // gap between births = MIN + rand*SPAN (rar
 export const BIRTH_GAP_SPAN = 200;
 export const BIRTH_RETRY = 15;      // re-check delay when conditions aren't met
 export const BIRTH_MIN_POP = 4;     // need a real settlement before it grows itself
+
+/* ----------------------------------------------------------------------------
+   Difficulty — three profiles over the same engine. NORMAL IS EXACTLY the
+   constants above, so Colony(seed) and Colony(seed, "normal") are byte-identical.
+   The multipliers apply AFTER rng draws (gap/intensity), never before, so draw
+   counts — and the whole rng stream — are identical across difficulties.
+   ---------------------------------------------------------------------------- */
+export interface DifficultyProfile {
+  /** seconds a pool may sit empty before it turns lethal */
+  grace: number;
+  /** the sol Earth's launch window closes */
+  deadlineSol: number;
+  /** scales the gap between auto-scheduled hazards */
+  hazardGapMult: number;
+  /** scales hazard intensity (drawn or Director-passed), then clamped to 1 */
+  hazardIntensityMult: number;
+  /** scales the first UFO timer and the gap between visits */
+  ufoGapMult: number;
+  /** the build-currency stock a fresh colony starts with */
+  startMaterials: number;
+}
+
+export const DIFFICULTY: Record<Difficulty, DifficultyProfile> = {
+  easy:   { grace: 75, deadlineSol: 28, hazardGapMult: 1.4, hazardIntensityMult: 0.8, ufoGapMult: 1.5, startMaterials: 130 },
+  normal: { grace: GRACE, deadlineSol: DEADLINE_SOL, hazardGapMult: 1, hazardIntensityMult: 1, ufoGapMult: 1, startMaterials: START_MATERIALS },
+  hard:   { grace: 40, deadlineSol: 18, hazardGapMult: 0.7, hazardIntensityMult: 1.25, ufoGapMult: 0.7, startMaterials: 60 },
+};
+
+/** profile lookup tolerant of pre-difficulty saves / minimal test states */
+export function difficultyProfile(d: Difficulty | undefined): DifficultyProfile {
+  return DIFFICULTY[d ?? "normal"];
+}

@@ -8,15 +8,15 @@
    ============================================================================ */
 import type { ColonyState } from "./state";
 import type { Emit } from "./tick";
+import { techMoraleFloor } from "./techs";
 import {
   MORALE_FLOOR, MORALE_START, MORALE_EFF, MORALE_LOW_T, MORALE_OK_T,
   MORALE_CRISIS_RATE, MORALE_BROWNOUT_RATE, MORALE_CALM_RATE, MORALE_PROGRESS_RATE,
 } from "./tuning";
 
-/** the floor morale can sink to — a later techs commit raises this via
- *  max(MORALE_FLOOR, tech-provided floor) */
-export function moraleFloor(_s: ColonyState): number {
-  return MORALE_FLOOR;
+/** the floor morale can sink to — MORALE_FLOOR, raised by alien tech (harmonizer) */
+export function moraleFloor(s: ColonyState): number {
+  return Math.max(MORALE_FLOOR, techMoraleFloor(s));
 }
 
 /** step morale by delta, clamped into [moraleFloor, 1] */

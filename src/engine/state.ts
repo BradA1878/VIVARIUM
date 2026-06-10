@@ -5,7 +5,7 @@
    counter) the tick needs but the UI doesn't.
    ============================================================================ */
 import type {
-  BuildingState, ColonistAct, DepositKind, HazardKind, HazardPhase,
+  BuildingState, ColonistAct, DepositKind, Difficulty, HazardKind, HazardPhase,
   Outcome, Pool, Resource, Side, TradeGive, TradePhase, UfoPhase, Weather,
 } from "@shared/types";
 
@@ -166,6 +166,9 @@ export interface ColonyState {
   morale: number;
   /** morale_low latch — mirrors brownLatch, serializes with the colony */
   moraleLatch: boolean;
+  /** the active difficulty profile (tuning.ts DIFFICULTY) — chosen at reset,
+   *  multipliers consumed by hazards/ufo, persisted with the colony */
+  difficulty: Difficulty;
 }
 
 /** Save payload: state plus the RNG seed/state for a bit-identical resume. */

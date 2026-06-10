@@ -35,7 +35,7 @@ export class SimHost {
       case "setPaused": this.colony.setPaused(cmd.value); break;
       case "setSpeed": this.colony.setSpeed(cmd.value); break;
       case "forceStorm": this.colony.forceStorm(); break;
-      case "reset": this.colony.reset(); break;
+      case "reset": this.colony.reset(cmd.difficulty); break;
       case "load": this.colony = Colony.load(cmd.data); break;
       case "start": break;
       case "save":
