@@ -75,11 +75,14 @@ let history: RunHistory = emptyHistory();
 // the one-shot teaching toasts (seen-set persists across runs)
 let hints: Hints | null = null;
 let hintTimer: ReturnType<typeof setTimeout> | null = null;
+let hintGapTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let stopSettingsWatch: (() => void) | null = null;
 let msgId = 1;
 
 const HINT_TOAST_MS = 14_000;
+/** quiet beat between toasts — the next hint must not appear the frame the last one left */
+const HINT_GAP_MS = 1_500;
 
 /** put a hint on screen (with the soft interface blip) and arm its auto-dismiss */
 function showHint(h: Hint | null): void {
@@ -90,11 +93,20 @@ function showHint(h: Hint | null): void {
   hintTimer = setTimeout(dismissHint, HINT_TOAST_MS);
 }
 
-/** close the toast (✕, auto-dismiss, or reset) and let the next hint through */
+/** close the toast (✕, auto-dismiss, or reset) and let the next hint through —
+ *  after a short quiet gap. The queue stays occupied until the gap timer fires,
+ *  so the gap inherits the active-block's semantics exactly: candidates offered
+ *  meanwhile are not burned, and seen is still marked only at show time. The
+ *  timer holds ITS queue instance — reset's fresh queue is never released early. */
 function dismissHint(): void {
   if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
   hintToast.value = null;
-  hints?.dismiss();
+  const q = hints;
+  if (hintGapTimer) clearTimeout(hintGapTimer);
+  hintGapTimer = setTimeout(() => {
+    hintGapTimer = null;
+    q?.dismiss();
+  }, HINT_GAP_MS);
 }
 
 const AUTOSAVE_MS = 12_000;
@@ -281,6 +293,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 export function disposeColony(): void {
   if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
   if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
+  if (hintGapTimer) { clearTimeout(hintGapTimer); hintGapTimer = null; }
   if (stopSettingsWatch) { stopSettingsWatch(); stopSettingsWatch = null; }
   sentinel?.dispose();
   audio.dispose();

@@ -6,7 +6,9 @@
    applies quality/director live, the narrator gate reads narratorLive per event,
    and nextDifficulty takes hold on the next reset.
    ============================================================================ */
+import { ref, watch } from "vue";
 import { useSettings } from "@/ui/stores/settings";
+import { liveNarratorHealthy } from "@/agent/client";
 import type { Difficulty } from "@shared/types";
 
 const { settings, settingsOpen, updateSettings } = useSettings();
@@ -14,6 +16,14 @@ const { settings, settingsOpen, updateSettings } = useSettings();
 // the live narrator needs the Hono backend; without the opt-in flag the client
 // never calls it, so the toggle renders disabled rather than lying
 const liveAvailable = import.meta.env.VITE_LIVE_NARRATOR === "1";
+
+// honesty over polish: if the client's circuit breaker is open, the council is
+// speaking from the scripted bank no matter what the toggle says. Sampled once
+// each time the panel opens — display only, no polling, narration untouched.
+const narratorHealthy = ref(true);
+watch(settingsOpen, (open) => {
+  if (open) narratorHealthy.value = liveNarratorHealthy();
+}, { immediate: true });
 
 type VolKey = "master" | "sfx" | "ambient";
 const VOLS: VolKey[] = ["master", "sfx", "ambient"];
@@ -75,7 +85,7 @@ const KEYS: [string, string][] = [
             :class="{ on: settings.audio.muted }"
             @click="updateSettings({ audio: { muted: !settings.audio.muted } })"
           >
-            {{ settings.audio.muted ? "MUTED" : "OFF" }}
+            {{ settings.audio.muted ? "ON" : "OFF" }}
           </button>
         </div>
       </section>
@@ -112,6 +122,9 @@ const KEYS: [string, string][] = [
           </button>
         </div>
         <p v-if="!liveAvailable" class="set-note">narrator server not configured</p>
+        <p v-else-if="settings.narratorLive && !narratorHealthy" class="set-note">
+          server unreachable — speaking from the script
+        </p>
       </section>
 
       <section class="set-sec">

@@ -106,7 +106,7 @@ const DIFFS: { value: Difficulty; label: string }[] = [
       <div class="end-sub">{{ subline }}</div>
       <div v-if="epitaph" class="end-epitaph">{{ epitaph }}</div>
       <div class="end-stats">
-        <span><b>{{ s.sol }}</b> sols</span>
+        <span><b>{{ s.sol }}</b> {{ s.sol === 1 ? "sol" : "sols" }}</span>
         <span class="sep">·</span>
         <span><b>{{ s.population }}</b> survived</span>
         <span class="sep">·</span>

@@ -24,6 +24,13 @@ function recordFailure(): void {
   }
 }
 
+/** read-only breaker state for the UI: true while the circuit is closed (live
+ *  lines will be attempted), false while it is open and the council is speaking
+ *  from the scripted bank. Display only — it never changes narration behavior. */
+export function liveNarratorHealthy(): boolean {
+  return Date.now() >= disabledUntil;
+}
+
 /** a compact snapshot for the prompt — just what gives the line its context */
 function slim(s: Snapshot | null) {
   if (!s) return null;
