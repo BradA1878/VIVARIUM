@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import type { ColonyEvent, ColonistRole } from "@shared/types";
 import { Colony, DEFS, Tuning } from "./index";
-import { ROLE_BUILDING, nameOf, roleOf } from "./roster";
+import { BUILDING_ROLE, nameOf, roleOf } from "./roster";
 import type { ColonyState } from "./state";
 
 /** advance a colony, collecting events */
@@ -36,8 +36,8 @@ describe("roleOf / nameOf — pure id derivations, no RNG", () => {
   });
 
   it("the seed miner + engineer match the starter extractor + electrolysis", () => {
-    expect(ROLE_BUILDING[roleOf(1)]).toBe("extractor");
-    expect(ROLE_BUILDING[roleOf(2)]).toBe("electrolysis");
+    expect(BUILDING_ROLE.extractor).toBe(roleOf(1));
+    expect(BUILDING_ROLE.electrolysis).toBe(roleOf(2));
   });
 
   it("names are unique across 30 consecutive ids", () => {

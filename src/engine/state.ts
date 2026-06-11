@@ -54,6 +54,14 @@ export interface DepositInstance {
   max: number;
 }
 
+/** a geothermal vent — static world-gen terrain (the HUD sees VentView).
+ *  Seeded once, never depletes, never moves. */
+export interface VentInstance {
+  id: number;
+  gx: number;
+  gy: number;
+}
+
 /** a live alien trade offer */
 export interface TradeInstance {
   id: number;
@@ -93,6 +101,8 @@ export interface ColonyState {
   // ---- embodied colony ----
   colonists: ColonistInstance[];
   deposits: DepositInstance[];
+  /** geothermal vents — static world-gen terrain the geothermal tap sits on */
+  vents: VentInstance[];
   /** the collection depot cell — where the possessed colonist drops materials */
   depot: { gx: number; gy: number };
   /** id of the possessed colonist, or null */
@@ -130,6 +140,9 @@ export interface ColonyState {
 
   weather: Weather;
   solarMul: number;
+  /** current wind level (pure derivation, engine/wind.ts) — stored each tick
+   *  beside solarMul for the snapshot */
+  windLevel: number;
   /** live hazards (telegraph + active) */
   hazards: HazardInstance[];
   /** seconds to the next auto-scheduled hazard (ignored when director-controlled) */

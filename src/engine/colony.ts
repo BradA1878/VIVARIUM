@@ -22,12 +22,12 @@ import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData } from "./state";
 import { emptyBuilding } from "./state";
 import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed } from "./colonists";
-import { seedDeposits } from "./deposits";
+import { seedDeposits, seedVents } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
 import { ufoView } from "./ufo";
 import {
   START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
-  MORALE_START, DIFFICULTY,
+  MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT,
 } from "./tuning";
 
 export class Colony {
@@ -226,6 +226,7 @@ export class Colony {
     const hubB = this.s.buildings.find((b) => DEFS[b.defId]?.isHub);
     if (hubB) this.s.depot = { gx: hubB.gx + (DEFS[hubB.defId].foot[0] ?? 2), gy: hubB.gy + 1 };
     reconcileColonists(this.s); // four astronauts, at the hub
+    seedVents(this.s, this.envRng); // geothermal terrain first — deposits avoid it
     seedDeposits(this.s, this.envRng); // scatter the resource field
     this.recomputeCaps();
     // seeding emits build events; the colony isn't "speaking" yet, so clear them
@@ -248,6 +249,7 @@ export class Colony {
       materials: { ...s.materials },
       colonists: colonistViews(s),
       deposits: depositViews(s),
+      vents: s.vents.map((v) => ({ ...v })),
       depot: { ...s.depot },
       possessed: s.possessed,
       trade: tradeView(s),
@@ -263,6 +265,7 @@ export class Colony {
       weather: s.weather,
       stormT: s.hazards.find((h) => h.kind === "dust" && h.phase === "active")?.tLeft ?? 0,
       solarMul: s.solarMul,
+      windLevel: s.windLevel,
       hazards: hazardViews(s),
       directorControlled: s.directorControlled,
       nextResupply: s.nextResupply,
@@ -307,6 +310,7 @@ export class Colony {
         materials: { ...this.s.materials },
         colonists: this.s.colonists.map((c) => ({ ...c })),
         deposits: this.s.deposits.map((d) => ({ ...d })),
+        vents: this.s.vents.map((v) => ({ ...v })),
         depot: { ...this.s.depot },
         moveIntent: { ...this.s.moveIntent },
         trade: this.s.trade ? { ...this.s.trade, give: { ...this.s.trade.give }, take: { ...this.s.trade.take } } : null,
@@ -342,6 +346,8 @@ export class Colony {
         gatherT: c2.gatherT ?? 0,
       })),
       deposits: (st.deposits ?? []).map((d) => ({ ...d })),
+      vents: (st.vents ?? []).map((v) => ({ ...v })),
+      windLevel: st.windLevel ?? 0,
       depot: st.depot ? { ...st.depot } : { gx: 6, gy: 5 },
       moveIntent: st.moveIntent ? { ...st.moveIntent } : { dx: 0, dy: 0 },
       trade: st.trade ? { ...st.trade, give: { ...st.trade.give }, take: { ...st.trade.take } } : null,
@@ -356,6 +362,11 @@ export class Colony {
       timers: { ...st.timers },
       hazards: (st.hazards ?? []).map((h) => ({ ...h })),
     };
+    // legacy backfill: a pre-generation-economy save carries no vents. Seed them
+    // from a DERIVED rng — never the live envRng, whose serialized state must
+    // keep resuming byte-identically — so every load of the same save gets the
+    // same terrain and the same future.
+    if (!st.vents) seedVents(c.s, new RNG((data.seed ^ VENT_BACKFILL_SALT) >>> 0));
     c.events = [];
     return c;
   }
@@ -383,6 +394,7 @@ function freshState(difficulty: Difficulty): ColonyState {
     materials: { amount: prof.startMaterials, capacity: MATERIALS_CAP },
     colonists: [],
     deposits: [],
+    vents: [],
     depot: { gx: 6, gy: 5 }, // a clear collection point beside the hub (set in seedColony)
     possessed: null,
     moveIntent: { dx: 0, dy: 0 },
@@ -406,6 +418,7 @@ function freshState(difficulty: Difficulty): ColonyState {
     solLength: SOL_LENGTH,
     weather: "clear",
     solarMul: 0,
+    windLevel: 0,
     hazards: [],
     nextHazard: SCHED_FIRST,
     directorControlled: false,

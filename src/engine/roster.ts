@@ -32,13 +32,16 @@ export function nameOf(id: number): string {
   return `${FIRST[(id * 7) % FIRST.length]} ${LAST[(id * 13) % LAST.length]}`;
 }
 
-/** the building each role works best in ("medbay" is forward-declared data —
- *  the building arrives in a later commit; unmatched until then) */
-export const ROLE_BUILDING: Record<ColonistRole, string> = {
-  miner: "extractor",
-  engineer: "electrolysis",
-  botanist: "greenhouse",
-  medic: "medbay",
+/** the trade each staffed building wants on its slots (defId → role). A role
+ *  can match several buildings — the engineer's trade covers electrolysis AND
+ *  the reactor (the Robotics Bay joins in a later commit). Unmapped defIds
+ *  simply never match. */
+export const BUILDING_ROLE: Record<string, ColonistRole> = {
+  extractor: "miner",
+  electrolysis: "engineer",
+  reactor: "engineer",
+  greenhouse: "botanist",
+  medbay: "medic",
 };
 
 /** how many colonists assigned to building `uid` are working their own trade
@@ -47,7 +50,7 @@ export function roleMatchCount(s: ColonyState, uid: number, defId: string): numb
   let n = 0;
   for (const c of s.colonists) {
     if (c.injury > 0) continue;
-    if (c.workUid === uid && ROLE_BUILDING[roleOf(c.id)] === defId) n += 1;
+    if (c.workUid === uid && BUILDING_ROLE[defId] === roleOf(c.id)) n += 1;
   }
   return n;
 }

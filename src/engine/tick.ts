@@ -29,6 +29,7 @@ import { respawnDeposits } from "./deposits";
 import { updateTrade } from "./trade";
 import { updateUfo } from "./ufo";
 import { techPassivePower, techDemandMult } from "./techs";
+import { windLevel } from "./wind";
 import type { RNG } from "./rng";
 
 /** event emitter — the colony stamps t/sol/tod before recording */
@@ -80,6 +81,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   updateHazards(s, dt, rng, emit);
   const mods = hazardMods(s);
   s.solarMul = solarOutput(s) * mods.solarFactor;
+  s.windLevel = windLevel(s); // pure derivation — peaks exactly when solar dies
 
   // Earth resupply windows (doc §2.5) — a window opens on a schedule and trickles
   // a batch of resources into the buffers while open. External delivery, so it is
@@ -110,6 +112,12 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   for (const b of s.buildings) {
     const def = DEFS[b.defId];
     if (def.solar) gen += def.solar * s.solarMul;
+    // environmental generation — wind rides the weather curve, geothermal is
+    // flat; both gate only on buildingFunctional (no staffing, no inputs:
+    // generation is weather, not production). Solar keeps its original behavior.
+    if ((def.wind || def.steady) && buildingFunctional(b)) {
+      gen += (def.wind ?? 0) * s.windLevel + (def.steady ?? 0);
+    }
   }
   gen += techPassivePower(s); // alien fusion cell — flat, day or night
   addPool(s, "power", gen * dt);
@@ -174,6 +182,14 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
       const r = k as Resource;
       addPool(s, r, d.produces[r]! * eff * dt);
       net[r] += d.produces[r]! * eff;
+    }
+    // the materials printer — the build currency's on-planet source. Same eff
+    // scaling as produces; clamped to the materials cap (outside net flow,
+    // which tracks the four survival pools only).
+    if (d.producesMat) {
+      s.materials.amount = Math.min(
+        s.materials.capacity, s.materials.amount + d.producesMat * eff * dt,
+      );
     }
     b.util = 1;
   }

@@ -125,6 +125,29 @@ export const DEPOSIT_FIELD_MAX = 15;  // cap on concurrent deposits
 export const START_MATERIALS = 90;
 export const MATERIALS_CAP = 400;
 
+/* ----------------------------------------------------------------------------
+   The generation economy — wind is a PURE curve of (sol, tod, active dust): a
+   derivation, never a draw (engine/wind.ts). Anti-correlated with solar by
+   design: trough near solar noon, peak at night, boosted while dust is active —
+   the turbine is the panel's complement, not a cheaper panel.
+   ---------------------------------------------------------------------------- */
+export const WIND_MIN = 0.05;        // calm floor — the rotors never quite stop
+export const WIND_BASE_LEVEL = 0.45; // long-run average wind level
+export const WIND_DIURNAL = 0.25;    // day/night amplitude (peaks at night)
+export const WIND_SWELL = 0.15;      // multi-sol synoptic swell amplitude
+export const WIND_SWELL_PERIOD = 3;  // sols per swell cycle
+export const WIND_DUST_BOOST = 0.35; // added at full active-dust intensity
+
+/** geothermal vents — world-gen terrain, seeded once before the deposit field
+ *  (envRng on a fresh colony; legacy saves backfill from a DERIVED
+ *  RNG(seed ^ VENT_BACKFILL_SALT) so the live env stream keeps resuming
+ *  byte-identically). Vents never deplete. */
+export const VENT_COUNT = 3;
+export const VENT_CLEAR = 4;   // min cells from the colony center
+export const VENT_SPACING = 2; // min cells between vents
+export const VENT_EDGE = 1;    // keep vents off the border
+export const VENT_BACKFILL_SALT = 0x47656f54; // "GeoT" — fixed, never the live envRng
+
 /** alien traders — a window like resupply, but you accept/decline a swap */
 export const TRADE_FIRST = 70;     // seconds to the first traders
 export const TRADE_GAP = 165;      // seconds between trade windows

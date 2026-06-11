@@ -24,7 +24,7 @@ import { buildingFunctional, emptyColonist } from "./state";
 import { idx, inBounds, cellsFor } from "./grid";
 import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
-import { ROLE_BUILDING, nameOf, roleOf } from "./roster";
+import { BUILDING_ROLE, nameOf, roleOf } from "./roster";
 import {
   depotCenter, dropCarryAtDepot, nearestDepositInReach, pickupFromDeposit,
   stepGatherer, stepToward, type Pt,
@@ -155,7 +155,7 @@ function assign(s: ColonyState): void {
     const j = free.findIndex(match);
     if (j >= 0) workers[i] = free.splice(j, 1)[0];
   };
-  slots.forEach((slot, i) => claim(i, (c) => ROLE_BUILDING[roleOf(c.id)] === slot.defId));
+  slots.forEach((slot, i) => claim(i, (c) => BUILDING_ROLE[slot.defId] === roleOf(c.id)));
   slots.forEach((_, i) => { if (!workers[i]) claim(i, () => true); });
 
   for (const c of colonists) c.workUid = null;

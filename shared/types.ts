@@ -38,6 +38,14 @@ export interface BuildingDef {
   priority: number;
   /** solar generation at full sun, before sol/storm multipliers */
   solar?: number;
+  /** wind generation at full wind — scaled by the windLevel curve (pass 2, like solar) */
+  wind?: number;
+  /** flat generation, sol or night (geothermal) — pass 2, like solar */
+  steady?: number;
+  /** materials trickled per second at full operation (the printer) — pass 4, × eff */
+  producesMat?: number;
+  /** placement requires a footprint cell on a geothermal vent */
+  needsVent?: true;
   /** materials it costs to place (the gather-to-build economy). 0/undefined = free. */
   matCost?: number;
   /** capacity this building adds to a pool (batteries, tanks, cisterns) */
@@ -122,6 +130,14 @@ export interface DepositView {
   amount: number;
   /** initial units (render scale) */
   max: number;
+}
+
+/** a geothermal vent — static world-gen terrain, never depletes. The geothermal
+ *  tap must sit on one (BuildingDef.needsVent). */
+export interface VentView {
+  id: number;
+  gx: number;
+  gy: number;
 }
 
 /** a colonist's trade — a pure derivation of its id (engine/roster.ts), so it
@@ -214,6 +230,8 @@ export interface Snapshot {
   colonists: ColonistView[];
   /** surface resource deposits to mine */
   deposits: DepositView[];
+  /** geothermal vents — static terrain the geothermal tap must sit on */
+  vents: VentView[];
   /** the collection depot cell — where the possessed colonist drops materials */
   depot: { gx: number; gy: number };
   /** the id of the colonist the player is piloting, or null */
@@ -236,6 +254,8 @@ export interface Snapshot {
   stormT: number;
   /** current solar multiplier (sun curve × storm), 0..1 */
   solarMul: number;
+  /** current wind level (pure anti-solar curve, engine/wind.ts), WIND_MIN..1 */
+  windLevel: number;
   /** live hazards (telegraphed + active) for the HUD + renderer */
   hazards: HazardView[];
   /** whether an external Director is driving hazards (engine scheduler stands down) */

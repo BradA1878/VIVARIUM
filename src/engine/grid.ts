@@ -27,6 +27,9 @@ export function canPlace(s: ColonyState, def: BuildingDef, gx: number, gy: numbe
     if (!inBounds(s.N, x, y)) return false;
     if (s.grid[idx(s.N, x, y)] !== 0) return false;
   }
+  // terrain-restricted: the geothermal tap must cover a vent cell
+  if (def.needsVent && !cellsFor(def, gx, gy).some(([x, y]) =>
+    s.vents.some((v) => v.gx === x && v.gy === y))) return false;
   return true;
 }
 

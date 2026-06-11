@@ -30,6 +30,9 @@ export function canPlacePredict(
     if (x < 0 || y < 0 || x >= snap.N || y >= snap.N) return false;
     if (o.has(`${x},${y}`)) return false;
   }
+  // terrain-restricted (mirrors grid.ts): geothermal must cover a vent cell
+  if (def.needsVent && !cellsFor(def, gx, gy).some(([x, y]) =>
+    snap.vents.some((v) => v.gx === x && v.gy === y))) return false;
   return true;
 }
 

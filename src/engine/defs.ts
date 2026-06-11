@@ -107,10 +107,43 @@ export const DEFS: Record<string, BuildingDef> = {
     requiresPressure: false, priority: 35,
     desc: "Wards off abductors while powered. Sheds early in a brownout — keep it lit.",
   },
+  windturbine: {
+    id: "windturbine", name: "Wind Turbine", glyph: "WND",
+    foot: [1, 1], h: 26, color: "#2e3d49",
+    cost: { power: 0 }, matCost: 28,
+    staffing: 0, consumes: {}, produces: {}, wind: 9,
+    requiresPressure: false, priority: 0,
+    desc: "Power from moving air. Strongest at night and in dust — the panel's complement.",
+  },
+  geothermal: {
+    id: "geothermal", name: "Geothermal Tap", glyph: "GEO",
+    foot: [1, 1], h: 16, color: "#453428",
+    cost: { power: 0 }, matCost: 45,
+    staffing: 0, consumes: {}, produces: {}, steady: 6, needsVent: true,
+    requiresPressure: false, priority: 0,
+    desc: "Flat power, sol and night. Only seats on a vent — read the terrain.",
+  },
+  reactor: {
+    id: "reactor", name: "Fission Reactor", glyph: "FIS",
+    foot: [2, 2], h: 26, color: "#414433",
+    cost: { power: 0 }, matCost: 120,
+    staffing: 1, consumes: { water: 0.5 }, produces: { power: 20 },
+    requiresPressure: false, priority: 0,
+    desc: "Big, steady power. Drinks water and wants an engineer on the rods.",
+  },
+  printer: {
+    id: "printer", name: "Materials Printer", glyph: "PRN",
+    foot: [1, 1], h: 18, color: "#3f3347",
+    cost: { power: 0 }, matCost: 40,
+    staffing: 0, consumes: { power: 6 }, produces: {}, producesMat: 0.35,
+    requiresPressure: false, priority: 15,
+    desc: "Regolith in, materials out. First thing shed when power runs short.",
+  },
 };
 
 /** Palette display order (doc §4.4 table order). */
 export const ORDER: string[] = [
   "hub", "corridor", "hab", "solar", "battery",
   "extractor", "electrolysis", "greenhouse", "medbay", "cistern", "o2tank", "deflector",
+  "windturbine", "geothermal", "reactor", "printer",
 ];
