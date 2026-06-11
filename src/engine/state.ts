@@ -38,6 +38,10 @@ export interface ColonistInstance {
   workUid: number | null;
   /** hab uid this colonist shelters in, or null */
   homeUid: number | null;
+  /** the deposit this colonist has claimed to gather, or null (engine/gather.ts) */
+  gatherDepositId: number | null;
+  /** seconds spent mining at the claimed node so far (the dwell timer) */
+  gatherT: number;
 }
 
 /** a surface resource node */
@@ -185,6 +189,7 @@ export function emptyColonist(id: number, x: number, y: number): ColonistInstanc
   return {
     id, x, y, facing: 0, state: "idle",
     carryKind: null, carryAmt: 0, injury: 0, workUid: null, homeUid: null,
+    gatherDepositId: null, gatherT: 0,
   };
 }
 

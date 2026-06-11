@@ -46,8 +46,9 @@ interface ColonistRec {
   prevPos: THREE.Vector3;
 }
 
-/** colonist states that should show the walk cycle */
-const MOVING_STATES = new Set(["toWork", "toHome", "toMedbay", "mining", "hauling", "piloted"]);
+/** colonist states that should show the walk cycle ("mining" is a stationary
+ *  dwell at the node, so it idles like any other standstill) */
+const MOVING_STATES = new Set(["toWork", "toHome", "toMedbay", "gathering", "hauling", "piloted"]);
 
 /** the established signature cyan, for transient FX (placed / possession rings) */
 const FX_CYAN = 0x7fd4e8;

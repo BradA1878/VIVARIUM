@@ -80,42 +80,55 @@ describe("possession + moveIntent", () => {
   });
 });
 
+/** the live deposit nearest a point, optionally one kind only — auto-gatherers
+ *  race the player for nodes now, so tests retarget every iteration instead of
+ *  pinning one deposit that may be mined out from under them */
+function nearestLiveDeposit(snap: Snapshot, x: number, y: number, kind?: string) {
+  let best: Snapshot["deposits"][number] | null = null, bestD = Infinity;
+  for (const d of snap.deposits) {
+    if (d.amount <= 0) continue;
+    if (kind && d.kind !== kind) continue;
+    const dist = Math.hypot(d.gx - x, d.gy - y);
+    if (dist < bestD) { bestD = dist; best = d; }
+  }
+  return best;
+}
+
 describe("mining", () => {
   it("walks to a deposit, presses P to pick up a load, depleting it", () => {
     const c = new Colony(7);
     const id = c.snapshot().colonists[0].id;
     c.possess(id);
 
-    const dep0 = c.snapshot().deposits[0];
-    const depId = dep0.id;
-    const depMax = dep0.max;
-
-    // steer toward the deposit each tick until in pickup range, then press P
-    let inRange = false;
+    // steer toward the NEAREST LIVE deposit each tick (re-picked every
+    // iteration — an auto-gatherer may drain the previous target mid-walk),
+    // until in pickup range, then press P
+    let target: { id: number; amount: number } | null = null;
     for (let i = 0; i < 800; i++) {
       const snap = c.snapshot();
-      const dep = snap.deposits.find((d) => d.id === depId);
       const me = snap.colonists.find((k) => k.id === id)!;
+      const dep = nearestLiveDeposit(snap, me.x, me.y);
       if (!dep) break;
       const dx = dep.gx - me.x;
       const dy = dep.gy - me.y;
-      if (Math.hypot(dx, dy) <= 1.1) { inRange = true; break; }
+      if (Math.hypot(dx, dy) <= 1.1) { target = { id: dep.id, amount: dep.amount }; break; }
       c.setMoveIntent(Math.sign(dx), Math.sign(dy));
       c.tick(0.1);
       c.drainEvents();
     }
-    expect(inRange).toBe(true);
+    expect(target).not.toBeNull(); // reached pickup range of a live node
 
     c.setMoveIntent(0, 0);
-    c.interact(); // press P → grab a load
+    c.interact(); // press P → grab a load (no tick between the check and the press)
 
     const after = c.snapshot();
     const me = after.colonists.find((k) => k.id === id)!;
-    const dep = after.deposits.find((d) => d.id === depId);
+    const dep = after.deposits.find((d) => d.id === target!.id);
 
     expect(me.carryAmt).toBeGreaterThan(0);
-    // the deposit either shrank below its max, or was fully mined out of the field
-    const depleted = dep == null || dep.amount < depMax - 1e-6;
+    // the target either shrank below what it held at the press, or was fully
+    // mined out of the field
+    const depleted = dep == null || dep.amount < target!.amount - 1e-6;
     expect(depleted).toBe(true);
   });
 });
@@ -126,18 +139,18 @@ describe("hauling", () => {
     const id = c.snapshot().colonists[0].id;
     c.possess(id);
 
-    // target an ore deposit → drops into materials (big cap, no demand drain → a
-    // clean assertion that the pool grew)
-    const ore = c.snapshot().deposits.find((d) => d.kind === "ore");
-    expect(ore).toBeTruthy();
-    const depId = ore!.id;
+    // target ore deposits → they drop into materials (big cap, no demand drain
+    // → a clean assertion that the pool grew)
+    expect(c.snapshot().deposits.some((d) => d.kind === "ore")).toBe(true);
 
-    // ---- phase 1: reach the ore deposit and press P to pick up ----
+    // ---- phase 1: reach an ore deposit and press P to pick up ----
+    // steer toward the NEAREST LIVE ore node each tick (re-picked every
+    // iteration — auto-gatherers race the player for nodes now)
     let picked = false;
     for (let i = 0; i < 900; i++) {
       const snap = c.snapshot();
       const me = snap.colonists.find((k) => k.id === id)!;
-      const dep = snap.deposits.find((d) => d.id === depId);
+      const dep = nearestLiveDeposit(snap, me.x, me.y, "ore");
       if (!dep) break;
       const dx = dep.gx - me.x, dy = dep.gy - me.y;
       if (Math.hypot(dx, dy) <= 1.1) { c.setMoveIntent(0, 0); c.interact(); picked = true; break; }

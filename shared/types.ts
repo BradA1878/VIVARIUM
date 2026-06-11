@@ -138,6 +138,7 @@ export type ColonistAct =
   | "toMedbay"
   | "recovering"
   | "piloted"
+  | "gathering"
   | "mining"
   | "hauling";
 

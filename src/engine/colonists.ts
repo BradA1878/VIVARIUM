@@ -1,20 +1,22 @@
 /* ============================================================================
    Colonists on the surface — deterministic motion + gathering (doc §0 wall).
-   The possessed colonist integrates the player's moveIntent and auto-mines /
-   auto-unloads by proximity; the rest follow a tod/hazard state machine toward
-   the job the engine already decided they staff. No Math.random, no Date.now —
-   movement is a pure function of state + dt, so replay/save/determinism hold.
+   The possessed colonist integrates the player's moveIntent and picks up /
+   drops explicitly (interactPossessed); the rest follow a tod/hazard state
+   machine toward the job the engine already decided they staff — and the idle
+   ones work the deposit field on their own (engine/gather.ts). No Math.random,
+   no Date.now — movement is a pure function of state + dt, so replay/save/
+   determinism hold.
 
-   Colonists REFLECT the existing staffing/population decisions; they never change
-   the resource math (that lives in tick.ts), so the existing passes are untouched.
+   Colonists REFLECT the existing staffing/population decisions; they never
+   change the recipe math (that lives in tick.ts) — gather credits land in the
+   pools like resupply does, outside net flow, so the existing passes are
+   untouched.
    ============================================================================ */
-import type {
-  ColonistView, DepositView, Resource,
-} from "@shared/types";
-import { DEPOSIT_YIELD } from "@shared/types";
+import type { ColonistView, DepositView } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  WALK_SPEED, PILOT_SPEED, ARRIVE_EPS, CARRY_CAP, PICKUP_RADIUS, DEPOT_RADIUS,
+  WALK_SPEED, PILOT_SPEED, ARRIVE_EPS, CARRY_CAP, DEPOT_RADIUS,
+  AUTO_CARRY, GATHER_DWELL,
   DAY_START, DAY_END, MATERIALS_CAP, INJURED_SPEED, INJURED_PILOT_FACTOR,
 } from "./tuning";
 import type { ColonistInstance, ColonyState, DepositInstance } from "./state";
@@ -23,10 +25,17 @@ import { idx, inBounds, cellsFor } from "./grid";
 import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
 import { ROLE_BUILDING, nameOf, roleOf } from "./roster";
+import {
+  depotCenter, dropCarryAtDepot, nearestDepositInReach, pickupFromDeposit,
+  stepGatherer, stepToward, type Pt,
+} from "./gather";
+
+// the gather mechanics live on their own leaf (engine/gather.ts) so colonists
+// and (later) robots can share them; re-export the bits that began life here
+export { depotCenter } from "./gather";
+export type { Pt } from "./gather";
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
-
-export interface Pt { x: number; y: number }
 
 /** continuous center of a building's footprint, in grid-cell coords */
 function buildingCenter(b: { defId: string; gx: number; gy: number }): Pt {
@@ -108,18 +117,6 @@ function freeCellNear(s: ColonyState, p: Pt): Pt {
   return p;
 }
 
-/** move a colonist toward a target; returns true once it has arrived */
-function stepToward(c: ColonistInstance, t: Pt, speed: number, dt: number): boolean {
-  const dx = t.x - c.x, dy = t.y - c.y;
-  const d = Math.hypot(dx, dy);
-  if (d <= ARRIVE_EPS) return true;
-  const step = Math.min(d, speed * dt);
-  c.x += (dx / d) * step;
-  c.y += (dy / d) * step;
-  c.facing = Math.atan2(dx, dy);
-  return false;
-}
-
 /** keep the colonist roster equal to the population (arrivals add, casualties
  *  remove) — deterministic: new colonists spawn at the hub, removals drop the
  *  highest id, and losing the possessed colonist clears possession. */
@@ -173,11 +170,6 @@ function buildingByUid(s: ColonyState, uid: number | null): { defId: string; gx:
   return s.buildings.find((b) => b.uid === uid) ?? null;
 }
 
-function addToPool(s: ColonyState, target: Resource | "materials", amt: number): void {
-  const p = target === "materials" ? s.materials : s.pools[target];
-  p.amount = Math.min(p.capacity, p.amount + amt);
-}
-
 /** the possessed colonist: just integrate the standing moveIntent. Gathering is
  *  now explicit (interactPossessed), triggered by the player pressing P. */
 function pilot(s: ColonyState, c: ColonistInstance, dt: number): void {
@@ -192,22 +184,11 @@ function pilot(s: ColonyState, c: ColonistInstance, dt: number): void {
   c.state = "piloted";
 }
 
-/** the collection depot's cell center */
-export function depotCenter(s: ColonyState): Pt {
-  return { x: s.depot.gx, y: s.depot.gy };
-}
-
 /** the nearest deposit the possessed colonist could pick up from right now */
 export function depositInReach(s: ColonyState, c: ColonistInstance): DepositInstance | null {
   if (c.carryAmt >= CARRY_CAP) return null;
-  let best: DepositInstance | null = null, bestD = PICKUP_RADIUS;
-  for (const dep of s.deposits) {
-    if (dep.amount <= 0) continue;
-    if (c.carryKind && c.carryKind !== dep.kind) continue; // hands hold one kind
-    const dist = Math.hypot(dep.gx - c.x, dep.gy - c.y);
-    if (dist <= bestD) { bestD = dist; best = dep; }
-  }
-  return best;
+  // hands hold one kind — a carrying colonist only reaches same-kind nodes
+  return nearestDepositInReach(s, c.x, c.y, c.carryKind ?? undefined);
 }
 
 /** explicit pick up / drop for the possessed colonist (the player pressed P).
@@ -222,9 +203,7 @@ export function interactPossessed(s: ColonyState): "picked" | "dropped" | null {
   if (c.carryAmt > 0 && c.carryKind) {
     const d = depotCenter(s);
     if (Math.hypot(d.x - c.x, d.y - c.y) <= DEPOT_RADIUS) {
-      addToPool(s, DEPOSIT_YIELD[c.carryKind], c.carryAmt);
-      c.carryAmt = 0;
-      c.carryKind = null;
+      dropCarryAtDepot(s, c);
       return "dropped";
     }
   }
@@ -232,11 +211,7 @@ export function interactPossessed(s: ColonyState): "picked" | "dropped" | null {
   // otherwise fill the hands from the nearest deposit in reach
   const dep = depositInReach(s, c);
   if (dep) {
-    const amt = Math.min(dep.amount, CARRY_CAP - c.carryAmt);
-    dep.amount -= amt;
-    c.carryAmt += amt;
-    c.carryKind = dep.kind;
-    s.deposits = s.deposits.filter((d) => d.amount > 0.001);
+    pickupFromDeposit(s, c, dep, CARRY_CAP);
     return "picked";
   }
   return null;
@@ -249,6 +224,13 @@ export function stepColonists(s: ColonyState, dt: number): void {
 
   const hazardActive = s.hazards.some((h) => h.phase === "active");
   const day = s.tod > DAY_START && s.tod < DAY_END;
+
+  // sticky gather claims this pass — every live claim held by an auto colonist
+  // (the possessed one is piloted, so its claim neither acts nor blocks)
+  const claimed = new Set<number>();
+  for (const c of s.colonists) {
+    if (c.id !== s.possessed && c.gatherDepositId != null) claimed.add(c.gatherDepositId);
+  }
 
   for (const c of s.colonists) {
     if (c.id === s.possessed) { pilot(s, c, dt); continue; }
@@ -266,10 +248,23 @@ export function stepColonists(s: ColonyState, dt: number): void {
     } else if (day && c.workUid != null) {
       const w = buildingByUid(s, c.workUid);
       goal = w ? accessCell(s, w) : baseCenter(s); arriveState = "working";
+    } else if (
+      // gathering is the day-idle default; a dusk carrier still finishes its
+      // depot run before sleeping. stepGatherer returns false when there is
+      // no gather work at all → fall through to home/idle.
+      (day || c.carryAmt > 0) &&
+      stepGatherer(s, c, dt, claimed, { speed: WALK_SPEED, carryCap: AUTO_CARRY, dwell: GATHER_DWELL })
+    ) {
+      continue; // the gather brain owned movement + state this tick
     } else {
       const home = buildingByUid(s, c.homeUid);
       goal = home ? accessCell(s, home) : freeCellNear(s, baseCenter(s)); arriveState = "idle";
     }
+
+    // any non-gather branch releases the sticky claim — workers, shelterers,
+    // and sleepers don't reserve nodes they aren't walking to
+    c.gatherDepositId = null;
+    c.gatherT = 0;
 
     if (Math.hypot(goal.x - c.x, goal.y - c.y) <= ARRIVE_EPS) { c.state = arriveState; continue; }
 

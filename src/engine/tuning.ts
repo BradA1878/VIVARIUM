@@ -104,6 +104,13 @@ export const CARRY_CAP = 20;       // units a colonist can haul in one trip
 export const PICKUP_RADIUS = 1.25; // cells: how close to a deposit to grab a load
 export const DEPOT_RADIUS = 1.5;   // cells: how close to the depot to drop a load
 
+/** auto-gather — idle colonists work the deposit field on their own
+ *  (engine/gather.ts). They walk at WALK_SPEED, haul smaller loads than the
+ *  possessed colonist, and pause to mine at the node. No events — per-trip
+ *  chatter would drown the narrator. */
+export const AUTO_CARRY = 12;     // units an auto-gatherer hauls per trip
+export const GATHER_DWELL = 1.2;  // seconds spent mining at the node per pickup
+
 /** the seeded deposit field (uses a SEPARATE env-rng so the main hazard/arrival
  *  stream is byte-for-byte unchanged) */
 export const DEPOSIT_COUNT = 11;      // deposits scattered at colony start (more, for the bigger map)
