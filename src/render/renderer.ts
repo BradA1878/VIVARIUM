@@ -117,8 +117,14 @@ export class ThreeRenderer {
   private alienShip: AlienShipMesh | null = null;
   private ufo: UfoMesh | null = null;
   private depot: DepotMesh | null = null;
-  // DEV-only: a scripted saucer for screenshotting rare FX (debugFx("ufo"))
+  // DEV-only: a scripted saucer for screenshotting rare FX (debugFx("ufo")).
+  // Not snapshot-driven, so nothing retires it for us: it self-expires on a
+  // TTL (hover, then the leave ascent, then dispose) and reconcileUfo clears
+  // it immediately if a real snap.ufo takes ownership of the UFO visuals.
   private debugUfo: UfoMesh | null = null;
+  private debugUfoAge = 0; // seconds since spawn — drives the TTL + leave
+  private static readonly DEBUG_UFO_TTL = 10;    // hover seconds before leaving
+  private static readonly DEBUG_UFO_LEAVE = 2.5; // leave-ascent seconds before dispose
 
   // follow-cam: lerped focus + ortho extent driven toward the possessed target
   private camFocus = new THREE.Vector3(0, 0, 0);
@@ -194,17 +200,18 @@ export class ThreeRenderer {
   /** DEV-only: drive rare render FX directly (zero sim coupling) so visual
    *  verification can screenshot them without waiting for the scheduler.
    *  "ufo" toggles a scripted hover-loop at grid center; call it again to
-   *  despawn. The guard makes the whole body dead code in prod builds. */
+   *  despawn early. It also self-expires after ~10s (leave ascent, then
+   *  dispose) and yields instantly to a real snap.ufo, so it can't outlive a
+   *  reset. The guard makes the whole body dead code in prod builds. */
   debugFx(name: "ufo" | "abduct" | "devil" | "pop"): void {
     if (!import.meta.env.DEV) return;
     const center = this.grid.cellCenter((this.grid.N - 1) / 2, (this.grid.N - 1) / 2);
     if (name === "ufo") {
       if (this.debugUfo) {
-        this.scene.scene.remove(this.debugUfo.object);
-        this.debugUfo.dispose();
-        this.debugUfo = null;
+        this.clearDebugUfo();
       } else {
         this.debugUfo = buildUfo();
+        this.debugUfoAge = 0;
         this.debugUfo.object.position.set(center.x, 3, center.z);
         this.scene.scene.add(this.debugUfo.object);
       }
@@ -252,6 +259,7 @@ export class ThreeRenderer {
       this.atmosphere.update(dt, false);
       this.stormFx.update(dt, null);
       this.hazardFx.update(dt);
+      this.updateDebugUfo(dt, now);
       this.scene.render();
       return;
     }
@@ -276,7 +284,7 @@ export class ThreeRenderer {
     this.reconcileDeposits(snap, now);
     this.reconcileTrade(snap, dt, now);
     this.reconcileUfo(snap, dt, now);
-    if (this.debugUfo) this.debugUfo.update("hovering", dt, now);
+    this.updateDebugUfo(dt, now);
     this.reconcileDepot(snap, now);
     this.updateTransients(dt, now);
     this.updateCamera(snap, dt);
@@ -547,6 +555,8 @@ export class ThreeRenderer {
       }
       return;
     }
+    // a real UFO owns the visuals from here — retire any debug saucer at once
+    this.clearDebugUfo();
     if (!this.ufo) {
       this.ufo = buildUfo();
       this.scene.scene.add(this.ufo.object);
@@ -558,6 +568,29 @@ export class ThreeRenderer {
     this.ufo.object.position.x = p.x;
     this.ufo.object.position.z = p.z;
     this.ufo.update(ufo.phase, dt, now);
+  }
+
+  /** DEV saucer lifecycle (debugFx("ufo")): hover for the TTL, then play the
+   *  leave ascent, then dispose — no snapshot ever retires it, so it must
+   *  self-expire (it used to survive reset and render forever). */
+  private updateDebugUfo(dt: number, now: number): void {
+    if (!this.debugUfo) return;
+    this.debugUfoAge += dt;
+    if (this.debugUfoAge >= ThreeRenderer.DEBUG_UFO_TTL + ThreeRenderer.DEBUG_UFO_LEAVE) {
+      this.clearDebugUfo();
+      return;
+    }
+    const phase = this.debugUfoAge >= ThreeRenderer.DEBUG_UFO_TTL ? "leaving" : "hovering";
+    this.debugUfo.update(phase, dt, now);
+  }
+
+  /** remove + dispose the debug saucer (no-op when none) — the one teardown
+   *  path shared by the TTL, the toggle, reconcileUfo, and dispose() */
+  private clearDebugUfo(): void {
+    if (!this.debugUfo) return;
+    this.scene.scene.remove(this.debugUfo.object);
+    this.debugUfo.dispose();
+    this.debugUfo = null;
   }
 
   /** the collection depot: a fixed hopper at the depot cell, glowing brighter when
@@ -668,7 +701,7 @@ export class ThreeRenderer {
     this.deposits.clear();
     if (this.alienShip) { this.alienShip.dispose(); this.alienShip = null; }
     if (this.ufo) { this.ufo.dispose(); this.ufo = null; }
-    if (this.debugUfo) { this.debugUfo.dispose(); this.debugUfo = null; }
+    this.clearDebugUfo();
     if (this.depot) { this.depot.dispose(); this.depot = null; }
     this.terrain.dispose();
     this.scene.dispose();

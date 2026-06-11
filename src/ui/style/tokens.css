@@ -81,12 +81,13 @@ button {
   transition: opacity 1.6s ease;
 }
 .storm-veil.on {
-  opacity: 1;
+  /* peak capped below 1 so buildings stay discernible at full storm */
+  opacity: 0.9;
   animation: stormbreathe 4.2s ease-in-out infinite;
 }
 @keyframes stormbreathe {
   0%, 100% { opacity: 0.78; }
-  50% { opacity: 1; }
+  50% { opacity: 0.9; }
 }
 /* solar-flare wash — a cold electric flicker over the whole view */
 .flare-veil {

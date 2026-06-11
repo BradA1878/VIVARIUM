@@ -255,7 +255,10 @@ export const buildDome: KitBuilder = (ctx): KitMesh => {
       applyGlow(hatchMat, color, intensity);
       for (const m of tipMats) applyGlow(m, color, intensity);
       if (interiorMat) interiorMat.emissiveIntensity = 0.35 + (status.alive ? 1.3 * night : 0);
-      windowMat.emissiveIntensity = status.alive ? Math.pow(night, 1.5) * (1.5 + 0.2 * pulse) : 0;
+      // hub/hab windows run ~40% hotter so the lit-habitat-at-night beat reads;
+      // the greenhouse keeps the base level (its interior glow already carries it)
+      const windowBoost = isGreenhouse ? 1 : 1.4;
+      windowMat.emissiveIntensity = status.alive ? Math.pow(night, 1.5) * (1.5 + 0.2 * pulse) * windowBoost : 0;
     },
     dispose(): void {
       disposeObject(group);

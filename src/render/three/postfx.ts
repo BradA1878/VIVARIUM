@@ -19,9 +19,10 @@ const BLOOM_STRENGTH = 0.55;
 const BLOOM_RADIUS = 0.35;
 const ACES_EXPOSURE = 1.15;
 // solar-flare pulse: a ~250ms attack/decay spike every 1.5–4s, peaking at
-// +0.35·level exposure and +0.5·level bloom strength
+// +0.65·level exposure and +0.5·level bloom strength (the sharp exposure
+// peak is what makes the spike read at a glance in daylight)
 const SPIKE_LEN = 0.25;
-const SPIKE_EXPOSURE = 0.35;
+const SPIKE_EXPOSURE = 0.65;
 const SPIKE_STRENGTH = 0.5;
 
 export class PostFx {
