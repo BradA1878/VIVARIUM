@@ -115,6 +115,10 @@ describe("EVENT_CUES", () => {
     ["resupply", "resupplyHorn"],
     ["victory", "victoryTheme"],
     ["defeat", "defeatTheme"],
+    ["morale_low", "moraleLow"],
+    ["morale_recovered", "moraleUp"],
+    ["colonist_injured", "injured"],
+    ["colonist_recovered", "recovered"],
   ];
 
   it.each(CASES)("%s → %s", (type, cue) => {
@@ -124,12 +128,11 @@ describe("EVENT_CUES", () => {
   });
 
   it("leaves uncued engine events unmapped (no entry, not a null-returner)", () => {
-    // morale/injury cues land with the council commit; the diff layer owns
-    // place/demolish; storms speak through hazard_* + the wind bed.
+    // the diff layer owns place/demolish; storms speak through hazard_* + the
+    // wind bed; idle banter is council prose, never a sting.
     for (const t of ["build", "dawn", "dusk", "new_sol", "storm_in", "storm_clear",
-      "strike", "building_damaged", "crit_clear", "colonist_injured",
-      "colonist_recovered", "morale_low", "morale_recovered", "trade_left",
-      "ufo_left", "boot", "anomaly"] as EventType[]) {
+      "strike", "building_damaged", "crit_clear", "trade_left",
+      "ufo_left", "boot", "anomaly", "idle"] as EventType[]) {
       expect(EVENT_CUES[t]).toBeUndefined();
     }
   });
@@ -315,5 +318,9 @@ describe("CUE_MIN_GAP_MS", () => {
     expect(CUE_MIN_GAP_MS.uiTick).toBe(60);
     expect(CUE_MIN_GAP_MS.alertWarn).toBe(2000);
     expect(CUE_MIN_GAP_MS.casualtyDrone).toBe(4000);
+    expect(CUE_MIN_GAP_MS.moraleLow).toBe(4000);
+    expect(CUE_MIN_GAP_MS.moraleUp).toBe(4000);
+    expect(CUE_MIN_GAP_MS.injured).toBe(1500);
+    expect(CUE_MIN_GAP_MS.recovered).toBe(2000);
   });
 });

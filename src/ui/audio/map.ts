@@ -24,6 +24,7 @@ export const CUE_IDS = [
   "ufoSweep", "abductSting", "deflectZap", "destroyed",
   "resupplyHorn", "victoryTheme", "defeatTheme",
   "pickup", "drop",
+  "moraleLow", "moraleUp", "injured", "recovered",
 ] as const;
 
 export type CueId = (typeof CUE_IDS)[number];
@@ -54,14 +55,18 @@ export const CUE_MIN_GAP_MS: Record<CueId, number> = {
   resupplyHorn: 3000,
   victoryTheme: 10000,
   defeatTheme: 10000,
+  moraleLow: 4000,
+  moraleUp: 4000,
+  injured: 1500,
+  recovered: 2000,
 };
 
 // ---- event → cue ------------------------------------------------------------------
 
 /** which engine events earn a sting. Per-event functions (not bare ids) so a
- *  mapping can inspect the payload; unmapped events simply have no entry. The
- *  morale/injury events get their cues in the council pass; place/demolish come
- *  from the snapshot diff below; storms speak through hazard_* + the wind bed. */
+ *  mapping can inspect the payload; unmapped events simply have no entry.
+ *  Place/demolish come from the snapshot diff below; storms speak through
+ *  hazard_* + the wind bed; idle banter is council prose, never a sting. */
 export const EVENT_CUES: Partial<Record<EventType, (e: ColonyEvent) => CueId | null>> = {
   hazard_warn: () => "alertWarn",
   hazard_start: () => "hazardStart",
@@ -82,6 +87,10 @@ export const EVENT_CUES: Partial<Record<EventType, (e: ColonyEvent) => CueId | n
   building_destroyed: () => "destroyed",
   victory: () => "victoryTheme",
   defeat: () => "defeatTheme",
+  morale_low: () => "moraleLow",
+  morale_recovered: () => "moraleUp",
+  colonist_injured: () => "injured",
+  colonist_recovered: () => "recovered",
 };
 
 // ---- snapshot → ambient bed targets -----------------------------------------------

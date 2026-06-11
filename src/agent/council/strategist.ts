@@ -45,6 +45,13 @@ const SCRIPTS: Record<Concern, readonly string[]> = {
   ],
 };
 
+/** generic build nudges for a colony with no named bottleneck — idle is the one
+ *  beat where unprompted advice fits */
+const IDLE_NUDGES: readonly string[] = [
+  "Nothing burns. Use the lull: the next building costs less now than it will mid-crisis.",
+  "A quiet sol is budget. Spend it on redundancy before the planet spends it for you.",
+];
+
 export class StrategistVoice implements Voice {
   readonly id = "strategist" as const;
 
@@ -56,6 +63,9 @@ export class StrategistVoice implements Voice {
     food: 0,
     labor: 0,
   };
+
+  /** rotation cursor for the generic idle nudges */
+  private idleRot = 0;
 
   consider(ctx: VoiceContext): Candidate | null {
     if (!SPEAK_ON.has(ctx.event.type)) return null;
@@ -76,8 +86,24 @@ export class StrategistVoice implements Voice {
     };
   }
 
+  considerIdle(ctx: VoiceContext): Candidate | null {
+    const snap = ctx.snapshot;
+    if (!snap) return null;
+    // a found bottleneck reuses the concern SCRIPTS — idle is when advice fits
+    const concern = this.diagnose(snap);
+    const line = concern ? this.pick(concern) : IDLE_NUDGES[this.idleRot++ % IDLE_NUDGES.length];
+    return {
+      register: "strategist",
+      speaker: "STRATEGIST",
+      line,
+      severity: 0,
+      persona: "strategist",
+    };
+  }
+
   reset(): void {
     this.rotators = { battery: 0, water: 0, housing: 0, food: 0, labor: 0 };
+    this.idleRot = 0;
   }
 
   /** the single most pressing structural bottleneck, or null if the colony is sound */

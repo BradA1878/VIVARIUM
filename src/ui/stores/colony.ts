@@ -63,6 +63,13 @@ let playerModel: PlayerModel = { runs: 0, wins: 0, deaths: 0, solsSum: 0, byAxis
 let directorBias: Record<HazardKind, number> = { dust: 1, meteor: 1, flare: 1, coldsnap: 1, quake: 1 };
 let lastCritRes: Axis | null = null;
 let lastHazard: HazardKind | null = null;
+// idle banter's quiet clock — the sim-t of the last REAL routed event
+let lastRealEventT = 0;
+// Director attribution — the strike the Director just chose, so the matching
+// hazard_warn can be annotated on OUR copy of the event (the engine never sees it)
+let lastDirectedStrike: { kind: HazardKind; t: number } | null = null;
+/** deterministic 1-in-3 attribution pacing (a counter, NOT randomness) */
+let attributionCounter = 0;
 // this run's telemetry — curves + event tallies for the end-of-run report
 let history: RunHistory = emptyHistory();
 // the one-shot teaching toasts (seen-set persists across runs)
@@ -116,6 +123,17 @@ export function pushLine(
  *  scripted line on any failure — the game never depends on it. */
 function routeEvent(e: ColonyEvent): void {
   if (!council) return;
+  lastRealEventT = e.t; // every real event resets the banter's quiet clock
+  // Director attribution: a telegraph matching the strike the Director just
+  // chose gets annotated — on a CLONE, only after the player has run twice,
+  // and only every third time, so the reveal stays a rare chill.
+  if (
+    e.type === "hazard_warn" && lastDirectedStrike &&
+    e.kind === lastDirectedStrike.kind && e.t - lastDirectedStrike.t <= 3
+  ) {
+    lastDirectedStrike = null;
+    if (playerModel.runs >= 2 && attributionCounter++ % 3 === 0) e = { ...e, directed: true };
+  }
   if (!(LIVE_ENABLED && settings.value.narratorLive)) {
     const u = council.observe(e, snapshot.value, e.t);
     if (u) pushLine(u.line, e.sol, e.tod, u.speaker, u.register);
@@ -182,9 +200,15 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
       const strike = director?.decide(s, Math.random, { bias: directorBias, comfort: sentinel?.comfort() });
       if (strike) {
         b.triggerHazard(strike.kind, strike.intensity);
+        lastDirectedStrike = { kind: strike.kind, t: s.t }; // for hazard_warn attribution
         history.directorStrikes++;
       }
     }
+    // idle banter — scripted by construction: observeIdle returns a finished
+    // line and shares nothing with shouldSpeak/narrateLive, so this path is
+    // structurally incapable of reaching the live model.
+    const idle = council?.observeIdle(s, s.t, lastRealEventT);
+    if (idle) pushLine(idle.line, s.sol, s.tod, idle.speaker, idle.register);
     // snapshot-derived teaching toasts (stranded pressure building, first possession)
     if (!s.outcome && hints) showHint(hints.onSnapshot(s));
   });
@@ -233,6 +257,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     const usable = save && !save.state.outcome && save.state.N === GRID_N;
     if (usable) {
       b.load(save);
+      lastRealEventT = save.state.t; // resume counts its quiet from the save point
       history = loadHistory(); // a resumed run keeps its curves
     } else if (save) { clearLocal(); history = resetHistory(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
   });
@@ -243,9 +268,12 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
 
-  // first words
+  // first words — pitched to the run's difficulty (a resumed save keeps its own)
   setTimeout(() => {
-    if (council) { const u = council.bootLine(); pushLine(u.line, undefined, undefined, u.speaker, u.register); }
+    if (council) {
+      const u = council.bootLine(snapshot.value?.difficulty);
+      pushLine(u.line, undefined, undefined, u.speaker, u.register);
+    }
   }, 900);
 }
 
@@ -317,15 +345,21 @@ const controls = {
     directorBias = openingBias(playerModel);
     lastCritRes = null;
     lastHazard = null;
+    lastRealEventT = 0;
+    lastDirectedStrike = null;
+    attributionCounter = 0;
     clearLocal(); // discard the saved colony; autosave will persist the fresh one
     history = resetHistory(); // a new run starts its telemetry from zero
     dismissHint();
     hints = new Hints(); // fresh scratch; the persisted seen-set still holds
     messages.value = [];
     clearTool();
-    // re-greet after the colony reseeds
+    // re-greet after the colony reseeds — in the new run's difficulty register
     setTimeout(() => {
-      if (council) { const u = council.bootLine(); pushLine(u.line, undefined, undefined, u.speaker, u.register); }
+      if (council) {
+        const u = council.bootLine(settings.value.nextDifficulty);
+        pushLine(u.line, undefined, undefined, u.speaker, u.register);
+      }
     }, 600);
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
@@ -335,6 +369,14 @@ const controls = {
 export function onColonyEvent(fn: (e: ColonyEvent) => void): () => void {
   return bridge ? bridge.onEvent(fn) : () => {};
 }
+
+/** DEV observability — the Director's brain for window.__viv (App.vue wires it):
+ *  the live opening bias, the Sentinel's comfort read, and the cross-run model */
+export const directorDev = {
+  bias: (): Record<HazardKind, number> => directorBias,
+  comfort: (): number | undefined => sentinel?.comfort(),
+  model: (): PlayerModel => playerModel,
+};
 
 // ---- the run report (EndScreen) ------------------------------------------------
 

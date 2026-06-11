@@ -317,7 +317,9 @@ export type EventType =
   | "victory"
   | "defeat"
   /** agent-layer only — emitted by the Sentinel (Phase 13), never by the engine */
-  | "anomaly";
+  | "anomaly"
+  /** agent-layer only — the council's idle-banter beat, never emitted by the engine */
+  | "idle";
 
 export type Outcome = "victory" | "defeat" | null;
 
@@ -349,4 +351,6 @@ export interface ColonyEvent {
   gy?: number;
   /** whether a strike hit a building */
   hit?: boolean;
+  /** UI-side annotation: the Director chose this hazard (the engine never sets it) */
+  directed?: boolean;
 }

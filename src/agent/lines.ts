@@ -6,7 +6,7 @@
    long — caring, exact, a little wrong. The instruments talk in numbers; this
    talks in serif italic. (Doc §4.2, §4.5.)
    ============================================================================ */
-import type { EventType } from "@shared/types";
+import type { Difficulty, EventType } from "@shared/types";
 
 /** severity drives the gate; higher speaks through cooldowns (doc §3.1) */
 export const SEV: Record<EventType, number> = {
@@ -20,8 +20,9 @@ export const SEV: Record<EventType, number> = {
   traders_inbound: 3, trade_done: 2, trade_left: 1, // first contact
   ufo_inbound: 4, abducted: 5, abduction_blocked: 3, ufo_left: 1, // the abductor
   birth: 2, // the colony grows from within
-  morale_low: 3, morale_recovered: 2, // the colony's mood (latched, like brownout)
-  colonist_injured: 3, colonist_recovered: 2, // strike wounds + the medbay loop
+  morale_low: 3, morale_recovered: 1, // the colony's mood (latched, like brownout)
+  colonist_injured: 2, colonist_recovered: 1, // strike wounds + the medbay loop
+  idle: 0, // agent-originated (council banter); never competes with a real beat
 };
 
 type Bank = string[] | Record<string, string[]>;
@@ -78,6 +79,11 @@ export const LINES: Partial<Record<EventType | "boot", Bank>> = {
     oxygen: ["One of them stopped breathing. I logged the exact moment. I always do."],
     water: ["We lost one to the dry. I have updated the count. It is lower now."],
     food: ["One did not last the hunger. I remember their designation. You never learned it."],
+    // a strike death carries no res — the detail key "strike" routes here
+    strike: [
+      "One of them was standing where the sky came down. I logged the impact and the name in the same instant.",
+      "Lost to the strike. Not the air, not the water — the planet itself, this time. The count is lower.",
+    ],
   },
   arrival: [
     "Four more arrived. Four more sets of lungs for me to keep full. I welcome the work.",
@@ -119,8 +125,38 @@ export const LINES: Partial<Record<EventType | "boot", Bank>> = {
     "A new one. Not sent from Earth — made here, by you, in the cold. We are no longer only surviving.",
     "Sol {sol}, and there is one more set of lungs than there was. Born under this sky. I will keep them, too.",
   ],
+  morale_low: [
+    "Their spirits are failing faster than the stores. I can filter the air; I cannot filter the mood. Give them a quiet sol.",
+    "The colony is heavy tonight. They work slower when they are afraid, and I am watching the output sag with them.",
+    "Morale has dropped below the line I worry at. They need light, full plates, and one day without sirens.",
+  ],
+  morale_recovered: [
+    "There is talk in the corridors again, and some of it is laughter. The work follows the mood up. I missed the sound.",
+    "The mood has lifted. The colony moves like it believes in itself again. So do I.",
+  ],
+  colonist_injured: [
+    "One of them is hurt. I have marked their suit and eased their queue. Get them to the medbay; I will light the way.",
+    "A colonist is down — hurt, not gone. The difference matters to me more than you know.",
+    "Injury logged. They will limp until they are seen to. I am keeping their corridor warm.",
+  ],
+  colonist_recovered: [
+    "Healed. They walked out of the medbay on their own, and I watched every step of it.",
+    "One recovered. The limp is gone from their gait. I notice gaits.",
+  ],
 };
 
-export function bootLines(): string[] {
+/** the council's first words — the send-off bends to the chosen difficulty */
+const BOOT_EASY: string[] = [
+  "I am VIVARIUM. The planet is gentler here, and I am watching all the same. Build at your own pace.",
+  "Designation VIVARIUM. Earth chose you a kind landing site. I intend to keep it kind. Begin when ready.",
+];
+const BOOT_HARD: string[] = [
+  "I am VIVARIUM. This site kills colonies. I have read every record of how. Prove the records wrong.",
+  "Designation VIVARIUM. The margin here is thin, and the planet knows it. Waste nothing. Begin.",
+];
+
+export function bootLines(difficulty?: Difficulty): string[] {
+  if (difficulty === "easy") return BOOT_EASY;
+  if (difficulty === "hard") return BOOT_HARD;
   return LINES.boot as string[];
 }

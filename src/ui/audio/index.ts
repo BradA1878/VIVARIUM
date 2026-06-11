@@ -330,6 +330,21 @@ class AudioEngine {
         tone(ctx, sfx, { type: "triangle", f0: 330, dur: 0.6, gain: 0.11 });
         tone(ctx, sfx, { type: "triangle", f0: 440, dur: 0.6, gain: 0.11 });
         break;
+      case "moraleLow": // the mood sagging — brownout's quieter, minor cousin
+        tone(ctx, sfx, { type: "triangle", f0: 233.08, dur: 0.16, gain: 0.09, filter: { type: "lowpass", freq: 900 } }); // Bb3
+        tone(ctx, sfx, { type: "triangle", f0: 196, dur: 0.3, gain: 0.09, delay: 0.18, filter: { type: "lowpass", freq: 900 } }); // G3 — a minor third down
+        break;
+      case "moraleUp": // the mood lifting — one soft chime
+        tone(ctx, sfx, { type: "triangle", f0: 659.25, dur: 0.3, gain: 0.08 }); // E5
+        break;
+      case "injured": // a hurt blip — a noise tick + a tone falling away
+        noiseHit(ctx, sfx, { dur: 0.05, gain: 0.14, filter: { type: "bandpass", freq: 1900, q: 3 } });
+        tone(ctx, sfx, { type: "square", f0: 740, f1: 392, dur: 0.12, gain: 0.07, filter: { type: "lowpass", freq: 2000 } });
+        break;
+      case "recovered": // back on their feet — two gentle rising notes
+        tone(ctx, sfx, { type: "triangle", f0: 523.25, dur: 0.12, gain: 0.08 }); // C5
+        tone(ctx, sfx, { type: "triangle", f0: 659.25, dur: 0.2, gain: 0.08, delay: 0.12 }); // E5
+        break;
       case "victoryTheme":
         this.victory(ctx);
         break;

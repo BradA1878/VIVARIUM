@@ -87,6 +87,37 @@ const ANOMALY: string[] = [
   "Deviation in {detail}. {sigma} sigma. I have not seen this shape before. I am recording it.",
 ];
 
+/** the clinical read on a sagging colony mood */
+const MORALE_LOW: string[] = [
+  "Morale below threshold. Work-rate variance climbing. A tired colony makes the errors I cannot model.",
+  "Mood telemetry sagging; output follows it down. The graphs agree: they need relief, not orders.",
+];
+
+/** a telegraph the Director chose — the Watcher names the intent (UI annotation) */
+const DIRECTED: string[] = [
+  "This {kind} did not come from the weather. Something chose it. The timing fits a pattern I have been tracking.",
+  "Hazard signature inbound — and it is too well-aimed for chance. Random skies do not aim. I am logging intent.",
+];
+
+/** how each hazard kind reads inside the attribution lines */
+const KIND_NOUN: Record<string, string> = {
+  dust: "storm", meteor: "meteorfall", flare: "flare", coldsnap: "cold", quake: "tremor",
+};
+
+/** idle telemetry — names the tightest margin when one exists */
+const IDLE_MARGIN: string[] = [
+  "Quiet. The tightest margin is {res}: {eta} seconds at the current draw. I am watching it.",
+  "Telemetry nominal. Nearest edge: {res}, {eta} seconds out. Margins are not promises.",
+  "All channels steady. {res} runs thinnest — {eta} seconds if nothing changes. Something always changes.",
+];
+
+/** ...and distrusts the silence when nothing does */
+const IDLE_CALM: string[] = [
+  "No risks resolve. Every pool holds. I have learned not to trust that.",
+  "Nominal across all channels. Anomalies prefer moments like this one.",
+  "Nothing to flag. I widen the sweep anyway. Calm is a pattern I have not broken yet.",
+];
+
 export class WatcherVoice implements Voice {
   readonly id = "watcher" as const;
   private rotators: Record<string, number> = {};
@@ -111,9 +142,17 @@ export class WatcherVoice implements Voice {
           3,
         );
       case "hazard_warn": {
+        // a Director-chosen strike (UI-annotated) earns the attribution read
+        if (e.directed) {
+          const noun = KIND_NOUN[e.kind ?? "dust"] ?? "storm";
+          return this.make(this.rotate("hazard_warn:directed", DIRECTED).replace(/\{kind\}/g, noun), 3);
+        }
         const bank = HAZARD_WARN[e.kind ?? "dust"] ?? HAZARD_WARN.dust;
         return this.make(this.rotate("hazard_warn:" + e.kind, bank).replace("{secs}", String(e.secs ?? 0)), 3);
       }
+      case "morale_low":
+        // sev 2 — the keeper (sev 3) leads the mood; the Watcher backs it up
+        return this.make(this.rotate("morale_low", MORALE_LOW), 2);
       case "building_destroyed": {
         const name = (DEFS[e.defId ?? ""]?.name ?? "structure").toLowerCase();
         const line = this.rotate("destroyed", DESTROYED)
@@ -124,6 +163,20 @@ export class WatcherVoice implements Voice {
       default:
         return null;
     }
+  }
+
+  considerIdle(ctx: VoiceContext): Candidate | null {
+    const snap = ctx.snapshot;
+    if (!snap) return null;
+    const risks = ctx.world.risks(snap);
+    if (risks.length) {
+      const r = risks[0];
+      const line = this.rotate("idle:margin", IDLE_MARGIN)
+        .replace("{res}", r.resource)
+        .replace("{eta}", String(Math.max(1, Math.round(r.etaSeconds))));
+      return this.make(line, 0);
+    }
+    return this.make(this.rotate("idle:calm", IDLE_CALM), 0);
   }
 
   reset(): void {

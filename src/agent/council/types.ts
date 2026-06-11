@@ -36,6 +36,9 @@ export interface Voice {
   id: Register;
   /** decide whether to speak. Pure — no time/cooldown state here. */
   consider(ctx: VoiceContext): Candidate | null;
+  /** offer a severity-0 line for a quiet colony (ctx.event.type === "idle").
+   *  Same purity rule as consider(); the Council owns the banter scheduler. */
+  considerIdle?(ctx: VoiceContext): Candidate | null;
   /** reset any per-voice rotation state (on colony reset) */
   reset?(): void;
 }

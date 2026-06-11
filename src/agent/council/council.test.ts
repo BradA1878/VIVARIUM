@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { Colony } from "@/engine";
 import { Council } from "./index";
+import { LINES, SEV, bootLines } from "../lines";
 import type { ColonyEvent } from "@shared/types";
 
 function ev(type: ColonyEvent["type"], t: number, extra: Partial<ColonyEvent> = {}): ColonyEvent {
@@ -61,5 +62,80 @@ describe("the Council", () => {
     council.reset();
     const u = council.observe(ev("dawn", 0.2), null, 0.2); // would be gated without reset
     expect(u).toBeTruthy();
+  });
+
+  it("a directed hazard telegraph routes to the Watcher with the attribution flavor", () => {
+    const council = new Council();
+    const snap = new Colony().snapshot();
+    const u = council.observe(ev("hazard_warn", 50, { kind: "meteor", secs: 12, directed: true }), snap, 50);
+    expect(u).toBeTruthy();
+    expect(u!.register).toBe("watcher");
+    expect(u!.line.toLowerCase()).toMatch(/chose|aim/); // "something chose it"
+  });
+
+  it("an undirected hazard telegraph keeps the plain forecast", () => {
+    const council = new Council();
+    const u = council.observe(ev("hazard_warn", 50, { kind: "meteor", secs: 12 }), null, 50);
+    expect(u?.register).toBe("watcher");
+    expect(u!.line.toLowerCase()).not.toMatch(/chose|aim/);
+  });
+
+  it("an idle candidate never outranks a real event — a fresh real event silences banter", () => {
+    const council = new Council(() => 0);
+    const snap = new Colony().snapshot();
+    // a real event landed THIS second → the quiet predicate fails outright...
+    expect(council.observeIdle(snap, 100, 100)).toBeNull();
+    // ...while the real event itself speaks normally
+    expect(council.observe(ev("dawn", 100), snap, 100)).toBeTruthy();
+    expect(SEV.idle).toBe(0); // and idle sits at the bottom of the severity order
+  });
+});
+
+describe("the new event banks", () => {
+  it("speaks to every new colonist/morale event type", () => {
+    for (const type of ["morale_low", "morale_recovered", "colonist_injured", "colonist_recovered"] as const) {
+      const council = new Council();
+      const u = council.observe(ev(type, 10, { id: 3 }), null, 10);
+      expect(u, type).toBeTruthy();
+    }
+  });
+
+  it("carries the spec'd line counts and severities", () => {
+    expect((LINES.morale_low as string[]).length).toBe(3);
+    expect((LINES.morale_recovered as string[]).length).toBeGreaterThanOrEqual(1);
+    expect((LINES.colonist_injured as string[]).length).toBe(3);
+    expect((LINES.colonist_recovered as string[]).length).toBeGreaterThanOrEqual(1);
+    expect(SEV.morale_low).toBeGreaterThanOrEqual(2);
+    expect(SEV.morale_low).toBeLessThanOrEqual(3);
+    expect(SEV.morale_recovered).toBe(1);
+    expect(SEV.colonist_injured).toBe(2);
+    expect(SEV.colonist_recovered).toBe(1);
+  });
+
+  it("a strike death finally gets a line — the Chronicler with a snapshot, VIVARIUM without", () => {
+    const a = new Council();
+    const noSnap = a.observe(ev("casualty", 5, { detail: "strike", n: 1 }), null, 5);
+    expect(noSnap).toBeTruthy();
+    expect(noSnap!.register).toBe("vivarium");
+    const b = new Council();
+    const withSnap = b.observe(ev("casualty", 5, { detail: "strike", n: 1 }), new Colony().snapshot(), 5);
+    expect(withSnap).toBeTruthy();
+    expect(withSnap!.register).toBe("chronicler");
+  });
+
+  it("resource casualties still read from the per-resource banks", () => {
+    const council = new Council();
+    const u = council.observe(ev("casualty", 5, { res: "oxygen" }), null, 5);
+    expect(u?.register).toBe("vivarium");
+    expect(u!.line.toLowerCase()).toContain("breath");
+  });
+
+  it("bootLines vary by difficulty and thread through Council.bootLine", () => {
+    expect(bootLines("easy")[0]).not.toBe(bootLines()[0]);
+    expect(bootLines("hard")[0]).not.toBe(bootLines()[0]);
+    expect(bootLines("normal")[0]).toBe(bootLines()[0]);
+    const council = new Council();
+    expect(council.bootLine("hard").line).toBe(bootLines("hard")[0]);
+    expect(council.bootLine().line).toBe(bootLines()[0]);
   });
 });

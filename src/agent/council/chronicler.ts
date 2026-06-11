@@ -78,9 +78,64 @@ export class ChroniclerVoice implements Voice {
         return this.say(window ? "defeat:w" : "defeat:c", variants, 6);
       }
 
+      // a violent death is the archivist's to enter; the slow ones stay VIVARIUM's
+      case "casualty": {
+        if (e.detail !== "strike") return null;
+        const variants = [
+          `Struck down by the planet itself, sol ${snap.sol}. I enter the name beside the others and note the sky that did it.`,
+          `A death by impact. The record does not soften it: the planet aimed, and one of ours was standing there.`,
+        ];
+        return this.say("casualty:strike", variants, 5);
+      }
+
+      case "colonist_injured": {
+        const variants = [
+          `A wound, entered against the record. The infirmary list grows by one; the dead ledger, today, does not.`,
+          `I note an injury this sol. The record holds more recoveries than losses, and I intend to keep the proportion.`,
+        ];
+        return this.say("injured", variants, 1);
+      }
+
+      case "colonist_recovered": {
+        const variants = [
+          `Recovered. I strike the name from the infirmary list and return it to the living count, whole.`,
+          `The record closes another wound: treated, healed, back under the sky. The good entries are always short.`,
+        ];
+        return this.say("recovered", variants, 1);
+      }
+
+      // a Director-chosen hazard (UI annotation) — the margin note of intent
+      case "hazard_warn": {
+        if (!e.directed) return null;
+        const variants = [
+          `For the record: this hazard did not wander in. It was sent. The planet has begun to keep accounts of us.`,
+          `I mark it in the margin: chosen, not chanced. The sky has been deliberate before. It is deliberate now.`,
+        ];
+        return this.say("hazard_warn:directed", variants, 3);
+      }
+
       default:
         return null;
     }
+  }
+
+  considerIdle(ctx: VoiceContext): Candidate | null {
+    const snap = ctx.snapshot;
+    if (!snap) return null;
+    const sol = snap.sol;
+    const pop = snap.population;
+    const dead = snap.dead;
+    const variants = [
+      `Sol ${sol}, and nothing to enter but the hour itself. Quiet sols fill most of the record.`,
+      `The account stands at ${pop} living${dead > 0 ? ` and ${dead} kept only in the ledger` : `, and no page yet for the dead`}. I reread it anyway.`,
+      `Sol ${sol}. I write the number down even when it does not change. Especially then.`,
+      dead > 0
+        ? `On quiet sols I read the ${dead === 1 ? "one name" : `${dead} names`} in the dead ledger, so that someone does.`
+        : `The dead ledger is still empty. Every quiet sol it stays that way is worth a line.`,
+      `${pop} on this ground today. Settlements are not built in the loud hours; they are built in these.`,
+      `Sol ${sol}. The record prefers catastrophe, but it is made of days like this one.`,
+    ];
+    return this.say("idle", variants, 0);
   }
 
   reset(): void {
