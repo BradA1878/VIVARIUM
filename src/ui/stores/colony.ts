@@ -269,6 +269,9 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     const usable = save && !save.state.outcome && save.state.N === GRID_N;
     if (usable) {
       b.load(save);
+      // the save carries its own directorControlled flag — re-assert this
+      // browser's setting over it (the settings watch only fires on *changes*)
+      b.setDirector(settings.value.directorEnabled);
       lastRealEventT = save.state.t; // resume counts its quiet from the save point
       history = loadHistory(); // a resumed run keeps its curves
     } else if (save) { clearLocal(); history = resetHistory(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
