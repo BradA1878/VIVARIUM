@@ -74,8 +74,9 @@ worker (sim.worker.ts → SimHost → Colony)              main thread
 `worker/protocol.ts` is the typed contract across the wall.
 
 **Commands (main → worker):** `place`, `remove`, `rotate`, `move`, `route`,
-`triggerHazard`, `setDirector`, `possess`, `moveIntent`, `respondTrade`,
-`setPaused`, `setSpeed`, `forceStorm`, `reset`, `load`, `save`, `start`.
+`triggerHazard`, `setDirector`, `possess`, `moveIntent`, `interact`,
+`respondTrade`, `setPaused`, `setSpeed`, `forceStorm`, `reset` (optionally
+carrying the next run's difficulty), `load`, `save`, `start`.
 
 **Outbound (worker → main):** `ready`, `snapshot`, `events`, `saved`.
 

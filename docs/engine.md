@@ -22,14 +22,17 @@ storage `caps` it adds, and pressure/door requirements.
 | Ice Extractor | H2O | Power in, water out | −5 power → +4 water |
 | Electrolysis | O2 | Splits water for oxygen; served first | −7 power, −2.5 water → +5 O₂ |
 | Hydroponics | GRO | Food + a little oxygen; needs 2 workers; shed first | −6 power, −3 water → +5 food, +2 O₂ |
+| Med-Bay | MED | Triage for strike wounds; needs 1 worker; heals fastest at its door, under a medic | −4 power |
 | Water Cistern | CIS | Holds water (+160 cap) | — |
 | Oxygen Tank | TNK | Reserve oxygen (+130 cap) | — |
+| Deflector Array | DFL | Wards off UFO abductions while powered; sheds early in a brownout | −3.5 power |
 
 **Balancing means editing numbers in `defs.ts` and `tuning.ts`, never touching
 engine logic.** `tuning.ts` holds the global knobs: per-colonist life-support
 demand, base/starting pool amounts, sol length (150 s), the grace timer (55 s
-before an empty pool turns lethal), storm scheduling, arrivals, resupply, the
-campaign deadline, and the embodied-colony economy.
+before an empty pool turns lethal, on normal difficulty), storm scheduling,
+arrivals, resupply, the campaign deadline, the embodied-colony economy, morale
+and injury rates, and the difficulty profiles.
 
 ## The tick is ordered passes, not one equation
 
@@ -38,21 +41,33 @@ mutates state in place and emits events. The feel of the genre lives in the
 ordering. The passes, in order:
 
 1. **Environment / sol clock** — advance time of day, roll the sol, emit
-   `dawn`/`dusk`/`new_sol`.
+   `dawn`/`dusk`/`new_sol`, and run the hazards. A meteor or quake **strike now
+   wounds colonists** near the impact cell as well as damaging buildings (see
+   *Injuries* below).
 2. **Solar & power** — compute the daytime solar curve, apply the hazard throttle,
    then allocate power **by priority**. In a deficit the engine **browns out the
    lowest-priority consumers first**, so hydroponics starves before life support
    and life support starves before nothing. This single pass is most of the game.
 3. **Production gates** — each building runs only if staffed, powered, and (when
-   required) pressurized; outputs are scaled by how much it actually got.
+   required) pressurized; outputs are scaled by how much it actually got. The
+   labor pool is **population minus the injured** (the wounded are off shift), and
+   role-matched staffing plus colony morale scale what a building **produces** —
+   never what it consumes.
 4. **Colonist demand** — population draws oxygen/water/food from the pools.
 5. **Shortfall → grace timer → casualty** — when a life-support pool hits empty a
    grace timer starts; if it isn't recovered before the timer runs out, a colonist
    is lost.
-6. **Embodied colony** — integrate colonist movement, mining, and unloading
-   (see below), and step the deposit field and trade window on the **env-RNG**.
-7. **Resupply** — Earth windows open on a schedule and trickle resources in.
-8. **Campaign** — evaluate the win/lose arc (see [gameplay.md](gameplay.md)).
+6. **Morale** (pass 6b) — after brownout/casualty resolution and before arrivals,
+   integrate the morale drivers and latch the `morale_low` / `morale_recovered`
+   thresholds (see *Morale* below).
+7. **Arrivals & births** — new colonists land only on a real surplus with housing;
+   a thriving settlement also grows from within.
+8. **Embodied colony** — integrate colonist movement, mining, and unloading
+   (see below), step the deposit field, trade window, and UFO on the **env-RNG**,
+   and run **injury recovery** just before colonists step (so the healed can take
+   a work slot the same tick).
+9. **Resupply** — Earth windows open on a schedule and trickle resources in.
+10. **Campaign** — evaluate the win/lose arc (see [gameplay.md](gameplay.md)).
 
 Pools are buffers that **decouple** the passes: batteries carry power across the
 night, tanks and cisterns carry oxygen and water across a production gap. That
@@ -63,8 +78,8 @@ decoupling is what makes the colony feel like a system instead of an equation.
 `engine/rng.ts` is a small seeded generator. The engine threads **two independent
 streams**:
 
-- the **main RNG** drives hazards, arrivals, and resupply timing;
-- a **separate env-RNG** drives the deposit field and trade windows.
+- the **main RNG** drives hazards, arrivals, and births;
+- a **separate env-RNG** drives the deposit field, the trade windows, and the UFO.
 
 Splitting them is deliberate: adding the explore/gather/trade layer must not
 perturb the hazard/arrival sequence, so an old save replays byte-for-byte. Colonist
@@ -86,22 +101,101 @@ movement and pathfinding use **no** RNG at all — they're fully determined by s
 
 Colonists are real engine entities (`colonists.ts`): a `ColonistInstance` with
 continuous grid coordinates, and `population === colonists.length`. One colonist
-can be **possessed** by the player (`possess` + `moveIntent` commands); it auto-mines
-surface **deposits** (`deposits.ts`: ice → water, ore → materials, cache → food)
-and auto-unloads at the hub. **Materials** is the build currency — every building
-has a `matCost`, gated in `grid.ts` (`canPlace`) and mirrored in `predict.ts`.
+can be **possessed** by the player (`possess` + `moveIntent` commands); the
+`interact` command (the player pressing **P**) explicitly fills its hands from a
+surface **deposit** in reach (`deposits.ts`: ice → water, ore → materials,
+cache → food) or empties them at the **depot**. **Materials** is the build
+currency — every building has a `matCost`, gated in `grid.ts` (`canPlace`) and
+mirrored in `predict.ts`.
 
 **Alien traders** (`trade.ts`) arrive on a window like resupply; `respondTrade`
 swaps pools or buys permanent **alien tech** (`techs.ts`) with materials. Techs are
-capacity / passive-power / demand upgrades applied through `caps.ts` and the tick.
+capacity / passive-power / demand / deflector-boost upgrades applied through
+`caps.ts` and the tick, plus two medical ones: **Medi-Gel** multiplies the injury
+recovery rate ×2, and the **Harmonizer** raises the colony's morale floor to 0.45.
 Takes are always clamped to storable capacity.
+
+## The roster: names, roles, matched staffing
+
+Colonists have **names and roles**, and both are *pure derivations of the stable
+colonist id* (`roster.ts`) — no RNG draws, nothing stored, so determinism, replay,
+and old saves are untouched. `roleOf(id)` walks `id % 4` over
+miner / engineer / botanist / medic (the four seed colonists cover all four
+roles); `nameOf(id)` indexes fixed first/last tables with strides coprime to
+their lengths, so names only repeat every 120 consecutive ids.
+
+Each role matches one building (`miner→extractor`, `engineer→electrolysis`,
+`botanist→greenhouse`, `medic→medbay`). Staffing assignment (`colonists.ts`) is a
+**deterministic two-pass**: slots are enumerated in building-uid order; pass 1
+hands each slot the lowest-id unclaimed colonist whose role matches the building,
+pass 2 backfills the rest in id order. The injured are eligible for neither pass.
+A matched crew works the recipe harder — `ROLE_BONUS` (0.25) gives
+`eff = 1 + 0.25 × matched/staffing`, applied to **produces and net only**, never
+to consumes — so individuality can only help a colony, never starve it.
+
+## Morale
+
+`s.morale` is **one colony-level scalar** in `[floor, 1]` (`morale.ts`) — a pure
+function of state, zero RNG draws, no per-colonist mood. It starts at 0.7, where
+the production multiplier `1 + 0.35 × (morale − 0.7)` is exactly **1.0**, so a
+fresh colony balances identically to before. Continuous drivers integrate in
+their own tick pass: down 0.012/s per active shortfall timer and 0.004/s while
+the brownout latch is on; up 0.005/s while calm and 0.004/s while the
+self-sufficiency clock runs. The big emits step it discretely (casualty −0.12,
+abducted −0.15, injured −0.04, birth +0.10, arrival +0.08, trade +0.05).
+
+Morale scales **produces only — never walk speed** — which rules out a
+sad-colony-moves-slower death spiral by construction, and the hard floor (0.15,
+multiplier ≈ 0.81; the Harmonizer tech raises the floor to 0.45) bounds the
+damage. Crossing below 0.35 latches and emits `morale_low`; recovering above
+0.55 emits `morale_recovered` — the same latch pattern as the brownout detector.
+
+## Injuries and the Med-Bay
+
+A meteor or quake strike wounds **every colonist within 1.6 cells** of the impact
+(`injury.ts`) — near-misses still hurt — and a **second hit while wounded kills**,
+through the existing casualty machinery (`casualty` with detail `"strike"`). Who
+gets hurt falls out of the strike cells the hazard system already rolls, so the
+main RNG stream is byte-identical: zero new draws.
+
+An injury is base-seconds of recovery (30 s fresh). Healing is a pure rate that
+runs **everywhere** — there are no stranded states — multiplied ×3 within 1.6
+cells of a functional, online Med-Bay's door, ×1.5 again when a **medic** staffs
+its slot, and ×2 by the Medi-Gel tech (the multipliers stack). The wounded leave
+the labor pool, walk slowly (0.55 cells/s; a possessed pilot at half speed), and
+path to the nearest treatable Med-Bay on their own, else limp home.
+`colonist_injured` / `colonist_recovered` events carry the colonist id.
+
+## Difficulty profiles
+
+`tuning.ts` defines three `DIFFICULTY` profiles over the same engine:
+
+| | easy | normal | hard |
+|---|---|---|---|
+| Grace timer | 75 s | 55 s | 40 s |
+| Launch deadline | Sol 28 | Sol 22 | Sol 18 |
+| Hazard gap × | 1.4 | 1 | 0.7 |
+| Hazard intensity × | 0.8 | 1 | 1.25 |
+| UFO cadence × | 1.5 | 1 | 0.7 |
+| Starting materials | 130 | 90 | 60 |
+
+Two rules keep this safe. **Normal is the legacy constants exactly**, so
+`new Colony(seed)` and `new Colony(seed, "normal")` are byte-identical — a test
+pins it. And the multipliers apply **after** each RNG draw (gap and intensity,
+then clamped), never before, so draw counts — and therefore the whole RNG stream —
+are identical across difficulties; Director-passed intensities scale coherently
+through the same path. The difficulty is chosen at reset
+(`reset{difficulty}`), persisted in state, and surfaced on the snapshot.
 
 ## Save / resume
 
 `engine/index.ts` exposes `SaveData`; `persistence/` serializes it to localStorage
 or Mongo. Because the engine is deterministic, a save is tiny and a resume is exact
 — `save.test.ts` asserts the round-trip. (Saves from a different grid size are
-discarded on load.)
+discarded on load.) The format stays `version: 1`: fields added later get graceful
+load defaults in `Colony.load` — `difficulty ?? "normal"`, `morale ?? 0.7`,
+`moraleLatch ?? false`, per-colonist `injury ?? 0` — so a pre-release save loads
+as a normal-difficulty, neutral-morale, uninjured colony.
 
 ## See also
 

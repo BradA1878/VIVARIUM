@@ -26,8 +26,11 @@ The fastest correctness loop is `npm run typecheck && npm test`.
 src/
   engine/        pure deterministic sim (no DOM / three / async) — runs in the worker
   worker/        sim.worker.ts hosts the engine; bridge.ts is the main-thread client
-  render/        three.js renderer — iso camera, Mars terrain, procedural building kit
-  ui/            Vue 3 HUD overlay reading a single reactive store (stores/colony.ts)
+  render/        three.js renderer — iso camera, Mars terrain, procedural building kit,
+                 postfx (bloom/ACES behind the quality switch), storm/UFO FX
+  ui/            Vue 3 HUD overlay reading a single reactive store (stores/colony.ts);
+                 stores/settings + stores/history (persisted prefs + run telemetry),
+                 audio/ (procedural Web Audio — zero assets), hints.ts (one-shot toasts)
   agent/         the agent layer:
     council/     the Council — VIVARIUM, Watcher, Strategist, Chronicler
     worldmodel/  causal graph of the colony; diagnoseShortfall()
@@ -65,14 +68,33 @@ reaches the live model.
 
 ## Testing & determinism
 
-There are 14 test suites, weighted toward the guarantees that matter:
+There are 25 test suites (266 tests), weighted toward the guarantees that matter:
 
 - `engine/engine.test.ts` — same seed + dt sequence → same future.
 - `engine/campaign.test.ts`, `hazards.test.ts`, `predict.test.ts`,
-  `route.test.ts`, `embodied.test.ts` — engine behaviour and the main-thread mirror.
-- `persistence/save.test.ts` — save → load round-trips bit-identically.
+  `route.test.ts`, `embodied.test.ts`, `ufo.test.ts`, `births.test.ts` — engine
+  behaviour and the main-thread mirror.
+- `engine/roster.test.ts`, `morale.test.ts`, `injury.test.ts` — the colonist
+  layer: id-hash names/roles and the two-pass assignment, the morale drivers /
+  latches / production-only effect, strike wounds and the Med-Bay heal rates.
+- `engine/difficulty.test.ts` — the profile rules: **`Colony(seed)` ≡
+  `Colony(seed, "normal")` byte-for-byte after 600 s**, and the
+  multipliers-apply-after-the-draw invariant (identical RNG draw counts across
+  difficulties).
+- `persistence/save.test.ts` — save → load round-trips bit-identically (including
+  mid-injury), and old saves load with graceful field defaults.
 - `worker/host.test.ts` — the command/snapshot loop.
-- `agent/**` — council arbitration, world model diagnosis, Sentinel, Director.
+- `agent/**` — council arbitration (incl. `council/banter.test.ts`: the quiet
+  predicate, round-robin, and that banter never touches the real cooldowns),
+  world model diagnosis, Sentinel, Director.
+- `ui/**` — the node-safe pure halves of the UI: `stores/settings.test.ts`,
+  `stores/history.test.ts`, `hints.test.ts`, and `audio/map.test.ts` (the
+  event→cue / snapshot-diff mapping — no AudioContext is ever constructed).
+
+Rare or scheduled events are tested by **state injection**, never by waiting:
+set the timer/sol so the event is due *now* (the `ufo.test.ts` pattern, reused
+for injuries and difficulty — build a minimal state, call the pass directly).
+UI stores take **injectable storage**, so they run in plain Node.
 
 ## Driving the real app (Playwright)
 
@@ -80,13 +102,33 @@ For anything visual or interactive, drive the actual app rather than assuming
 behaviour. A dev-only hook exposes the internals on `window`:
 
 ```js
-window.__viv        // { renderer, bridge }
+window.__viv        // { renderer, bridge, settings, updateSettings, audio, director }
 window.__sentinel   // the Sentinel instance
 ```
 
-So you can `bridge.place(...) / route(...) / rotate(...) / reset()`, read
-`bridge.latest` for the current snapshot, and screenshot the canvas. This is how the
-renderer, placement, narrator, and campaign were validated — prefer it over guessing.
+So you can `bridge.place(...) / route(...) / rotate(...) / reset(difficulty?)`,
+read `bridge.latest` for the current snapshot, and screenshot the canvas. The
+newer handles cover the rest of the surface:
+
+- `renderer.setQuality("low" | "high")` — flip the graphics tier live;
+  `renderer.debugFx("ufo" | "abduct" | "devil" | "pop")` makes the rare FX
+  screenshotable on demand (the scripted saucer self-expires on a TTL).
+- `audio.engineState()` (unlock/context state) and `audio.lastPlayed()` (the last
+  ≤20 cues) let you assert sound without listening to it; `audio.cue(id)`
+  auditions any cue after a click.
+- `settings` / `updateSettings(patch)` — read and drive the persisted prefs.
+- `director.bias() / comfort() / model()` — the Director's live brain.
+
+This is how the renderer, placement, narrator, postfx, audio, and campaign were
+validated — prefer it over guessing. Two workflow notes from the visual QA that
+shipped the graphics pass:
+
+- **Pause, then A/B.** `bridge.setPaused(true)` freezes the scene, so a
+  `setQuality("high")` screenshot and a `setQuality("low")` screenshot diff
+  cleanly (review shots live under `.playwright-mcp/visual-review/`).
+- **Stage scenarios right after `reset()`.** An unattended colony reliably dies,
+  so set up the state you want to look at immediately — don't let the sim run
+  while you compose the shot (or pause it).
 
 ## Backend (optional)
 

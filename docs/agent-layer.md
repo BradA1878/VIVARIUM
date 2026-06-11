@@ -32,6 +32,33 @@ one speaks per beat, each in its own register in the terminal:
 - **The Chronicler** — the long memory: milestone sols, the dead, the campaign's
   last entry.
 
+The scripted banks (`agent/lines.ts`) cover every engine beat, including the
+newer ones: morale crossing its low/recovered thresholds, colonists wounded and
+healed, and **strike casualties** — a death by meteor carries no resource key, so
+the `casualty` bank routes its `"strike"` detail to its own variants instead of
+falling silent. The boot greeting bends to the run's difficulty: easy and hard
+runs get their own `bootLines(difficulty)` send-offs ("This site kills colonies.
+… Prove the records wrong."), and the line re-fires in the new register on reset.
+
+### Idle banter — the quiet channel
+
+When nothing has happened for a while, the council talks among itself.
+`Council.observeIdle()` runs on a **separate, slower clock** from the event path:
+it fires only when the channel has been quiet for a rerolled **25–40 sim-second**
+window AND the colony is genuinely uneventful (no hazards, no shortfall timers,
+no trade or UFO on the board, not paused, not ended). Voices that implement the
+optional `Voice.considerIdle()` are polled **round-robin from a rotating start**
+(so VIVARIUM never owns the tie), each limited to one banter line per **90
+sim-seconds** — the Watcher names the tightest margin, the Strategist nudges a
+build, the Chronicler reminisces.
+
+Two structural guarantees matter more than the lines: banter **never marks the
+global/voice/topic cooldowns**, so a real event arriving one second after a
+banter line speaks as if nothing was said — banter can never delay news. And the
+idle path returns a finished scripted `Utterance`, sharing nothing with
+`shouldSpeak`/`narrateLive` — it is **incapable of reaching the live model** by
+construction.
+
 ## The causal world model
 
 `src/agent/worldmodel/` is a pure, deterministic graph of the colony — producers,
@@ -64,7 +91,29 @@ Because it's the non-deterministic antagonist and *not* the engine, the Director
 allowed to use `Math.random`. It proposes by firing a `triggerHazard` **Command**;
 the engine applies and logs the hazard inside the deterministic tick. So the core
 stays pure even though its adversary is improvising. The Director can be toggled
-with the `setDirector` command (manual hazard buttons still work either way).
+with the `setDirector` command — the settings menu exposes it, and off hands
+hazards back to the engine's own scheduler (manual hazard buttons still work
+either way).
+
+### Attribution — letting the player feel the hand
+
+Occasionally, the player is allowed to notice the Director. When it fires a
+hazard, the colony store remembers the strike; if a matching `hazard_warn`
+arrives within 3 sim-seconds, the store annotates **its own copy** of the event
+with `directed: true` before routing it to the council — a UI-side annotation on
+the `ColonyEvent` clone, which **the engine never sets** (the wall holds). The
+Watcher and the Chronicler have attribution variants for that flag ("This storm
+did not come from the weather. Something chose it.").
+
+The reveal is paced, not random: it only happens for players with **≥2 recorded
+runs** (a first-timer can't appreciate the tell), and then on a **deterministic
+every-third counter** — the first eligible warning of a run is always annotated,
+then every third after it. A counter instead of a die roll keeps the pacing
+testable and guarantees a returning player actually sees the tell. Full
+transparency waits for the end screen, where the Director's cross-run player
+model is laid out as the **dossier** ("WHAT THE PLANET HAS LEARNED"). In DEV
+builds, `window.__viv.director` exposes the live readout — `bias()`, `comfort()`,
+and `model()` — so you can watch it think.
 
 ## The live narrator (MXF) — optional, fenced off
 
@@ -82,6 +131,12 @@ opted in, those same beats can be generated live:
    the model.
 
 This is what keeps a public, auth-free Easter egg from becoming a cost faucet.
+
+The breaker's state is also **honest to the player**: `agent/client.ts` exposes a
+read-only `liveNarratorHealthy()` accessor, and the settings modal samples it
+each time the panel opens — if the live toggle is on but the circuit is open, a
+note says so ("server unreachable — speaking from the script") rather than
+letting the toggle lie. Display only; it never changes narration behavior.
 
 ### Enabling it
 

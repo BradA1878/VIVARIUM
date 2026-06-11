@@ -91,9 +91,15 @@ UnrealBloomPass → OutputPass with ACESFilmic tone mapping (exposure 1.15). Blo
 **threshold 1.0 is the design**: only emissives pushed above 1.0 bloom, so no
 layers or masks — kits opt surfaces into glow by pushing intensity. The switch is
 `ThreeRenderer.setQuality("low" | "high")`: high = postfx + shadows + pixelRatio
-cap 1.5; low = today's direct render path (NoToneMapping) and must stay
-**pixel-identical to today** — the rollback and acceptance gate. `setFlare(level)`
-lets flare hazards spike exposure/bloom from `snap.hazards`.
+cap 1.5. *As built, two facts about the off path that the first draft conflated:*
+the **pixel-identical rollback** is specifically the **postfx-disabled** render
+path (`PostFx.setEnabled(false)` → NoToneMapping, exposure 1.0, direct
+`renderer.render`, composer targets released) — that path reproduces the
+pre-release frame exactly and is the acceptance gate. The **user-facing "low"
+setting** rides that path but *additionally* disables shadow maps and drops
+pixelRatio to 1.0 as a performance mode — so "low" is deliberately *not* literally
+the pre-release frame, it's the rollback render path plus two cheapness knobs.
+`setFlare(level)` lets flare hazards spike exposure/bloom from `snap.hazards`.
 
 **Night pass + terrain relief.** A `nightLevel(tod, dust)` scalar, computed once
 per frame, reaches kit meshes through a new optional `KitEnv` argument on
@@ -168,10 +174,16 @@ per-difficulty boot lines, with matching audio cues.
 
 **Director attribution.** The store records when the Director fires a hazard; a
 matching `hazard_warn` within 3 sim-seconds gets `directed: true` — a UI-side
-annotation the engine never sets — gated to players with ≥2 runs and a 1-in-3
-chance, so the reveal stays uncanny rather than mechanical. Watcher/Chronicler
-gain attribution variants ("This storm did not come from the weather. Something
-chose it."). Full transparency lives in the EndScreen dossier, not mid-run.
+annotation the engine never sets — gated to players with ≥2 runs, so the reveal
+stays uncanny rather than mechanical. *Refinement during implementation:* the
+planned 1-in-3 **random draw** became a **deterministic every-third counter**
+(`attributionCounter++ % 3 === 0`, reset with the run) — the first eligible warn
+is always annotated, then every third after it. Same 1-in-3 density, but the
+pacing is now testable (no flaky probability assertions) and predictable: a
+returning player is guaranteed the tell on the first Director strike of a run
+rather than maybe never seeing it. Watcher/Chronicler gain attribution variants
+("This storm did not come from the weather. Something chose it."). Full
+transparency lives in the EndScreen dossier, not mid-run.
 
 ## 5. Vocabulary across the wall
 
