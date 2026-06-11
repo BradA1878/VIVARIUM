@@ -97,6 +97,11 @@ const DIFFS: { value: Difficulty; label: string }[] = [
   { value: "normal", label: "STANDARD" },
   { value: "hard", label: "BRUTAL" },
 ];
+
+/** the difficulty THIS run was played at (the NEXT RUN selector below is separate) */
+const runDiff = computed(
+  () => DIFFS.find((d) => d.value === s.value?.difficulty)?.label ?? "STANDARD",
+);
 </script>
 
 <template>
@@ -106,6 +111,8 @@ const DIFFS: { value: Difficulty; label: string }[] = [
       <div class="end-sub">{{ subline }}</div>
       <div v-if="epitaph" class="end-epitaph">{{ epitaph }}</div>
       <div class="end-stats">
+        <span class="end-chip run-diff">{{ runDiff }}</span>
+        <span class="sep">·</span>
         <span><b>{{ s.sol }}</b> {{ s.sol === 1 ? "sol" : "sols" }}</span>
         <span class="sep">·</span>
         <span><b>{{ s.population }}</b> survived</span>
@@ -201,6 +208,10 @@ const DIFFS: { value: Difficulty; label: string }[] = [
   gap: 14px 18px;
   justify-items: center;
 }
+
+/* the run's own difficulty, leading the headline stats — same chip recipe, with
+   the cyan accent the difficulty selector already uses for "this one" */
+.end-stats .run-diff { align-self: center; color: var(--cyan); border-color: rgba(127, 212, 232, 0.5); background: rgba(127, 212, 232, 0.1); }
 
 .end-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 14px 0 4px; }
 .end-chip {

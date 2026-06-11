@@ -130,10 +130,12 @@ describe("hintForSnapshot — corridor debounce", () => {
 });
 
 describe("hintForSnapshot — mining", () => {
-  it("fires on the first possession only", () => {
+  it("proposes while possessed until the queue consumes the trigger at show time", () => {
     const sc = freshScratch();
     expect(hintForSnapshot(makeSnap({ t: 5, possessed: 7 }), sc)).toBe("mining");
-    expect(hintForSnapshot(makeSnap({ t: 6, possessed: 7 }), sc)).toBeNull();
+    expect(sc.possessedOnce).toBe(false); // proposing does NOT burn the trigger
+    expect(hintForSnapshot(makeSnap({ t: 6, possessed: 7 }), sc)).toBe("mining"); // still on offer
+    sc.possessedOnce = true; // the queue showed it
     expect(hintForSnapshot(makeSnap({ t: 8, possessed: null }), sc)).toBeNull();
     expect(hintForSnapshot(makeSnap({ t: 9, possessed: 7 }), sc)).toBeNull(); // re-possession is not the first time
   });
@@ -172,6 +174,29 @@ describe("Hints queue", () => {
     expect(hints.onSnapshot(makeSnap({ t: 5, possessed: 2 }))?.id).toBe("mining");
     hints.dismiss();
     expect(hints.onSnapshot(makeSnap({ t: 6, possessed: 2 }))).toBeNull();
+  });
+
+  it("does not burn the mining trigger when another toast blocks the offer", () => {
+    const hints = new Hints(unlockedStorage());
+    expect(hints.onEvent(ev("brownout"))?.id).toBe("brownout"); // a card is up
+    // first possession lands while the brownout card is still showing
+    expect(hints.onSnapshot(makeSnap({ t: 5, possessed: 2 }))).toBeNull();
+    expect(hints.scratch.possessedOnce).toBe(false); // blocked ≠ burned
+    hints.dismiss();
+    // the next opportunity this run still gets the mining hint
+    expect(hints.onSnapshot(makeSnap({ t: 6, possessed: 2 }))?.id).toBe("mining");
+    expect(hints.scratch.possessedOnce).toBe(true); // consumed at show time
+  });
+
+  it("consumes the trigger when mining was seen in a past run, so corridor is not shadowed", () => {
+    const st = unlockedStorage({ [HINTS_SEEN_KEY]: JSON.stringify(["mining"]) });
+    const hints = new Hints(st);
+    expect(hints.onSnapshot(makeSnap({ t: 5, possessed: 2 }))).toBeNull(); // seen forever
+    expect(hints.scratch.possessedOnce).toBe(true); // burned for good — stop proposing
+    // ...which lets the corridor debounce win while still possessed
+    const stranded = (t: number) => makeSnap({ t, possessed: 2, buildings: [bld(1, "hab", false)] });
+    expect(hints.onSnapshot(stranded(10))).toBeNull(); // the clock starts
+    expect(hints.onSnapshot(stranded(15))?.id).toBe("corridor");
   });
 
   it("suppresses everything while the FirstHint card is unseen — without burning hints", () => {

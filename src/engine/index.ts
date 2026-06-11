@@ -8,7 +8,6 @@ export { doorCells, doorCellsOf, worldDoorSide, SIDE_DELTA } from "./doors";
 export { planRoute, routeCorridor, type RouteQuery } from "./route";
 export { HAZARD_META, hazardMods } from "./hazards";
 export { TECH_DEFS, TECH_IDS, type TechDef } from "./techs";
-export { ROLES, ROLE_BUILDING, roleOf, nameOf, roleMatchCount } from "./roster";
 export { RNG } from "./rng";
 export { solarOutput } from "./tick";
 export { FUNC_THRESHOLD, buildingFunctional } from "./state";

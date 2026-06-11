@@ -78,7 +78,9 @@ export function hintForEvent(e: ColonyEvent): HintId | null {
 export interface HintScratch {
   /** sim-time a pressure building was first seen unconnected, or null if none is */
   unconnectedSince: number | null;
-  /** a possession has been observed already (the mining hint is a first-time thing) */
+  /** the mining hint's one-shot trigger has been consumed — the queue marks this
+   *  at SHOW time (or when the hint is already in the forever seen-set), never
+   *  on a blocked offer, so a possession under another toast can fire later */
   possessedOnce: boolean;
 }
 
@@ -92,11 +94,10 @@ export function hintForSnapshot(s: Snapshot, scratch: HintScratch): HintId | nul
   if (!stranded) scratch.unconnectedSince = null;
   else if (scratch.unconnectedSince == null) scratch.unconnectedSince = s.t;
 
-  // mining — the first time the player steps into a colonist
-  if (s.possessed != null && !scratch.possessedOnce) {
-    scratch.possessedOnce = true;
-    return "mining";
-  }
+  // mining — the first time the player steps into a colonist. This only
+  // PROPOSES: the queue consumes possessedOnce when the hint actually shows,
+  // so an offer blocked by an active toast is not burned (the rule up top).
+  if (s.possessed != null && !scratch.possessedOnce) return "mining";
 
   if (scratch.unconnectedSince != null && s.t - scratch.unconnectedSince >= CORRIDOR_DEBOUNCE_S) {
     return "corridor";
@@ -182,7 +183,16 @@ export class Hints {
   }
 
   onSnapshot(s: Snapshot): Hint | null {
-    return this.offer(hintForSnapshot(s, this.scratch));
+    const id = hintForSnapshot(s, this.scratch);
+    const hint = this.offer(id);
+    // consume the one-shot mining trigger only once it actually shows — or when
+    // it is already in the forever seen-set (burned for good, and consuming the
+    // scratch lets the corridor hint through while still possessed). A blocked
+    // offer leaves the trigger intact to fire at the next opportunity this run.
+    if (id === "mining" && (hint != null || this.seen.has(id))) {
+      this.scratch.possessedOnce = true;
+    }
+    return hint;
   }
 
   /** the toast was closed (or timed out) — the next hint may show */

@@ -76,6 +76,9 @@ let history: RunHistory = emptyHistory();
 let hints: Hints | null = null;
 let hintTimer: ReturnType<typeof setTimeout> | null = null;
 let hintGapTimer: ReturnType<typeof setTimeout> | null = null;
+// the boot greeting's pending pieces, so dispose can cancel an un-spoken line
+let bootTimer: ReturnType<typeof setTimeout> | null = null;
+let offBootSnap: (() => void) | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let stopSettingsWatch: (() => void) | null = null;
 let msgId = 1;
@@ -83,6 +86,8 @@ let msgId = 1;
 const HINT_TOAST_MS = 14_000;
 /** quiet beat between toasts — the next hint must not appear the frame the last one left */
 const HINT_GAP_MS = 1_500;
+/** the boot greeting's beat — how long after init the first words land */
+const BOOT_LINE_MS = 900;
 
 /** put a hint on screen (with the soft interface blip) and arm its auto-dismiss */
 function showHint(h: Hint | null): void {
@@ -265,6 +270,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   // into an already-finished run, or a save from a DIFFERENT grid size (e.g. an
   // old 11×11 colony after the map grew to 15×15) — that would strand the colony
   // and its people in a sub-region of the new world. A fresh seed beats both.
+  const bootT0 = Date.now();
   void loadBest().then((save) => {
     const usable = save && !save.state.outcome && save.state.N === GRID_N;
     if (usable) {
@@ -274,7 +280,37 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
       b.setDirector(settings.value.directorEnabled);
       lastRealEventT = save.state.t; // resume counts its quiet from the save point
       history = loadHistory(); // a resumed run keeps its curves
-    } else if (save) { clearLocal(); history = resetHistory(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
+      return save.state.difficulty; // greet in the SAVE's register, not the fresh seed's
+    }
+    if (save) { clearLocal(); history = resetHistory(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
+    return undefined; // fresh seed — the snapshot carries the run's difficulty
+  }).then((resumedDiff) => {
+    // first words — pitched to the run's difficulty (a resumed save keeps its
+    // own). The greeting fires only once BOTH the load path above has settled
+    // AND a snapshot exists: a networked (Mongo) loadBest can resolve after any
+    // fixed timer, and greeting early put a hard/easy resume in the fresh
+    // seed's register. Fresh boots keep the same ~900ms beat — the load
+    // settles in milliseconds, so the remaining wait is the full beat.
+    const greet = (): void => {
+      if (bootTimer) clearTimeout(bootTimer);
+      bootTimer = setTimeout(() => {
+        bootTimer = null;
+        if (!council) return;
+        const u = council.bootLine(resumedDiff ?? snapshot.value?.difficulty);
+        pushLine(u.line, undefined, undefined, u.speaker, u.register);
+      }, Math.max(0, BOOT_LINE_MS - (Date.now() - bootT0)));
+    };
+    if (snapshot.value) greet();
+    else {
+      let fired = false; // onSnapshot replays the latest synchronously — one-shot guard
+      offBootSnap = b.onSnapshot(() => {
+        if (fired) return;
+        fired = true;
+        offBootSnap?.();
+        offBootSnap = null;
+        greet();
+      });
+    }
   });
 
   // autosave on an interval — Mongo when reachable, localStorage always
@@ -282,14 +318,6 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     void b.save().then(persist);
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
-
-  // first words — pitched to the run's difficulty (a resumed save keeps its own)
-  setTimeout(() => {
-    if (council) {
-      const u = council.bootLine(snapshot.value?.difficulty);
-      pushLine(u.line, undefined, undefined, u.speaker, u.register);
-    }
-  }, 900);
 }
 
 /** tear down the store's timers + watchers (called from App on unmount) */
@@ -297,6 +325,8 @@ export function disposeColony(): void {
   if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
   if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
   if (hintGapTimer) { clearTimeout(hintGapTimer); hintGapTimer = null; }
+  if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+  if (offBootSnap) { offBootSnap(); offBootSnap = null; }
   if (stopSettingsWatch) { stopSettingsWatch(); stopSettingsWatch = null; }
   sentinel?.dispose();
   audio.dispose();
