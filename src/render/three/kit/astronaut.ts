@@ -13,6 +13,7 @@
    ============================================================================ */
 import * as THREE from "three";
 import type { DepositKind } from "@shared/types";
+import type { KitEnv } from "./contract";
 import { disposeObject } from "./contract";
 
 /** carry-cube tint by deposit kind */
@@ -27,8 +28,8 @@ export interface AstronautMesh {
   object: THREE.Group;
   /** the inner figure the renderer bobs/turns (so the root stays at ground) */
   body: THREE.Group;
-  /** drive per-frame look: possessed ring/emissive + carry cube */
-  setState(possessed: boolean, carryKind: DepositKind | null, pulse: number): void;
+  /** drive per-frame look: possessed ring/emissive + carry cube + night glows */
+  setState(possessed: boolean, carryKind: DepositKind | null, pulse: number, env?: KitEnv): void;
   dispose(): void;
 }
 
@@ -127,7 +128,11 @@ export function buildAstronaut(): AstronautMesh {
   return {
     object,
     body,
-    setState(possessed, carryKind, pulse) {
+    setState(possessed, carryKind, pulse, env) {
+      const night = env?.night ?? 0;
+      // antenna tip + visor brighten at night so figures read in the dark
+      accentMat.emissiveIntensity = 1.0 + 0.8 * night;
+      visorMat.emissiveIntensity = 0.65 + 0.5 * night;
       ring.visible = possessed;
       if (possessed) {
         ringMat.opacity = 0.55 + 0.35 * pulse;

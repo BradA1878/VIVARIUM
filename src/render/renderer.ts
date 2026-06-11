@@ -9,11 +9,11 @@ import * as THREE from "three";
 import type { BuildingDef, BuildingState, Snapshot } from "@shared/types";
 import { DEFS, SIDE_DELTA } from "@/engine";
 import type { SimBridge } from "@/worker/bridge";
-import { SceneManager } from "./three/scene";
+import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
 import { CELL, GridSpace } from "./three/coords";
 import { createMaterials } from "./three/materials";
-import { buildKitMesh, type KitMesh } from "./three/kit";
+import { buildKitMesh, type KitMesh, type KitEnv } from "./three/kit";
 import { PlacementController, type HoverInfo, type SelectInfo } from "./three/placement";
 import { Atmosphere } from "./three/atmosphere";
 import { HazardFx } from "./three/hazardfx";
@@ -41,31 +41,6 @@ interface ColonistRec {
 /** colonist states that should show the walking bob */
 const MOVING_STATES = new Set(["toWork", "toHome", "toMedbay", "mining", "hauling", "piloted"]);
 
-/** a visible door on a building's front (its local def.door side), as a child of
- *  the mesh group so it turns with the building's rotation — this is the cell the
- *  auto-route connects to, so you can see which way to aim it before linking. */
-function addDoor(group: THREE.Object3D, def: BuildingDef): void {
-  if (def.door == null) return;
-  const [dx, dy] = SIDE_DELTA[def.door];
-  const half = (def.foot[0] * CELL) / 2;
-  const door = new THREE.Group();
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(0.34, 0.32, 0.06),
-    new THREE.MeshStandardMaterial({ color: 0x0b1014, emissive: 0x2c4a55, emissiveIntensity: 0.5, roughness: 0.6, metalness: 0.3 }),
-  );
-  frame.position.y = 0.16;
-  const sill = new THREE.Mesh(
-    new THREE.BoxGeometry(0.4, 0.05, 0.05),
-    new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.7 }),
-  );
-  sill.position.y = 0.03;
-  door.add(frame, sill);
-  door.position.set(dx * (half + 0.01), 0, dy * (half + 0.01));
-  door.lookAt(door.position.x + dx, 0, door.position.z + dy); // face outward
-  door.name = "door";
-  group.add(door);
-}
-
 /** prototype status(): the glow that reads a building's health */
 function buildingStatus(b: BuildingState): { alive: boolean; hurt: boolean } {
   const def = DEFS[b.defId];
@@ -89,6 +64,14 @@ export class ThreeRenderer {
   private airlocks = new Map<string, THREE.Mesh>();
   private airlockGeo = new THREE.TorusGeometry(0.22, 0.05, 8, 16);
   private airlockMat = new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.7, roughness: 0.5 });
+  // door glows are SHARED across every door so the night ramp is one material
+  // write per frame, not a write per door (detached before kit dispose)
+  private doorFrameGeo = new THREE.BoxGeometry(0.34, 0.32, 0.06);
+  private doorSillGeo = new THREE.BoxGeometry(0.4, 0.05, 0.05);
+  private doorGlowMat = new THREE.MeshStandardMaterial({ color: 0x0b1014, emissive: 0x2c4a55, emissiveIntensity: 0.5, roughness: 0.6, metalness: 0.3 });
+  private doorSillMat = new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.7 });
+  // per-frame world context handed to every kit (mutated in place — no allocs)
+  private env: KitEnv = { night: 0 };
   private bridge: SimBridge;
   private placement: PlacementController;
   private atmosphere: Atmosphere;
@@ -190,6 +173,12 @@ export class ThreeRenderer {
       return;
     }
     this.scene.update(snap.tod, snap.weather === "dust");
+    // one night level per frame drives every kit's status/window ramp plus the
+    // shared door + airlock glows (ramped once here instead of per door)
+    this.env.night = nightLevel(snap.tod, snap.weather === "dust");
+    this.doorGlowMat.emissiveIntensity = 0.5 + 0.7 * this.env.night;
+    this.doorSillMat.emissiveIntensity = 0.7 + 0.9 * this.env.night;
+    this.airlockMat.emissiveIntensity = 0.7 + 0.9 * this.env.night;
     // solar-flare glow: the postfx exposure/bloom pulse scales with the hazard
     // (full while active, a hint of it during the telegraph)
     let flare = 0;
@@ -241,7 +230,7 @@ export class ThreeRenderer {
         const mesh = buildKitMesh(def, b.uid, this.materials);
         const c = this.grid.footprintCenter(def, b.gx, b.gy);
         mesh.object.position.copy(c);
-        addDoor(mesh.object, def);
+        this.addDoor(mesh.object, def);
         this.buildingsGroup.add(mesh.object);
         entry = { mesh, defId: b.defId };
         this.placed.set(b.uid, entry);
@@ -252,7 +241,7 @@ export class ThreeRenderer {
       const st = buildingStatus(b);
       const pulse = 0.5 + 0.5 * Math.sin(now / 700 + b.uid);
       const fill = b.defId === "battery" ? snap.pools.power.amount / snap.pools.power.capacity : undefined;
-      entry.mesh.setStatus({ ...st, fill }, pulse);
+      entry.mesh.setStatus({ ...st, fill }, pulse, this.env);
 
       // corridors orient to neighbours: an arm toward each adjacent corridor or
       // sealed building, so a run reads as one connected pipe meeting the airlocks
@@ -276,11 +265,33 @@ export class ThreeRenderer {
     // remove vanished buildings
     for (const [uid, entry] of this.placed) {
       if (!seen.has(uid)) {
+        // detach the door first — its geo/mats are shared, owned by this class
+        const door = entry.mesh.object.getObjectByName("door");
+        if (door) entry.mesh.object.remove(door);
         this.buildingsGroup.remove(entry.mesh.object);
         entry.mesh.dispose();
         this.placed.delete(uid);
       }
     }
+  }
+
+  /** a visible door on a building's front (its local def.door side), as a child of
+   *  the mesh group so it turns with the building's rotation — this is the cell the
+   *  auto-route connects to, so you can see which way to aim it before linking. */
+  private addDoor(group: THREE.Object3D, def: BuildingDef): void {
+    if (def.door == null) return;
+    const [dx, dy] = SIDE_DELTA[def.door];
+    const half = (def.foot[0] * CELL) / 2;
+    const door = new THREE.Group();
+    const frame = new THREE.Mesh(this.doorFrameGeo, this.doorGlowMat);
+    frame.position.y = 0.16;
+    const sill = new THREE.Mesh(this.doorSillGeo, this.doorSillMat);
+    sill.position.y = 0.03;
+    door.add(frame, sill);
+    door.position.set(dx * (half + 0.01), 0, dy * (half + 0.01));
+    door.lookAt(door.position.x + dx, 0, door.position.z + dy); // face outward
+    door.name = "door";
+    group.add(door);
   }
 
   /** place a lit airlock on every building edge that abuts a corridor */
@@ -345,7 +356,7 @@ export class ThreeRenderer {
       const moving = MOVING_STATES.has(c.state);
       rec.mesh.body.position.y = moving ? Math.abs(Math.sin(now / 130 + c.id)) * 0.05 : 0;
 
-      rec.mesh.setState(c.id === snap.possessed, c.carryKind, pulse);
+      rec.mesh.setState(c.id === snap.possessed, c.carryKind, pulse, this.env);
     }
 
     for (const [id, rec] of this.colonists) {
@@ -492,7 +503,17 @@ export class ThreeRenderer {
     this.airlockGeo.dispose();
     this.airlockMat.dispose();
     this.airlocks.clear();
-    for (const entry of this.placed.values()) entry.mesh.dispose();
+    this.doorFrameGeo.dispose();
+    this.doorSillGeo.dispose();
+    this.doorGlowMat.dispose();
+    this.doorSillMat.dispose();
+    for (const entry of this.placed.values()) {
+      // detach the door first (as on removal) so the kit dispose can't
+      // re-dispose the shared door geo/mats already disposed above
+      const door = entry.mesh.object.getObjectByName("door");
+      if (door) entry.mesh.object.remove(door);
+      entry.mesh.dispose();
+    }
     this.placed.clear();
     for (const rec of this.colonists.values()) rec.mesh.dispose();
     this.colonists.clear();

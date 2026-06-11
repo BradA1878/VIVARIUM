@@ -7,7 +7,7 @@
    airlock ("snap to opening"). alive ≈ sealed; unsealed reads dim.
    ============================================================================ */
 import * as THREE from "three";
-import type { KitBuilder, KitMesh, BuildingStatus } from "./contract";
+import type { KitBuilder, KitMesh, BuildingStatus, KitEnv } from "./contract";
 import { disposeObject } from "./contract";
 import { statusGlow, applyGlow } from "../materials";
 
@@ -78,8 +78,10 @@ export const buildCorridor: KitBuilder = (ctx): KitMesh => {
 
   return {
     object: group,
-    setStatus(status: BuildingStatus, pulse: number): void {
-      applyGlow(glowMat, statusGlow(status.alive, status.hurt), 0.2 + 0.45 * pulse);
+    setStatus(status: BuildingStatus, pulse: number, env?: KitEnv): void {
+      // junction light brightens at night on the healthy (sealed) path only
+      const boost = status.alive ? 1 + 1.4 * (env?.night ?? 0) : 1;
+      applyGlow(glowMat, statusGlow(status.alive, status.hurt), (0.2 + 0.45 * pulse) * boost);
     },
     setNeighbors(mask: number): void { rebuild(mask); },
     dispose(): void {

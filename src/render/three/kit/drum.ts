@@ -9,7 +9,7 @@
    translate it. Fully deterministic: no Math.random / Date / assets / network.
    ============================================================================ */
 import * as THREE from "three";
-import type { BuildingStatus, KitContext, KitMesh, KitBuilder } from "./contract";
+import type { BuildingStatus, KitContext, KitMesh, KitBuilder, KitEnv } from "./contract";
 import { disposeObject } from "./contract";
 import { statusGlow, applyGlow } from "../materials";
 
@@ -71,13 +71,15 @@ export const buildDrum: KitBuilder = (ctx: KitContext): KitMesh => {
     group.add(bar);
   }
 
-  function setStatus(status: BuildingStatus, pulse: number): void {
+  function setStatus(status: BuildingStatus, pulse: number, env?: KitEnv): void {
     const fill = status.fill ?? 0;
     const cyan = statusGlow(true, false);
     const tint = status.hurt ? statusGlow(false, true) : cyan;
+    // lit bars pick up the night boost; hurt (rust) and unlit bars stay dark
+    const boost = status.hurt ? 0 : 0.8 * (env?.night ?? 0);
     for (let i = 0; i < barCount; i++) {
       const on = fill > (i + 0.5) / barCount;
-      applyGlow(barMats[i], tint, on ? 0.6 + 0.4 * pulse : 0.06);
+      applyGlow(barMats[i], tint, on ? 0.6 + 0.4 * pulse + boost : 0.06);
     }
   }
 

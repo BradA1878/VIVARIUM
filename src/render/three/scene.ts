@@ -28,6 +28,13 @@ export function ambientLevel(tod: number, dust: boolean): number {
   return Math.max(0.07, Math.min(1, l));
 }
 
+/** how deep into night the scene sits: 0 = full day → 1 = deep night. Derived
+ *  from the ambient curve, so a dust storm reads as partial night too — the
+ *  kit window/status glows ramp off this. */
+export function nightLevel(tod: number, dust: boolean): number {
+  return Math.max(0, Math.min(1, (0.97 - ambientLevel(tod, dust)) / 0.9));
+}
+
 export class SceneManager {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.OrthographicCamera;

@@ -17,6 +17,7 @@ import {
   type KitContext,
   type KitMesh,
   type BuildingStatus,
+  type KitEnv,
   greebleRng,
   disposeObject,
 } from "./contract";
@@ -134,6 +135,26 @@ export const buildTank: KitBuilder = (ctx: KitContext): KitMesh => {
   );
   group.add(light);
 
+  // --- warm port lights (night life) -----------------------------------------
+  // Two small lit ports on the body — invisible by day, blooming at night.
+  // Positions come from a DERIVED rng stream so the main greeble draws above
+  // stay byte-stable across this addition.
+  const prng = greebleRng(seed ^ 0x77aa);
+  const portMat = materials.glow("#ffd9a0");
+  portMat.emissiveIntensity = 0;
+  const portGeo = new THREE.BoxGeometry(radius * 0.18, radius * 0.22, radius * 0.1);
+  for (let i = 0; i < 2; i++) {
+    const a = i * Math.PI + prng() * Math.PI; // one per body half
+    const port = new THREE.Mesh(portGeo, portMat);
+    port.position.set(
+      Math.cos(a) * radius,
+      bodyHeight * (0.3 + 0.35 * prng()),
+      Math.sin(a) * radius,
+    );
+    port.rotation.y = Math.PI / 2 - a; // face outward
+    group.add(port);
+  }
+
   // --- per-id topper
   const topY = bodyHeight + domeHeight;
   switch (spec.topper) {
@@ -198,8 +219,12 @@ export const buildTank: KitBuilder = (ctx: KitContext): KitMesh => {
       break;
   }
 
-  function setStatus(status: BuildingStatus, pulse: number): void {
-    applyGlow(lightMat, statusGlow(status.alive, status.hurt), 0.35 + 0.55 * pulse);
+  function setStatus(status: BuildingStatus, pulse: number, env?: KitEnv): void {
+    const night = env?.night ?? 0;
+    // night boost on the healthy path only — hurt (rust) stays under bloom
+    const intensity = (0.35 + 0.55 * pulse) * (status.alive ? 1 + 1.2 * night : 1);
+    applyGlow(lightMat, statusGlow(status.alive, status.hurt), intensity);
+    portMat.emissiveIntensity = status.alive ? Math.pow(night, 1.5) * (1.5 + 0.2 * pulse) : 0;
   }
 
   function dispose(): void {

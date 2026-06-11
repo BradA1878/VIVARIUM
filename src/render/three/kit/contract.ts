@@ -32,11 +32,18 @@ export interface KitContext {
   seed: number;
 }
 
+/** per-frame world context the renderer hands every kit; builders that ignore
+ *  it simply don't declare the parameter (structural typing keeps them valid) */
+export interface KitEnv {
+  /** 0 = full day → 1 = deep night (scene.ts nightLevel) */
+  night: number;
+}
+
 export interface KitMesh {
   /** positioned by the renderer at the footprint center, base on the ground */
   object: THREE.Object3D;
   /** called each frame with current status + a 0..1 pulse phase for glows */
-  setStatus(status: BuildingStatus, pulse: number): void;
+  setStatus(status: BuildingStatus, pulse: number, env?: KitEnv): void;
   /** corridors only: a 4-bit mask (N=1,E=2,S=4,W=8) of connected neighbours, so
    *  the mesh can orient as straight / elbow / T / cross / end-cap */
   setNeighbors?(mask: number): void;

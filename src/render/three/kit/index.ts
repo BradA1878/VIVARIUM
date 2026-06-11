@@ -34,4 +34,4 @@ export function buildKitMesh(def: BuildingDef, uid: number, materials: MaterialL
   return builderFor(def)(ctx);
 }
 
-export type { KitMesh } from "./contract";
+export type { KitMesh, KitEnv } from "./contract";

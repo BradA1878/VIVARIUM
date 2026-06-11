@@ -8,7 +8,7 @@
    positions the group; this builder never translates the root.
    ============================================================================ */
 import * as THREE from "three";
-import type { KitBuilder, KitContext, KitMesh, BuildingStatus } from "./contract";
+import type { KitBuilder, KitContext, KitMesh, BuildingStatus, KitEnv } from "./contract";
 import { disposeObject } from "./contract";
 import { statusGlow, applyGlow } from "../materials";
 
@@ -139,8 +139,11 @@ export const buildSolar: KitBuilder = (ctx: KitContext): KitMesh => {
   // ==========================================================================
   return {
     object: root,
-    setStatus(status: BuildingStatus, pulse: number): void {
-      applyGlow(lightMat, statusGlow(status.alive, status.hurt), 0.3 + 0.5 * pulse);
+    setStatus(status: BuildingStatus, pulse: number, env?: KitEnv): void {
+      // only the status light brightens at night — the panels themselves stay
+      // dark (they're off), and hurt (rust) gets no boost
+      const boost = status.alive ? 1 + 0.8 * (env?.night ?? 0) : 1;
+      applyGlow(lightMat, statusGlow(status.alive, status.hurt), (0.3 + 0.5 * pulse) * boost);
     },
     dispose(): void {
       disposeObject(root);

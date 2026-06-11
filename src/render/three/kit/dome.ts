@@ -10,7 +10,7 @@
    renderer positions the group; we never translate or rotate the group itself.
    ============================================================================ */
 import * as THREE from "three";
-import type { KitBuilder, KitMesh, BuildingStatus } from "./contract";
+import type { KitBuilder, KitMesh, BuildingStatus, KitEnv } from "./contract";
 import { greebleRng, disposeObject } from "./contract";
 import { statusGlow, applyGlow } from "../materials";
 
@@ -75,15 +75,34 @@ export const buildDome: KitBuilder = (ctx): KitMesh => {
   group.add(dome);
 
   // Greenhouse: a faint green interior glow, sitting just inside the dome.
+  // Captured here so setStatus can ramp it with the night level.
+  let interiorMat: THREE.MeshStandardMaterial | null = null;
   if (isGreenhouse) {
-    const interiorMat = materials.glow("#3ad17a");
+    interiorMat = materials.glow("#3ad17a");
     interiorMat.transparent = true;
     interiorMat.opacity = 0.55;
-    interiorMat.emissiveIntensity = 0.5;
+    interiorMat.emissiveIntensity = 0.35;
     const interiorGeo = new THREE.SphereGeometry(radius * 0.7, 24, 16);
     const interior = new THREE.Mesh(interiorGeo, interiorMat);
     interior.position.y = collarHeight + domeHeight * 0.28;
     group.add(interior);
+  }
+
+  // --- Warm collar windows (night life) --------------------------------------
+  // Two small lit portholes on the collar — invisible by day, blooming at
+  // night. Positions come from a DERIVED rng stream so the existing greeble
+  // picks below stay byte-stable across this addition.
+  const wrng = greebleRng(seed ^ 0x77aa);
+  const windowMat = materials.glow("#ffd9a0");
+  windowMat.emissiveIntensity = 0;
+  const windowGeo = new THREE.BoxGeometry(radius * 0.16, collarHeight * 0.4, radius * 0.06);
+  for (let i = 0; i < 2; i++) {
+    // one window per collar half, both kept clear of the front hatch (+Z)
+    const a = Math.PI * (0.3 + 0.7 * i + 0.7 * wrng());
+    const win = new THREE.Mesh(windowGeo, windowMat);
+    win.position.set(Math.sin(a) * radius * 1.02, collarHeight * (0.45 + 0.25 * wrng()), Math.cos(a) * radius * 1.02);
+    win.rotation.y = a; // face outward
+    group.add(win);
   }
 
   // --- Front hatch (lit) ----------------------------------------------------
@@ -227,11 +246,16 @@ export const buildDome: KitBuilder = (ctx): KitMesh => {
 
   return {
     object: group,
-    setStatus(status: BuildingStatus, pulse: number): void {
+    setStatus(status: BuildingStatus, pulse: number, env?: KitEnv): void {
+      const night = env?.night ?? 0;
       const color = statusGlow(status.alive, status.hurt);
-      const intensity = 0.35 + 0.55 * pulse;
+      // night boost rides the healthy path only — rust/hurt glows must stay
+      // under the bloom threshold so damage warnings never halo
+      const intensity = (0.35 + 0.55 * pulse) * (status.alive ? 1 + 1.2 * night : 1);
       applyGlow(hatchMat, color, intensity);
       for (const m of tipMats) applyGlow(m, color, intensity);
+      if (interiorMat) interiorMat.emissiveIntensity = 0.35 + (status.alive ? 1.3 * night : 0);
+      windowMat.emissiveIntensity = status.alive ? Math.pow(night, 1.5) * (1.5 + 0.2 * pulse) : 0;
     },
     dispose(): void {
       disposeObject(group);
