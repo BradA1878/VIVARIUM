@@ -22,10 +22,11 @@ import { loadBest, persist, clearLocal } from "@/persistence";
 import type { HazardKind } from "@shared/types";
 import { clockOf } from "../format";
 import { useSettings } from "./settings";
+import { audio, initAudio } from "../audio";
 
 // player preferences (persisted) — gate the director, the live narrator, render
-// quality, and the next run's difficulty. The audio module consumes audio.* when
-// it lands; the deep watch below is its seam.
+// quality, the audio gains, and the next run's difficulty. The deep watch below
+// applies them to the live subsystems the moment they change.
 const { settings } = useSettings();
 
 export interface TerminalLine {
@@ -114,8 +115,16 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   // apply the persisted render quality (no-op if it matches the default)
   r.setQuality(settings.value.graphics.quality);
 
-  // settings → live subsystems: quality and the director toggle apply the moment
-  // they change. (Audio gain wiring hooks in here when the audio module lands.)
+  // procedural audio — one more observer on the bridge (never a participant).
+  // initAudio only arms the gesture-unlock listeners; until the player clicks
+  // or presses a key every audio call is a cheap no-op.
+  initAudio();
+  audio.applySettings(settings.value.audio);
+  b.onEvent((e) => audio.onEvent(e));
+  b.onSnapshot((s) => audio.onSnapshot(s));
+
+  // settings → live subsystems: quality, the director toggle, and the audio
+  // gains apply the moment they change.
   let appliedQuality = settings.value.graphics.quality;
   let appliedDirector = settings.value.directorEnabled;
   stopSettingsWatch = watch(settings, (sv) => {
@@ -127,6 +136,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
       appliedDirector = sv.directorEnabled;
       b.setDirector(appliedDirector);
     }
+    audio.applySettings(sv.audio); // setTargetAtTime — cheap and idempotent
   }, { deep: true });
 
   r.onSelect((info) => { selected.value = info; });
@@ -201,10 +211,12 @@ export function disposeColony(): void {
   if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
   if (stopSettingsWatch) { stopSettingsWatch(); stopSettingsWatch = null; }
   sentinel?.dispose();
+  audio.dispose();
 }
 
 // ---- tool selection (mirrors prototype app.jsx) ------------------------------
 function pick(defId: string): void {
+  audio.uiTick();
   if (tool.value === defId && !demolish.value) { clearTool(); return; }
   tool.value = defId;
   demolish.value = false;
@@ -214,11 +226,12 @@ function pick(defId: string): void {
 }
 
 /** R — rotate the ghost while placing, else the selected/hovered building */
-function rotate(): void { renderer?.rotate(); }
+function rotate(): void { audio.uiTick(); renderer?.rotate(); }
 
 /** Del — remove the currently-selected building */
 function removeSelected(): void { renderer?.removeSelected(); }
 function toggleDemolish(): void {
+  audio.uiTick();
   const v = !demolish.value;
   demolish.value = v;
   tool.value = null;

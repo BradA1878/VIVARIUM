@@ -26,6 +26,7 @@ import { Tuning } from "@/engine";
 import type { ThreeRenderer } from "@/render/renderer";
 import { initColony, useColony, disposeColony } from "./stores/colony";
 import { useSettings } from "./stores/settings";
+import { audio } from "./audio";
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 const booting = ref(true);
@@ -93,7 +94,7 @@ onMounted(async () => {
   window.addEventListener("keyup", onKeyUp);
 
   if (import.meta.env.DEV) {
-    (window as unknown as { __viv: unknown }).__viv = { renderer, bridge: b, settings, updateSettings };
+    (window as unknown as { __viv: unknown }).__viv = { renderer, bridge: b, settings, updateSettings, audio };
   }
 });
 
