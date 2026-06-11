@@ -5,6 +5,7 @@
    ambient curve and sky colours are ported from render.js (ambient/drawSky).
    ============================================================================ */
 import * as THREE from "three";
+import { PostFx } from "./postfx";
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 function lerpColor(a: number[], b: number[], t: number): THREE.Color {
@@ -31,7 +32,9 @@ export class SceneManager {
   readonly scene = new THREE.Scene();
   readonly camera: THREE.OrthographicCamera;
   readonly renderer: THREE.WebGLRenderer;
+  readonly postfx: PostFx;
 
+  private quality: "low" | "high" = "high";
   private sun: THREE.DirectionalLight;
   private ambientLight: THREE.AmbientLight;
   private hemi: THREE.HemisphereLight;
@@ -72,7 +75,31 @@ export class SceneManager {
     this.hemi = new THREE.HemisphereLight(0xb0744a, 0x10100c, 0.4);
     this.scene.add(this.hemi);
 
+    this.postfx = new PostFx(this.renderer, this.scene, this.camera);
+
     this.resize();
+  }
+
+  /** the whole graphics tier in one switch: postfx + pixel ratio + shadows */
+  setQuality(q: "low" | "high"): void {
+    if (q === this.quality) return;
+    this.quality = q;
+    const high = q === "high";
+    // high keeps the existing 1.5 cap (see the constructor note); low drops to 1.0
+    this.renderer.setPixelRatio(high ? Math.min(1.5, window.devicePixelRatio || 1) : 1);
+    this.renderer.shadowMap.enabled = high;
+    // a shadow-map toggle only takes hold after the materials recompile
+    this.scene.traverse((o) => {
+      const mat = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+      if (Array.isArray(mat)) for (const m of mat) m.needsUpdate = true;
+      else if (mat) mat.needsUpdate = true;
+    });
+    this.postfx.setEnabled(high);
+    this.resize(); // re-applies the drawing-buffer size at the new pixel ratio
+  }
+
+  getQuality(): "low" | "high" {
+    return this.quality;
   }
 
   resize(): void {
@@ -80,6 +107,7 @@ export class SceneManager {
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this.postfx.setSize(w, h);
     const aspect = w / h;
     const v = this.viewSize;
     this.camera.left = -v * aspect;
@@ -136,10 +164,11 @@ export class SceneManager {
   }
 
   render(): void {
-    this.renderer.render(this.scene, this.camera);
+    this.postfx.render();
   }
 
   dispose(): void {
+    this.postfx.dispose();
     this.renderer.dispose();
   }
 }

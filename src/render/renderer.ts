@@ -148,6 +148,11 @@ export class ThreeRenderer {
   onHover(cb: (info: HoverInfo | null) => void): void { this.placement.onHover(cb); }
   onSelect(cb: (info: SelectInfo | null) => void): void { this.placement.onSelect(cb); }
 
+  // graphics tier (default "high") — this exact signature is the contract the
+  // upcoming settings UI consumes.
+  setQuality(q: "low" | "high"): void { this.scene.setQuality(q); }
+  getQuality(): "low" | "high" { return this.scene.getQuality(); }
+
   start(): void {
     if (this.running) return;
     this.running = true;
@@ -185,6 +190,15 @@ export class ThreeRenderer {
       return;
     }
     this.scene.update(snap.tod, snap.weather === "dust");
+    // solar-flare glow: the postfx exposure/bloom pulse scales with the hazard
+    // (full while active, a hint of it during the telegraph)
+    let flare = 0;
+    for (const h of snap.hazards) {
+      if (h.kind !== "flare") continue;
+      flare = Math.max(flare, h.phase === "active" ? h.intensity : h.intensity * 0.3);
+    }
+    this.scene.postfx.setFlare(flare);
+    this.scene.postfx.update(dt);
     this.reconcile(snap);
     this.reconcileColonists(snap, dt, now);
     this.reconcileDeposits(snap, now);
