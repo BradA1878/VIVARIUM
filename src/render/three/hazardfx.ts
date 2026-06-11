@@ -69,6 +69,23 @@ export class HazardFx {
     }
   }
 
+  // --- public spawners — the renderer fires these for non-hazard juice -------
+
+  /** parameterized shockwave: the quake ring with caller-chosen color/scale */
+  ringPulse(at: THREE.Vector3, color: number, maxScale = 1.6): void {
+    this.add(new Shockwave(this, at, color, maxScale));
+  }
+
+  /** a quick (~0.3s) glow-sphere pop + ring at a point */
+  flash(at: THREE.Vector3, color: number): void {
+    this.add(new FlashPop(this, at, color));
+  }
+
+  /** a small parameterized debris burst (e.g. a demolished building) */
+  puff(at: THREE.Vector3, chips = 5): void {
+    this.add(new DebrisBurst(this, at, chips));
+  }
+
   /** Advance every live effect; cull + dispose the finished ones. */
   update(dt: number): void {
     for (let i = this.effects.length - 1; i >= 0; i--) {
@@ -314,24 +331,27 @@ class MeteorImpact implements Effect {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Quake: a flat cyan-grey shockwave ring expanding + fading on the ground.    */
+/* Shockwave: a flat ring expanding + fading on the ground. Defaults are the   */
+/* quake look; ringPulse() reuses it with caller-chosen color/scale.           */
 /* -------------------------------------------------------------------------- */
 class Shockwave implements Effect {
   private readonly fx: HazardFx;
   private readonly ring: THREE.Mesh;
+  private readonly maxScale: number;
   private elapsed = 0;
   private readonly life = 0.6;
 
-  constructor(fx: HazardFx, at: THREE.Vector3) {
+  constructor(fx: HazardFx, at: THREE.Vector3, color: number = CYAN_GREY, maxScale = 2.6) {
     this.fx = fx;
-    this.ring = fx._makeGroundRing(CYAN_GREY, 0.9);
+    this.maxScale = maxScale;
+    this.ring = fx._makeGroundRing(color, 0.9);
     this.ring.position.set(at.x, 0.03, at.z);
   }
 
   tick(dt: number): boolean {
     this.elapsed += dt;
     const k = Math.min(1, this.elapsed / this.life);
-    const s = 0.2 + easeOut(k) * 2.6;
+    const s = 0.2 + easeOut(k) * this.maxScale;
     this.ring.scale.set(s, s, s);
     (this.ring.material as THREE.MeshBasicMaterial).opacity = (1 - k) * 0.9;
     return this.elapsed < this.life;
@@ -344,7 +364,50 @@ class Shockwave implements Effect {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Flash: a quick glow-sphere pop + ring (~0.3s) at a point.                   */
+/* -------------------------------------------------------------------------- */
+class FlashPop implements Effect {
+  private readonly fx: HazardFx;
+  private readonly glow: THREE.Mesh;
+  private readonly ring: THREE.Mesh;
+  private elapsed = 0;
+  private readonly life = 0.3;
+
+  constructor(fx: HazardFx, at: THREE.Vector3, color: number) {
+    this.fx = fx;
+    // transparent + no depth write: draw after the scene so the pop never sorts
+    // under nearby transparents
+    this.glow = fx._makeGlowSphere(color, 0.9);
+    this.glow.position.set(at.x, 0.3, at.z);
+    this.glow.renderOrder = 2;
+    this.ring = fx._makeGroundRing(color, 0.85);
+    this.ring.position.set(at.x, 0.03, at.z);
+    this.ring.renderOrder = 2;
+  }
+
+  tick(dt: number): boolean {
+    this.elapsed += dt;
+    const k = Math.min(1, this.elapsed / this.life);
+    const gs = 0.4 + easeOut(k) * 1.6;
+    this.glow.scale.set(gs, gs, gs);
+    (this.glow.material as THREE.MeshBasicMaterial).opacity = (1 - k) * 0.9;
+    const rs = 0.2 + easeOut(k) * 1.1;
+    this.ring.scale.set(rs, rs, rs);
+    (this.ring.material as THREE.MeshBasicMaterial).opacity = (1 - k) * 0.85;
+    return this.elapsed < this.life;
+  }
+
+  dispose(): void {
+    this.fx._group.remove(this.glow);
+    (this.glow.material as THREE.MeshBasicMaterial).dispose();
+    this.fx._group.remove(this.ring);
+    (this.ring.material as THREE.MeshBasicMaterial).dispose();
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* Building destroyed: outward debris burst + a brief expanding smoke sphere.   */
+/* puff() reuses it with a smaller chip count.                                  */
 /* -------------------------------------------------------------------------- */
 class DebrisBurst implements Effect {
   private readonly fx: HazardFx;
@@ -353,10 +416,10 @@ class DebrisBurst implements Effect {
   private elapsed = 0;
   private readonly life = 1.0;
 
-  constructor(fx: HazardFx, at: THREE.Vector3) {
+  constructor(fx: HazardFx, at: THREE.Vector3, count = 10) {
     this.fx = fx;
 
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < count; i++) {
       const ang = Math.random() * Math.PI * 2;
       const speed = 2 + Math.random() * 3;
       const vel = new THREE.Vector3(

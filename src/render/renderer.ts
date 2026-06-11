@@ -26,6 +26,9 @@ import { buildDepot, type DepotMesh } from "./three/depot";
 interface Placed {
   mesh: KitMesh;
   defId: string;
+  /** anchor cell, kept fresh across `move` — transient FX key on it */
+  gx: number;
+  gy: number;
 }
 
 /** a colonist's render record: its mesh plus the interpolated transform we lerp
@@ -36,10 +39,25 @@ interface ColonistRec {
   pos: THREE.Vector3;
   /** current (smoothed) facing angle */
   facing: number;
+  /** walk-cycle phase (radians) — advances with speed, slowly while idle */
+  gaitPhase: number;
+  /** last frame's smoothed position, the speed estimate's scratch */
+  prevPos: THREE.Vector3;
 }
 
-/** colonist states that should show the walking bob */
+/** colonist states that should show the walk cycle */
 const MOVING_STATES = new Set(["toWork", "toHome", "toMedbay", "mining", "hauling", "piloted"]);
+
+/** the established signature cyan, for transient FX (placed / possession rings) */
+const FX_CYAN = 0x7fd4e8;
+const FX_CYAN_DIM = 0x3f6a74;
+
+/** placed-pop scale-in duration (seconds) */
+const POP_TIME = 0.35;
+
+function easeOut(t: number): number {
+  return 1 - (1 - t) * (1 - t);
+}
 
 /** prototype status(): the glow that reads a building's health */
 function buildingStatus(b: BuildingState): { alive: boolean; hurt: boolean } {
@@ -100,6 +118,18 @@ export class ThreeRenderer {
   private camFocus = new THREE.Vector3(0, 0, 0);
   private camView = 13;
 
+  // transient juice bookkeeping — all of it small + self-expiring
+  // false until the first snapshot reconcile completes, so seeding the scene
+  // (construction/load) doesn't pop every building at once
+  private seededOnce = false;
+  // uid → elapsed seconds of its placed-pop scale-in
+  private spawnFx = new Map<number, number>();
+  // "gx,gy" → ms timestamp of a building_destroyed there (suppresses the
+  // demolish puff so hazard kills don't double-burst); entries expire after ~1s
+  private recentDestroyed = new Map<string, number>();
+  // undefined until the first snapshot, so loading mid-possession doesn't ping
+  private lastPossessed: number | null | undefined = undefined;
+
   constructor(canvas: HTMLCanvasElement, bridge: SimBridge, gridN: number) {
     this.bridge = bridge;
     this.scene = new SceneManager(canvas);
@@ -116,7 +146,14 @@ export class ThreeRenderer {
     this.hazardFx = new HazardFx(this.grid);
     this.scene.scene.add(this.hazardFx.group);
     // the renderer observes the event stream for transient hazard FX (doc §0)
-    this.unsubEvents = bridge.onEvent((e) => this.hazardFx.onEvent(e));
+    this.unsubEvents = bridge.onEvent((e) => {
+      this.hazardFx.onEvent(e);
+      // hazard kills already burst via hazardFx — remember the cell briefly so
+      // the reconcile-removal puff doesn't fire a second burst on the same spot
+      if (e.type === "building_destroyed" && e.gx !== undefined && e.gy !== undefined) {
+        this.recentDestroyed.set(`${e.gx},${e.gy}`, performance.now());
+      }
+    });
     this.onResize = this.onResize.bind(this);
     window.addEventListener("resize", this.onResize);
   }
@@ -194,6 +231,7 @@ export class ThreeRenderer {
     this.reconcileTrade(snap, dt, now);
     this.reconcileUfo(snap, dt, now);
     this.reconcileDepot(snap, now);
+    this.updateTransients(dt, now);
     this.updateCamera(snap, dt);
     this.placement.update();
     this.atmosphere.update(dt, snap.weather === "dust");
@@ -232,9 +270,18 @@ export class ThreeRenderer {
         mesh.object.position.copy(c);
         this.addDoor(mesh.object, def);
         this.buildingsGroup.add(mesh.object);
-        entry = { mesh, defId: b.defId };
+        entry = { mesh, defId: b.defId, gx: b.gx, gy: b.gy };
         this.placed.set(b.uid, entry);
+        // placed pop: scale-in + a cyan ring — only after the scene is seeded,
+        // so the first snapshot (construction/load) doesn't pop everything
+        if (this.seededOnce) {
+          mesh.object.scale.setScalar(0.05);
+          this.spawnFx.set(b.uid, 0);
+          this.hazardFx.ringPulse(c, FX_CYAN, 1.2);
+        }
       }
+      entry.gx = b.gx;
+      entry.gy = b.gy;
       // facing: turn the building by its rotation (corridors stay at rot 0)
       entry.mesh.object.rotation.y = -((b.rot ?? 0) * Math.PI) / 2;
 
@@ -269,10 +316,16 @@ export class ThreeRenderer {
         const door = entry.mesh.object.getObjectByName("door");
         if (door) entry.mesh.object.remove(door);
         this.buildingsGroup.remove(entry.mesh.object);
+        // demolish puff — suppressed when a hazard just destroyed this cell
+        // (building_destroyed already bursts via hazardFx.onEvent)
+        const ts = this.recentDestroyed.get(`${entry.gx},${entry.gy}`);
+        if (ts === undefined || now - ts > 1000) this.hazardFx.puff(entry.mesh.object.position);
         entry.mesh.dispose();
         this.placed.delete(uid);
+        this.spawnFx.delete(uid);
       }
     }
+    this.seededOnce = true;
   }
 
   /** a visible door on a building's front (its local def.door side), as a child of
@@ -323,9 +376,10 @@ export class ThreeRenderer {
   }
 
   /** astronauts: add/remove per colonist id, lerp position + facing toward the
-   *  snapshot (smooth between ~12fps snapshots), bob while moving, and drive the
-   *  possessed ring + carry cube. facing = atan2(dx,dy) in grid space maps to
-   *  group.rotation.y directly (grid +x→world +x, grid +y→world +z). */
+   *  snapshot (smooth between ~12fps snapshots), run the walk cycle off the
+   *  smoothed speed, and drive the possessed ring + carry cube. facing =
+   *  atan2(dx,dy) in grid space maps to group.rotation.y directly (grid
+   *  +x→world +x, grid +y→world +z). */
   private reconcileColonists(snap: Snapshot, dt: number, now: number): void {
     const seen = new Set<number>();
     const posLerp = 1 - Math.exp(-12 * dt); // frame-rate independent smoothing
@@ -338,7 +392,8 @@ export class ThreeRenderer {
       if (!rec) {
         const mesh = buildAstronaut();
         this.colonistsGroup.add(mesh.object);
-        rec = { mesh, pos: target.clone(), facing: c.facing };
+        // phase seeded by id so strides don't sync across the crew
+        rec = { mesh, pos: target.clone(), facing: c.facing, gaitPhase: c.id, prevPos: target.clone() };
         this.colonists.set(c.id, rec);
       }
       // interpolate world position toward the snapshot
@@ -352,11 +407,28 @@ export class ThreeRenderer {
       rec.facing += d * posLerp;
       rec.mesh.object.rotation.y = rec.facing;
 
-      // walking bob on the inner body (only while moving/working on the surface)
-      const moving = MOVING_STATES.has(c.state);
-      rec.mesh.body.position.y = moving ? Math.abs(Math.sin(now / 130 + c.id)) * 0.05 : 0;
+      // walk cycle: speed from the smoothed position delta drives the stride;
+      // idle keeps a slow phase advance for the micro-sway
+      const speed = dt > 0 ? rec.prevPos.distanceTo(rec.pos) / dt : 0;
+      rec.prevPos.copy(rec.pos);
+      const amp = MOVING_STATES.has(c.state) ? Math.min(1, speed / 2.2) : 0;
+      rec.gaitPhase += (MOVING_STATES.has(c.state) ? 6 + 5 * amp : 6 * 0.4) * dt;
+      // bob phase-locked to the gait so feet and bounce agree
+      rec.mesh.body.position.y = Math.abs(Math.sin(rec.gaitPhase)) * 0.05 * amp;
+      rec.mesh.setGait(rec.gaitPhase, amp, amp);
 
       rec.mesh.setState(c.id === snap.possessed, c.carryKind, pulse, this.env);
+    }
+
+    // possession transitions ring the colonist: bright on engage, dim on release
+    if (this.lastPossessed === undefined) {
+      this.lastPossessed = snap.possessed; // first snapshot: adopt, don't ping
+    } else if (snap.possessed !== this.lastPossessed) {
+      const engage = snap.possessed != null;
+      const id = engage ? snap.possessed : this.lastPossessed;
+      const rec = id != null ? this.colonists.get(id) : undefined;
+      if (rec) this.hazardFx.ringPulse(rec.pos, engage ? FX_CYAN : FX_CYAN_DIM, engage ? 2.0 : 1.2);
+      this.lastPossessed = snap.possessed;
     }
 
     for (const [id, rec] of this.colonists) {
@@ -454,6 +526,32 @@ export class ThreeRenderer {
     const me = snap.possessed != null ? snap.colonists.find((cc) => cc.id === snap.possessed) : undefined;
     if (me && me.carryAmt > 0 && Math.hypot(snap.depot.gx - me.x, snap.depot.gy - me.y) <= 1.5) active = 1;
     this.depot.setGlow(active, 0.5 + 0.5 * Math.sin(now / 360));
+  }
+
+  /** advance the short-lived juice: the placed-pop scale-in and the expiry of
+   *  the destroyed-cell suppression keys (both maps stay tiny). */
+  private updateTransients(dt: number, now: number): void {
+    for (const [uid, t0] of this.spawnFx) {
+      const entry = this.placed.get(uid);
+      if (!entry) {
+        this.spawnFx.delete(uid);
+        continue;
+      }
+      const t = t0 + dt;
+      if (t >= POP_TIME) {
+        entry.mesh.object.scale.setScalar(1);
+        this.spawnFx.delete(uid);
+        continue;
+      }
+      this.spawnFx.set(uid, t);
+      // 0.05 → overshoot 1.06 over the first 70%, then settle to 1.0
+      const k = t / POP_TIME;
+      const s = k < 0.7 ? 0.05 + 1.01 * easeOut(k / 0.7) : 1.06 - 0.06 * ((k - 0.7) / 0.3);
+      entry.mesh.object.scale.setScalar(s);
+    }
+    for (const [key, ts] of this.recentDestroyed) {
+      if (now - ts > 1000) this.recentDestroyed.delete(key);
+    }
   }
 
   /** follow-cam: lerp focus + ortho extent toward the possessed colonist (zoomed

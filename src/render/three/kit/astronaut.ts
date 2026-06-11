@@ -30,6 +30,9 @@ export interface AstronautMesh {
   body: THREE.Group;
   /** drive per-frame look: possessed ring/emissive + carry cube + night glows */
   setState(possessed: boolean, carryKind: DepositKind | null, pulse: number, env?: KitEnv): void;
+  /** drive the walk cycle: phase advances with travel, amp (0..1) scales the
+   *  limb swing, lean tips the upper body into the stride. amp < 0.05 = idle. */
+  setGait(phase: number, amp: number, lean: number): void;
   dispose(): void;
 }
 
@@ -69,48 +72,75 @@ export function buildAstronaut(): AstronautMesh {
     color: 0x7fd4e8, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
   });
 
-  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, cast = true): THREE.Mesh => {
+  const add = (parent: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, cast = true): THREE.Mesh => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
     m.castShadow = cast;
-    body.add(m);
+    parent.add(m);
     return m;
   };
 
-  // --- legs + boots (feet at y≈0) --------------------------------------------
-  for (const sx of [-1, 1]) {
-    add(new THREE.CapsuleGeometry(0.05, 0.12, 3, 6), suitMat, sx * 0.07, 0.13, 0);
-    add(new THREE.BoxGeometry(0.1, 0.05, 0.13), trimMat, sx * 0.07, 0.03, 0.015); // boot
-  }
+  // pivot heights (body-local). Limbs live in pivot groups so setGait can swing
+  // them; every child offset is re-expressed pivot-local, so the rest pose
+  // (all pivot rotations 0) matches the original flat layout exactly.
+  const HIP_Y = 0.24;
+  const SHOULDER_Y = 0.43;
+  const NECK_Y = 0.49;
 
-  // --- torso: a bulky EVA suit (wider than tall reads "suited") ---------------
-  const torso = add(new THREE.CapsuleGeometry(0.135, 0.13, 5, 10), suitMat, 0, 0.34, 0);
+  // --- legs + boots in hip pivots (feet at y≈0) ------------------------------
+  const buildLeg = (sx: number): THREE.Group => {
+    const hip = new THREE.Group();
+    hip.position.set(sx * 0.07, HIP_Y, 0);
+    body.add(hip);
+    add(hip, new THREE.CapsuleGeometry(0.05, 0.12, 3, 6), suitMat, 0, 0.13 - HIP_Y, 0);
+    add(hip, new THREE.BoxGeometry(0.1, 0.05, 0.13), trimMat, 0, 0.03 - HIP_Y, 0.015); // boot
+    return hip;
+  };
+  const hipL = buildLeg(1);
+  const hipR = buildLeg(-1);
+
+  // --- torso group: everything above the hips, so the upper body can lean ----
+  const torsoG = new THREE.Group();
+  torsoG.position.y = HIP_Y;
+  body.add(torsoG);
+
+  // torso: a bulky EVA suit (wider than tall reads "suited")
+  const torso = add(torsoG, new THREE.CapsuleGeometry(0.135, 0.13, 5, 10), suitMat, 0, 0.34 - HIP_Y, 0);
   torso.scale.set(1.05, 1, 0.85);
-  add(new THREE.BoxGeometry(0.11, 0.1, 0.04), trimMat, 0, 0.32, 0.12, false); // chest panel
+  add(torsoG, new THREE.BoxGeometry(0.11, 0.1, 0.04), trimMat, 0, 0.32 - HIP_Y, 0.12, false); // chest panel
 
-  // --- shoulders + arms (angled slightly out) --------------------------------
-  for (const sx of [-1, 1]) {
-    add(new THREE.SphereGeometry(0.06, 8, 8), suitMat, sx * 0.155, 0.43, 0); // shoulder
-    const arm = add(new THREE.CapsuleGeometry(0.045, 0.16, 3, 6), suitMat, sx * 0.18, 0.31, 0);
-    arm.rotation.z = sx * 0.22;
-    add(new THREE.SphereGeometry(0.05, 8, 8), trimMat, sx * 0.2, 0.21, 0); // glove
-  }
+  // --- shoulders + arms (angled slightly out) in shoulder pivots --------------
+  const buildArm = (sx: number): THREE.Group => {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(sx * 0.155, SHOULDER_Y - HIP_Y, 0);
+    torsoG.add(shoulder);
+    add(shoulder, new THREE.SphereGeometry(0.06, 8, 8), suitMat, 0, 0, 0); // shoulder
+    const arm = add(shoulder, new THREE.CapsuleGeometry(0.045, 0.16, 3, 6), suitMat, sx * 0.025, 0.31 - SHOULDER_Y, 0);
+    arm.rotation.z = sx * 0.22; // keep the slight outward splay
+    add(shoulder, new THREE.SphereGeometry(0.05, 8, 8), trimMat, sx * 0.045, 0.21 - SHOULDER_Y, 0); // glove
+    return shoulder;
+  };
+  const shoulderL = buildArm(1);
+  const shoulderR = buildArm(-1);
 
-  // --- neck → helmet ---------------------------------------------------------
-  add(new THREE.CylinderGeometry(0.055, 0.07, 0.05, 8), trimMat, 0, 0.46, 0, false);
-  const helmet = add(new THREE.SphereGeometry(0.115, 14, 12), suitMat, 0, 0.57, 0);
+  // --- neck → helmet (a head pivot lets the helmet tilt a touch past the lean)
+  add(torsoG, new THREE.CylinderGeometry(0.055, 0.07, 0.05, 8), trimMat, 0, 0.46 - HIP_Y, 0, false);
+  const head = new THREE.Group();
+  head.position.y = NECK_Y - HIP_Y;
+  torsoG.add(head);
+  const helmet = add(head, new THREE.SphereGeometry(0.115, 14, 12), suitMat, 0, 0.57 - NECK_Y, 0);
   helmet.scale.set(1, 0.95, 1);
 
   // --- visor: a dark reflective lens across the FRONT of the helmet -----------
-  const visor = add(new THREE.SphereGeometry(0.1, 14, 12), visorMat, 0, 0.565, 0.045, false);
+  const visor = add(head, new THREE.SphereGeometry(0.1, 14, 12), visorMat, 0, 0.565 - NECK_Y, 0.045, false);
   visor.scale.set(0.92, 0.62, 0.55);
 
   // --- antenna ---------------------------------------------------------------
-  add(new THREE.CylinderGeometry(0.006, 0.006, 0.09, 5), trimMat, 0.07, 0.69, -0.02, false);
-  add(new THREE.SphereGeometry(0.018, 8, 8), accentMat, 0.07, 0.74, -0.02, false);
+  add(head, new THREE.CylinderGeometry(0.006, 0.006, 0.09, 5), trimMat, 0.07, 0.69 - NECK_Y, -0.02, false);
+  add(head, new THREE.SphereGeometry(0.018, 8, 8), accentMat, 0.07, 0.74 - NECK_Y, -0.02, false);
 
   // --- life-support backpack on the BACK (−Z) --------------------------------
-  add(new THREE.BoxGeometry(0.21, 0.26, 0.1), packMat, 0, 0.35, -0.14);
+  add(torsoG, new THREE.BoxGeometry(0.21, 0.26, 0.1), packMat, 0, 0.35 - HIP_Y, -0.14);
 
   // --- possessed ground ring (on the root, so it stays flat + un-bobbed) ------
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.24, 24), ringMat);
@@ -150,6 +180,27 @@ export function buildAstronaut(): AstronautMesh {
       } else {
         carry.visible = false;
       }
+    },
+    setGait(phase, amp, lean) {
+      if (amp < 0.05) {
+        // idle: a slow micro-sway while every limb eases back to rest
+        torsoG.rotation.z = Math.sin(phase * 0.3) * 0.02;
+        torsoG.rotation.x *= 0.85;
+        head.rotation.x *= 0.85;
+        hipL.rotation.x *= 0.85;
+        hipR.rotation.x *= 0.85;
+        shoulderL.rotation.x *= 0.85;
+        shoulderR.rotation.x *= 0.85;
+        return;
+      }
+      const swing = Math.sin(phase) * 0.55 * amp;
+      hipL.rotation.x = swing;
+      hipR.rotation.x = -swing;
+      shoulderL.rotation.x = -swing * 0.4; // arms counter-phase the legs
+      shoulderR.rotation.x = swing * 0.4;
+      torsoG.rotation.x = lean * 0.14; // lean into the stride
+      head.rotation.x = lean * 0.06;
+      torsoG.rotation.z *= 0.85; // the idle sway hands off as the walk takes over
     },
     dispose() {
       disposeObject(object);
