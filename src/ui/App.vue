@@ -20,6 +20,7 @@ import Palette from "./components/Palette.vue";
 import TradePrompt from "./components/TradePrompt.vue";
 import PilotBar from "./components/PilotBar.vue";
 import FirstHint from "./components/FirstHint.vue";
+import HintToast from "./components/HintToast.vue";
 import SettingsModal from "./components/SettingsModal.vue";
 import { SimBridge } from "@/worker/bridge";
 import { Tuning } from "@/engine";
@@ -146,6 +147,7 @@ onUnmounted(() => {
 
     <div v-if="!booting" class="hint-layer">
       <FirstHint />
+      <HintToast />
     </div>
 
     <EndScreen v-if="!booting" />

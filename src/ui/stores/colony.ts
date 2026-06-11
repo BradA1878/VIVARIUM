@@ -23,6 +23,11 @@ import type { HazardKind } from "@shared/types";
 import { clockOf } from "../format";
 import { useSettings } from "./settings";
 import { audio, initAudio } from "../audio";
+import {
+  emptyHistory, loadHistory, recordEvent, recordSnapshot, resetHistory, saveHistory,
+  type RunHistory,
+} from "./history";
+import { Hints, type Hint } from "../hints";
 
 // player preferences (persisted) — gate the director, the live narrator, render
 // quality, the audio gains, and the next run's difficulty. The deep watch below
@@ -45,6 +50,8 @@ const tool: Ref<string | null> = ref(null);
 const demolish = ref(false);
 const hover: Ref<HoverInfo | null> = ref(null);
 const selected: Ref<SelectInfo | null> = ref(null);
+/** the contextual teaching toast currently on screen (HintToast.vue renders it) */
+const hintToast: Ref<Hint | null> = ref(null);
 
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
@@ -56,9 +63,32 @@ let playerModel: PlayerModel = { runs: 0, wins: 0, deaths: 0, solsSum: 0, byAxis
 let directorBias: Record<HazardKind, number> = { dust: 1, meteor: 1, flare: 1, coldsnap: 1, quake: 1 };
 let lastCritRes: Axis | null = null;
 let lastHazard: HazardKind | null = null;
+// this run's telemetry — curves + event tallies for the end-of-run report
+let history: RunHistory = emptyHistory();
+// the one-shot teaching toasts (seen-set persists across runs)
+let hints: Hints | null = null;
+let hintTimer: ReturnType<typeof setTimeout> | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let stopSettingsWatch: (() => void) | null = null;
 let msgId = 1;
+
+const HINT_TOAST_MS = 14_000;
+
+/** put a hint on screen (with the soft interface blip) and arm its auto-dismiss */
+function showHint(h: Hint | null): void {
+  if (!h) return;
+  hintToast.value = h;
+  audio.uiTick();
+  if (hintTimer) clearTimeout(hintTimer);
+  hintTimer = setTimeout(dismissHint, HINT_TOAST_MS);
+}
+
+/** close the toast (✕, auto-dismiss, or reset) and let the next hint through */
+function dismissHint(): void {
+  if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
+  hintToast.value = null;
+  hints?.dismiss();
+}
 
 const AUTOSAVE_MS = 12_000;
 
@@ -106,6 +136,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   council = new Council();
   sentinel = new Sentinel();
   director = new Director();
+  hints = new Hints();
   // the planet remembers how this player dies and opens accordingly
   playerModel = loadModel();
   directorBias = openingBias(playerModel);
@@ -143,17 +174,25 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 
   b.onSnapshot((s) => {
     snapshot.value = s;
+    recordSnapshot(history, s); // the run report's curves sample from here
     sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
     // the Director observes and may throw a hazard, aimed by colony shape, the
     // memory of past deaths, and how settled the Sentinel thinks the player is
     if (settings.value.directorEnabled) {
       const strike = director?.decide(s, Math.random, { bias: directorBias, comfort: sentinel?.comfort() });
-      if (strike) b.triggerHazard(strike.kind, strike.intensity);
+      if (strike) {
+        b.triggerHazard(strike.kind, strike.intensity);
+        history.directorStrikes++;
+      }
     }
+    // snapshot-derived teaching toasts (stranded pressure building, first possession)
+    if (!s.outcome && hints) showHint(hints.onSnapshot(s));
   });
 
   // track the failure signature + record it across runs (the learning)
   b.onEvent((e) => {
+    recordEvent(history, e); // the run report's tallies count from here
+    if (!snapshot.value?.outcome && hints) showHint(hints.onEvent(e)); // event-driven teaching toasts
     if (e.type === "crit_start" && e.res) lastCritRes = e.res as Axis;
     else if (e.type === "hazard_start" && e.kind) lastHazard = e.kind;
     else if (e.type === "victory" || e.type === "defeat") {
@@ -165,6 +204,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
       });
       saveModel(playerModel);
       directorBias = openingBias(playerModel);
+      saveHistory(history); // the report survives a closed tab
     }
   });
   r.onHover((info) => { hover.value = info; });
@@ -191,13 +231,16 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   // and its people in a sub-region of the new world. A fresh seed beats both.
   void loadBest().then((save) => {
     const usable = save && !save.state.outcome && save.state.N === GRID_N;
-    if (usable) b.load(save);
-    else if (save) { clearLocal(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
+    if (usable) {
+      b.load(save);
+      history = loadHistory(); // a resumed run keeps its curves
+    } else if (save) { clearLocal(); history = resetHistory(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
   });
 
   // autosave on an interval — Mongo when reachable, localStorage always
   autosaveTimer = setInterval(() => {
     void b.save().then(persist);
+    saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
 
   // first words
@@ -209,6 +252,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 /** tear down the store's timers + watchers (called from App on unmount) */
 export function disposeColony(): void {
   if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+  if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
   if (stopSettingsWatch) { stopSettingsWatch(); stopSettingsWatch = null; }
   sentinel?.dispose();
   audio.dispose();
@@ -274,6 +318,9 @@ const controls = {
     lastCritRes = null;
     lastHazard = null;
     clearLocal(); // discard the saved colony; autosave will persist the fresh one
+    history = resetHistory(); // a new run starts its telemetry from zero
+    dismissHint();
+    hints = new Hints(); // fresh scratch; the persisted seen-set still holds
     messages.value = [];
     clearTool();
     // re-greet after the colony reseeds
@@ -289,6 +336,69 @@ export function onColonyEvent(fn: (e: ColonyEvent) => void): () => void {
   return bridge ? bridge.onEvent(fn) : () => {};
 }
 
+// ---- the run report (EndScreen) ------------------------------------------------
+
+/** this run's recorded telemetry — curves, tallies, director strikes */
+function runHistory(): RunHistory {
+  return history;
+}
+
+/** how each hazard reads when it shades a death sentence */
+const HAZARD_CLAUSE: Record<HazardKind, string> = {
+  dust: "under a sky full of dust",
+  meteor: "in the shadow of a meteor strike",
+  flare: "with the flare still in the wires",
+  coldsnap: "in the deep cold",
+  quake: "on ground that would not stay still",
+};
+
+/** one line naming the proximate cause of the end — the record's last word */
+function runEpitaph(): string {
+  const s = snapshot.value;
+  if (!s || !s.outcome) return "";
+  const clause = lastHazard ? HAZARD_CLAUSE[lastHazard] : null;
+  if (s.outcome === "victory") {
+    return clause
+      ? `The colony learned to breathe on its own — even ${clause}.`
+      : "The colony learned to breathe on its own.";
+  }
+  if (s.outcomeReason === "window") {
+    return clause
+      ? `Time ran out ${clause}, with the colony still short of standing alone.`
+      : "Time ran out with the colony still short of standing alone.";
+  }
+  const failed = lastCritRes ? `The ${lastCritRes} failed last` : "Everything failed at once";
+  return clause ? `${failed}, ${clause}.` : `${failed}.`;
+}
+
+/** the planet's cross-run learning, shaped for the end screen's dossier panel */
+export interface DirectorDossier {
+  runs: number;
+  wins: number;
+  deaths: number;
+  byAxis: Record<Axis, number>;
+  byHazard: Record<HazardKind, number>;
+  /** per-hazard opening multipliers (1 = neutral) the Director starts with */
+  bias: Record<HazardKind, number>;
+  avgSols: number;
+}
+
+function directorDossier(): DirectorDossier {
+  return {
+    runs: playerModel.runs,
+    wins: playerModel.wins,
+    deaths: playerModel.deaths,
+    byAxis: { ...playerModel.byAxis },
+    byHazard: { ...playerModel.byHazard },
+    bias: openingBias(playerModel),
+    avgSols: playerModel.runs > 0 ? playerModel.solsSum / playerModel.runs : 0,
+  };
+}
+
 export function useColony() {
-  return { snapshot, messages, tool, demolish, hover, selected, pick, toggleDemolish, clearTool, rotate, removeSelected, controls };
+  return {
+    snapshot, messages, tool, demolish, hover, selected, hintToast,
+    pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint,
+    runHistory, runEpitaph, directorDossier, controls,
+  };
 }

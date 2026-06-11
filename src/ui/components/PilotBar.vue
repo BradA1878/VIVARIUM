@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /* ============================================================================
    PilotBar — the piloting bar (bottom-center, above the Inspector). Shown only
-   while possessing a colonist. Surfaces the carry state and a CONTEXT prompt:
+   while possessing a colonist. Names who you are (and their trade), surfaces
+   the carry state, and offers a CONTEXT prompt:
    stand on a deposit → "P: mine"; carry a load to the depot → "P: drop". The F
    key (release) and P key (interact) are bound in App.vue.
    ============================================================================ */
@@ -15,7 +16,7 @@ const { snapshot } = useColony();
 const pilot = computed(() => {
   const s = snapshot.value;
   if (!s || s.possessed == null) return null;
-  return s.colonists.find((c) => c.possessed) ?? null;
+  return s.colonists.find((c) => c.id === s.possessed) ?? null;
 });
 
 const CARRY_COL: Record<"ice" | "ore" | "cache", string> = {
@@ -49,7 +50,7 @@ const action = computed(() => {
 
 <template>
   <div v-if="pilot" class="pilot">
-    <span class="pilot-tag">&#9654; PILOTING</span>
+    <span class="pilot-tag">&#9654; PILOTING — {{ pilot.name.toUpperCase() }} · {{ pilot.role.toUpperCase() }}</span>
     <span class="pilot-sep" />
     <span v-if="pilot.carryKind" class="pilot-carry" :style="{ color: carryCol }">
       carrying {{ fmt(pilot.carryAmt, 0) }} / {{ CARRY_CAP }} {{ pilot.carryKind }}
