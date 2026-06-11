@@ -12,6 +12,7 @@ import { difficultyProfile } from "./tuning";
 import { idx, removeBuilding } from "./grid";
 import { recomputeCaps } from "./caps";
 import { applyStrikeInjuries } from "./injury";
+import { applyStrikeMachines } from "./rover";
 import type { ColonyState, HazardInstance } from "./state";
 import type { BuildingState } from "@shared/types";
 import type { RNG } from "./rng";
@@ -155,11 +156,13 @@ function strikeCell(s: ColonyState, rng: RNG, emit: Emit, dmg: number, cause: Ha
       damageBuilding(s, b, dmg, emit, cause);
       emit({ type: "strike", gx: x, gy: y, hit: true, detail: cause });
       applyStrikeInjuries(s, x, y, emit);
+      applyStrikeMachines(s, x, y, emit);
       return;
     }
   }
   emit({ type: "strike", gx: x, gy: y, hit: false, detail: cause });
   applyStrikeInjuries(s, x, y, emit);
+  applyStrikeMachines(s, x, y, emit);
 }
 
 /** a strike aimed at a filtered building (quakes hit infrastructure) */
@@ -170,6 +173,7 @@ function strikeTarget(s: ColonyState, rng: RNG, emit: Emit, dmg: number, cause: 
   damageBuilding(s, b, dmg, emit, cause);
   emit({ type: "strike", gx: b.gx, gy: b.gy, hit: true, detail: cause });
   applyStrikeInjuries(s, b.gx, b.gy, emit);
+  applyStrikeMachines(s, b.gx, b.gy, emit);
 }
 
 export function damageBuilding(s: ColonyState, b: BuildingState, amount: number, emit: Emit, cause: string): void {

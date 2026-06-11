@@ -5,7 +5,7 @@
    and synchronous placement prediction (doc §0: observe, don't reach in).
    ============================================================================ */
 import type { BuildingState, ColonyEvent, Difficulty, HazardKind, Snapshot } from "@shared/types";
-import { DEFS, type SaveData } from "@/engine";
+import { DEFS, FUNC_THRESHOLD, type SaveData } from "@/engine";
 import { buildingAtPredict, canPlacePredict, canMovePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
 import type { Command, Outbound } from "./protocol";
@@ -83,14 +83,22 @@ export class SimBridge {
   interact(): void { this.send({ type: "interact" }); }
   /** accept/decline the landed alien trade offer */
   respondTrade(accept: boolean): void { this.send({ type: "respondTrade", accept }); }
-  /** possess the colonist nearest a grid point (e.g. the camera target); returns its id */
+  /** possess the actor nearest a grid point (e.g. the camera target) — scans
+   *  colonists AND rovers (skipping rovers too dented to drive); strictly the
+   *  nearest wins, ties to the lower id. Returns the possessed id. */
   possessNearest(gx: number, gy: number): number | null {
-    if (!this.latest || !this.latest.colonists.length) return null;
-    let best = this.latest.colonists[0], bestD = Infinity;
-    for (const c of this.latest.colonists) {
+    if (!this.latest) return null;
+    const cands: { id: number; x: number; y: number }[] = [
+      ...this.latest.colonists,
+      ...this.latest.rovers.filter((r) => r.integrity >= FUNC_THRESHOLD),
+    ];
+    let best: { id: number; x: number; y: number } | null = null;
+    let bestD = Infinity;
+    for (const c of cands) {
       const d = (c.x - gx) ** 2 + (c.y - gy) ** 2;
-      if (d < bestD) { bestD = d; best = c; }
+      if (d < bestD || (d === bestD && best !== null && c.id < best.id)) { bestD = d; best = c; }
     }
+    if (!best) return null;
     this.possess(best.id);
     return best.id;
   }

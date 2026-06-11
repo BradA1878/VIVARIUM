@@ -115,6 +115,44 @@ export function dropCarryAtDepot(s: ColonyState, agent: CarryAgent): void {
   agent.carryKind = null;
 }
 
+// ---- multi-kind cargo (the rover's bays — kinds stack side by side) ---------
+
+/** the fixed order a multi-kind bed banks in at the depot — determinism by
+ *  declaration, never object-key iteration */
+export const CARGO_KINDS: DepositKind[] = ["ice", "ore", "cache"];
+
+/** total units across a multi-kind cargo bed */
+export function cargoTotal(cargo: Partial<Record<DepositKind, number>>): number {
+  let t = 0;
+  for (const k of CARGO_KINDS) t += cargo[k] ?? 0;
+  return t;
+}
+
+/** transfer up to `cap − total` units from a deposit into a multi-kind cargo
+ *  bed (no kind lock — unlike a suit's hands). Returns the units taken. */
+export function pickupIntoCargo(
+  s: ColonyState, cargo: Partial<Record<DepositKind, number>>, dep: DepositInstance, cap: number,
+): number {
+  const amt = Math.min(dep.amount, cap - cargoTotal(cargo));
+  if (amt <= 0) return 0;
+  dep.amount -= amt;
+  cargo[dep.kind] = (cargo[dep.kind] ?? 0) + amt;
+  s.deposits = s.deposits.filter((d) => d.amount > 0.001);
+  return amt;
+}
+
+/** bank EVERY bay into its pool (via DEPOSIT_YIELD) in CARGO_KINDS order,
+ *  emptying the bed — one press at the depot clears the whole load */
+export function dropCargoAtDepot(
+  s: ColonyState, cargo: Partial<Record<DepositKind, number>>,
+): void {
+  for (const k of CARGO_KINDS) {
+    const amt = cargo[k] ?? 0;
+    if (amt > 0) addToPool(s, DEPOSIT_YIELD[k], amt);
+    delete cargo[k];
+  }
+}
+
 /** route around buildings toward a goal: one waypoint of BFS path per tick */
 function walkToward(s: ColonyState, a: GatherAgent, goal: Pt, speed: number, dt: number): void {
   const path = findPath(s, Math.round(a.x), Math.round(a.y), Math.round(goal.x), Math.round(goal.y));

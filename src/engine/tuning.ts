@@ -111,6 +111,19 @@ export const DEPOT_RADIUS = 1.5;   // cells: how close to the depot to drop a lo
 export const AUTO_CARRY = 12;     // units an auto-gatherer hauls per trip
 export const GATHER_DWELL = 1.2;  // seconds spent mining at the node per pickup
 
+/** the rover — rung 2 of the automation ladder. One drivable bulk hauler,
+ *  fabricated by the Rover Bay on a colony countdown that PAUSES while the bay
+ *  is offline. Multi-kind cargo bays, faster and bigger than a suit; ids draw
+ *  from the colonist counter so possession needs no new command. Strikes dent
+ *  it (it is never destroyed) and it slowly self-repairs. Zero RNG anywhere. */
+export const ROVER_CAP = 1;            // fleet size the bay builds up to
+export const ROVER_BUILD_TIME = 45;    // fabrication seconds per rover
+export const ROVER_SPEED = 4.5;        // cells/sec under possession (suit: 2.6)
+export const ROVER_CARGO_CAP = 80;     // units across ALL bays (suit hands: 20)
+export const ROVER_STRIKE_DMG = 0.35;  // integrity lost per nearby meteor/quake strike
+export const ROVER_HIT_RADIUS = 1.6;   // cells: strike-to-rover distance that dents
+export const ROVER_REPAIR_RATE = 0.02; // integrity/sec self-repair toward 1
+
 /** the seeded deposit field (uses a SEPARATE env-rng so the main hazard/arrival
  *  stream is byte-for-byte unchanged) */
 export const DEPOSIT_COUNT = 11;      // deposits scattered at colony start (more, for the bigger map)

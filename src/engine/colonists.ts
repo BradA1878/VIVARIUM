@@ -16,7 +16,7 @@ import type { ColonistView, DepositView } from "@shared/types";
 import { DEFS } from "./defs";
 import {
   WALK_SPEED, PILOT_SPEED, ARRIVE_EPS, CARRY_CAP, DEPOT_RADIUS,
-  AUTO_CARRY, GATHER_DWELL,
+  AUTO_CARRY, GATHER_DWELL, ROVER_CARGO_CAP,
   DAY_START, DAY_END, MATERIALS_CAP, INJURED_SPEED, INJURED_PILOT_FACTOR,
 } from "./tuning";
 import type { ColonistInstance, ColonyState, DepositInstance } from "./state";
@@ -26,7 +26,8 @@ import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
 import { BUILDING_ROLE, nameOf, roleOf } from "./roster";
 import {
-  depotCenter, dropCarryAtDepot, nearestDepositInReach, pickupFromDeposit,
+  cargoTotal, depotCenter, dropCargoAtDepot, dropCarryAtDepot,
+  nearestDepositInReach, pickupFromDeposit, pickupIntoCargo,
   stepGatherer, stepToward, type Pt,
 } from "./gather";
 
@@ -104,8 +105,9 @@ function nearestShelter(s: ColonyState, p: Pt): Pt {
   return best ? accessCell(s, best) : baseCenter(s);
 }
 
-/** an empty cell nearest a point — where new arrivals spawn (not on a building) */
-function freeCellNear(s: ColonyState, p: Pt): Pt {
+/** an empty cell nearest a point — where new arrivals spawn and fresh rovers
+ *  roll out (never on a building) */
+export function freeCellNear(s: ColonyState, p: Pt): Pt {
   const ri = Math.round(p.x), rj = Math.round(p.y);
   for (let r = 0; r < s.N; r++) {
     for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
@@ -191,11 +193,29 @@ export function depositInReach(s: ColonyState, c: ColonistInstance): DepositInst
   return nearestDepositInReach(s, c.x, c.y, c.carryKind ?? undefined);
 }
 
-/** explicit pick up / drop for the possessed colonist (the player pressed P).
- *  Drops the full load at the depot if carrying + in range; otherwise grabs a
- *  load from the nearest in-range deposit. One press fills or empties the hands. */
+/** explicit pick up / drop for the possessed actor (the player pressed P) —
+ *  dispatched by actor type, since rover ids share the colonist counter.
+ *  A COLONIST: drops the full load at the depot if carrying + in range,
+ *  otherwise grabs a load from the nearest in-range deposit (one kind).
+ *  A ROVER: one press at the depot banks ALL its bays in the fixed kind order;
+ *  otherwise it tops the bed up from the nearest deposit of ANY kind. */
 export function interactPossessed(s: ColonyState): "picked" | "dropped" | null {
   if (s.possessed == null) return null;
+
+  const r = (s.rovers ?? []).find((x) => x.id === s.possessed);
+  if (r) {
+    if (cargoTotal(r.cargo) > 0) {
+      const d = depotCenter(s);
+      if (Math.hypot(d.x - r.x, d.y - r.y) <= DEPOT_RADIUS) {
+        dropCargoAtDepot(s, r.cargo);
+        return "dropped";
+      }
+    }
+    const dep = nearestDepositInReach(s, r.x, r.y); // any kind — the bays are separate
+    if (dep && pickupIntoCargo(s, r.cargo, dep, ROVER_CARGO_CAP) > 0) return "picked";
+    return null;
+  }
+
   const c = s.colonists.find((x) => x.id === s.possessed);
   if (!c) return null;
 

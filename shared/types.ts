@@ -177,6 +177,26 @@ export interface ColonistView {
   possessed: boolean;
 }
 
+/** a drivable rover — the colony's bulk hauler, possessed through the SAME id
+ *  space as colonists (the engine draws rover ids from the colonist counter,
+ *  so `possess {id}` addresses either). Its bays carry MULTIPLE deposit kinds
+ *  at once, unlike a suit's one-kind hands. */
+export interface RoverView {
+  id: number;
+  x: number;
+  y: number;
+  /** facing angle in radians (world XZ) */
+  facing: number;
+  /** per-kind cargo bays */
+  cargo: Partial<Record<DepositKind, number>>;
+  /** sum across the bays (precomputed for the HUD) */
+  cargoTotal: number;
+  /** 0..1 — strikes dent it; below the functional threshold it can't drive
+   *  (it self-repairs, and is never destroyed) */
+  integrity: number;
+  possessed: boolean;
+}
+
 export type TradePhase = "inbound" | "landed" | "leaving";
 
 /** what an offer hands over: a resource, the build currency, or a permanent
@@ -232,6 +252,8 @@ export interface Snapshot {
   deposits: DepositView[];
   /** geothermal vents — static terrain the geothermal tap must sit on */
   vents: VentView[];
+  /** drivable rovers — bulk haulers fabricated at the Rover Bay */
+  rovers: RoverView[];
   /** the collection depot cell — where the possessed colonist drops materials */
   depot: { gx: number; gy: number };
   /** the id of the colonist the player is piloting, or null */
@@ -334,6 +356,8 @@ export type EventType =
   | "ufo_left"
   /** a colonist born in-colony as the settlement thrives */
   | "birth"
+  /** the Rover Bay finished fabricating a rover (it rolls out by the bay door) */
+  | "rover_ready"
   /** campaign end states (doc §2.5) */
   | "victory"
   | "defeat"

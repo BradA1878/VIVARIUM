@@ -25,9 +25,10 @@ import { reconcileColonists, colonistViews, depositViews, clampMaterials, intera
 import { seedDeposits, seedVents } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
 import { ufoView } from "./ufo";
+import { roverViews } from "./rover";
 import {
   START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
-  MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT,
+  MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT, ROVER_BUILD_TIME,
 } from "./tuning";
 
 export class Colony {
@@ -183,11 +184,13 @@ export class Colony {
   /** hand hazard control to an external Director (engine scheduler stands down) */
   setDirector(on: boolean): void { this.s.directorControlled = on; }
 
-  // ---- embodied control (the player possesses one colonist) -----------------
-  /** possess a colonist by id (null releases). Resets any standing move intent. */
+  // ---- embodied control (the player possesses one actor) --------------------
+  /** possess an actor by id (null releases) — colonists resolve first, then
+   *  rovers; the unified id space (rover ids draw from the colonist counter)
+   *  keeps the protocol unchanged. Resets any standing move intent. */
   possess(id: number | null): void {
     if (id == null) { this.s.possessed = null; this.s.moveIntent = { dx: 0, dy: 0 }; return; }
-    if (this.s.colonists.some((c) => c.id === id)) {
+    if (this.s.colonists.some((c) => c.id === id) || this.s.rovers.some((r) => r.id === id)) {
       this.s.possessed = id;
       this.s.moveIntent = { dx: 0, dy: 0 };
     }
@@ -250,6 +253,7 @@ export class Colony {
       colonists: colonistViews(s),
       deposits: depositViews(s),
       vents: s.vents.map((v) => ({ ...v })),
+      rovers: roverViews(s),
       depot: { ...s.depot },
       possessed: s.possessed,
       trade: tradeView(s),
@@ -309,6 +313,7 @@ export class Colony {
         flow: { ...this.s.flow },
         materials: { ...this.s.materials },
         colonists: this.s.colonists.map((c) => ({ ...c })),
+        rovers: this.s.rovers.map((r) => ({ ...r, cargo: { ...r.cargo } })),
         deposits: this.s.deposits.map((d) => ({ ...d })),
         vents: this.s.vents.map((v) => ({ ...v })),
         depot: { ...this.s.depot },
@@ -347,6 +352,9 @@ export class Colony {
       })),
       deposits: (st.deposits ?? []).map((d) => ({ ...d })),
       vents: (st.vents ?? []).map((v) => ({ ...v })),
+      // legacy saves carry no machines: an empty fleet and a fresh countdown
+      rovers: (st.rovers ?? []).map((r) => ({ ...r, cargo: { ...r.cargo } })),
+      roverFab: st.roverFab ?? ROVER_BUILD_TIME,
       windLevel: st.windLevel ?? 0,
       depot: st.depot ? { ...st.depot } : { gx: 6, gy: 5 },
       moveIntent: st.moveIntent ? { ...st.moveIntent } : { dx: 0, dy: 0 },
@@ -393,6 +401,8 @@ function freshState(difficulty: Difficulty): ColonyState {
     flow: { power: 0, water: 0, oxygen: 0, food: 0 },
     materials: { amount: prof.startMaterials, capacity: MATERIALS_CAP },
     colonists: [],
+    rovers: [],
+    roverFab: ROVER_BUILD_TIME,
     deposits: [],
     vents: [],
     depot: { gx: 6, gy: 5 }, // a clear collection point beside the hub (set in seedColony)

@@ -23,6 +23,7 @@ import { recomputeConnectivity } from "./connectivity";
 import { updateHazards, hazardMods, type HazardMods } from "./hazards";
 import { stepColonists } from "./colonists";
 import { updateInjuries, injuredCount } from "./injury";
+import { pilotRover, updateRoverFab } from "./rover";
 import { roleMatchCount } from "./roster";
 import { bumpMorale, moraleMult, updateMorale } from "./morale";
 import { respawnDeposits } from "./deposits";
@@ -263,6 +264,12 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   updateUfo(s, dt, envRng, emit);
   updateInjuries(s, dt, emit); // before stepColonists: the healed rejoin assign now
   stepColonists(s, dt);
+  // rung 2 of the automation ladder — the Rover Bay's fabrication line, the
+  // fleet's self-repair, and piloting for whichever possessed actor is a rover
+  // (stepColonists already piloted a possessed colonist; ids never collide).
+  updateRoverFab(s, dt, emit);
+  const rover = s.rovers.find((r) => r.id === s.possessed);
+  if (rover) pilotRover(s, rover, dt);
 
   // 8. Campaign — the launch-window arc (doc §2.5) -----------------------------
   if (s.outcome === null) {

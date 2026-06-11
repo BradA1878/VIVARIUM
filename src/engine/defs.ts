@@ -139,11 +139,19 @@ export const DEFS: Record<string, BuildingDef> = {
     requiresPressure: false, priority: 15,
     desc: "Regolith in, materials out. First thing shed when power runs short.",
   },
+  roverbay: {
+    id: "roverbay", name: "Rover Bay", glyph: "RVR",
+    foot: [2, 2], h: 14, color: "#34414d",
+    cost: { power: 0 }, matCost: 60,
+    staffing: 0, consumes: { power: 2.5 }, produces: {},
+    requiresPressure: false, priority: 25, door: 2,
+    desc: "Garage and fabrication line. Builds one drivable bulk hauler; the countdown holds while unpowered.",
+  },
 };
 
 /** Palette display order (doc §4.4 table order). */
 export const ORDER: string[] = [
   "hub", "corridor", "hab", "solar", "battery",
   "extractor", "electrolysis", "greenhouse", "medbay", "cistern", "o2tank", "deflector",
-  "windturbine", "geothermal", "reactor", "printer",
+  "windturbine", "geothermal", "reactor", "printer", "roverbay",
 ];

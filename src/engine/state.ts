@@ -44,6 +44,20 @@ export interface ColonistInstance {
   gatherT: number;
 }
 
+/** a drivable rover (the renderer sees RoverView) — a separate possessable
+ *  entity, not a colonist buff. Its id draws from colonistCounter so the
+ *  existing possess protocol addresses either species without a new command. */
+export interface RoverInstance {
+  id: number;
+  x: number;
+  y: number;
+  facing: number;
+  /** multi-kind cargo bays, capped at ROVER_CARGO_CAP across all kinds */
+  cargo: Partial<Record<DepositKind, number>>;
+  /** 0..1 — strikes dent it, it self-repairs, and it is never destroyed */
+  integrity: number;
+}
+
 /** a surface resource node */
 export interface DepositInstance {
   id: number;
@@ -100,6 +114,11 @@ export interface ColonyState {
 
   // ---- embodied colony ----
   colonists: ColonistInstance[];
+  /** drivable rovers fabricated by the Rover Bay (ids share the colonist counter) */
+  rovers: RoverInstance[];
+  /** the Rover Bay's fabrication countdown, seconds — pauses (never resets)
+   *  while the bay is offline */
+  roverFab: number;
   deposits: DepositInstance[];
   /** geothermal vents — static world-gen terrain the geothermal tap sits on */
   vents: VentInstance[];
