@@ -20,10 +20,12 @@ import Palette from "./components/Palette.vue";
 import TradePrompt from "./components/TradePrompt.vue";
 import PilotBar from "./components/PilotBar.vue";
 import FirstHint from "./components/FirstHint.vue";
+import SettingsModal from "./components/SettingsModal.vue";
 import { SimBridge } from "@/worker/bridge";
 import { Tuning } from "@/engine";
 import type { ThreeRenderer } from "@/render/renderer";
 import { initColony, useColony, disposeColony } from "./stores/colony";
+import { useSettings } from "./stores/settings";
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 const booting = ref(true);
@@ -32,6 +34,7 @@ const ready = ref(false);
 let renderer: ThreeRenderer | null = null;
 
 const { snapshot, clearTool, rotate, removeSelected, controls } = useColony();
+const { settings, settingsOpen, updateSettings } = useSettings();
 const storming = computed(() => snapshot.value?.weather === "dust");
 const flaring = computed(() => snapshot.value?.hazards.some((h) => h.kind === "flare" && h.phase === "active") ?? false);
 
@@ -54,7 +57,11 @@ const piloting = computed(() => snapshot.value?.possessed != null);
 
 function onKey(e: KeyboardEvent): void {
   const k = e.key.toLowerCase();
-  if (e.key === "Escape") clearTool();
+  if (e.key === "Escape") {
+    // the settings modal swallows Esc first; only a second Esc clears the tool
+    if (settingsOpen.value) { settingsOpen.value = false; return; }
+    clearTool();
+  }
   if (e.key === "f" || e.key === "F") { e.preventDefault(); controls.possessToggle(); held.clear(); return; }
   if (piloting.value && (k === "p" || k === "e")) { e.preventDefault(); controls.interact(); return; } // pick up / drop
   if (piloting.value && MOVE_KEYS[k]) {
@@ -86,7 +93,7 @@ onMounted(async () => {
   window.addEventListener("keyup", onKeyUp);
 
   if (import.meta.env.DEV) {
-    (window as unknown as { __viv: unknown }).__viv = { renderer, bridge: b };
+    (window as unknown as { __viv: unknown }).__viv = { renderer, bridge: b, settings, updateSettings };
   }
 });
 
@@ -132,6 +139,8 @@ onUnmounted(() => {
         <Inspector />
         <Palette />
       </div>
+
+      <SettingsModal />
     </div>
 
     <div v-if="!booting" class="hint-layer">

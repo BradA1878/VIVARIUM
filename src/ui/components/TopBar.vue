@@ -1,11 +1,13 @@
 <script setup lang="ts">
 /* Top HUD bar: the VIVARIUM wordmark plus sim controls (storm, reset, pause,
-   speed). Mirrors the prototype TopBar — the HUD only issues commands and reads
-   the snapshot, never the tick. */
+   speed) and the settings gear. Mirrors the prototype TopBar — the HUD only
+   issues commands and reads the snapshot, never the tick. */
 import { computed } from "vue";
 import { useColony } from "@/ui/stores/colony";
+import { useSettings } from "@/ui/stores/settings";
 
 const { snapshot, controls } = useColony();
+const { settingsOpen } = useSettings();
 const s = computed(() => snapshot.value);
 
 const speeds: readonly number[] = [1, 2, 4];
@@ -33,6 +35,15 @@ const speeds: readonly number[] = [1, 2, 4];
         @click="controls.setSpeed(sp)"
       >
         {{ sp }}×
+      </button>
+      <div class="ctl-sep" />
+      <button
+        class="ctl"
+        :class="{ on: settingsOpen }"
+        title="Settings"
+        @click="settingsOpen = !settingsOpen"
+      >
+        ⚙ settings
       </button>
     </div>
   </div>

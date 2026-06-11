@@ -4,7 +4,7 @@
    ever observes the snapshot/event stream and issues commands (doc §0); it never
    touches the tick.
    ============================================================================ */
-import { ref, shallowRef, type Ref, type ShallowRef } from "vue";
+import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
 import type { ColonyEvent, Snapshot } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
@@ -21,6 +21,12 @@ import {
 import { loadBest, persist, clearLocal } from "@/persistence";
 import type { HazardKind } from "@shared/types";
 import { clockOf } from "../format";
+import { useSettings } from "./settings";
+
+// player preferences (persisted) — gate the director, the live narrator, render
+// quality, and the next run's difficulty. The audio module consumes audio.* when
+// it lands; the deep watch below is its seam.
+const { settings } = useSettings();
 
 export interface TerminalLine {
   id: number;
@@ -50,6 +56,7 @@ let directorBias: Record<HazardKind, number> = { dust: 1, meteor: 1, flare: 1, c
 let lastCritRes: Axis | null = null;
 let lastHazard: HazardKind | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
+let stopSettingsWatch: (() => void) | null = null;
 let msgId = 1;
 
 const AUTOSAVE_MS = 12_000;
@@ -78,7 +85,7 @@ export function pushLine(
  *  scripted line on any failure — the game never depends on it. */
 function routeEvent(e: ColonyEvent): void {
   if (!council) return;
-  if (!LIVE_ENABLED) {
+  if (!(LIVE_ENABLED && settings.value.narratorLive)) {
     const u = council.observe(e, snapshot.value, e.t);
     if (u) pushLine(u.line, e.sol, e.tod, u.speaker, u.register);
     return;
@@ -101,8 +108,26 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   // the planet remembers how this player dies and opens accordingly
   playerModel = loadModel();
   directorBias = openingBias(playerModel);
-  // hand hazard control to the Director — the planet becomes a learning antagonist
-  b.setDirector(true);
+  // hand hazard control to the Director — the planet becomes a learning
+  // antagonist — unless the player switched it off in settings
+  b.setDirector(settings.value.directorEnabled);
+  // apply the persisted render quality (no-op if it matches the default)
+  r.setQuality(settings.value.graphics.quality);
+
+  // settings → live subsystems: quality and the director toggle apply the moment
+  // they change. (Audio gain wiring hooks in here when the audio module lands.)
+  let appliedQuality = settings.value.graphics.quality;
+  let appliedDirector = settings.value.directorEnabled;
+  stopSettingsWatch = watch(settings, (sv) => {
+    if (sv.graphics.quality !== appliedQuality) {
+      appliedQuality = sv.graphics.quality;
+      r.setQuality(appliedQuality);
+    }
+    if (sv.directorEnabled !== appliedDirector) {
+      appliedDirector = sv.directorEnabled;
+      b.setDirector(appliedDirector);
+    }
+  }, { deep: true });
 
   r.onSelect((info) => { selected.value = info; });
 
@@ -111,8 +136,10 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
     // the Director observes and may throw a hazard, aimed by colony shape, the
     // memory of past deaths, and how settled the Sentinel thinks the player is
-    const strike = director?.decide(s, Math.random, { bias: directorBias, comfort: sentinel?.comfort() });
-    if (strike) b.triggerHazard(strike.kind, strike.intensity);
+    if (settings.value.directorEnabled) {
+      const strike = director?.decide(s, Math.random, { bias: directorBias, comfort: sentinel?.comfort() });
+      if (strike) b.triggerHazard(strike.kind, strike.intensity);
+    }
   });
 
   // track the failure signature + record it across runs (the learning)
@@ -169,9 +196,10 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   }, 900);
 }
 
-/** tear down the store's timers (called from App on unmount) */
+/** tear down the store's timers + watchers (called from App on unmount) */
 export function disposeColony(): void {
   if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
+  if (stopSettingsWatch) { stopSettingsWatch(); stopSettingsWatch = null; }
   sentinel?.dispose();
 }
 
@@ -223,11 +251,11 @@ const controls = {
   /** accept/decline a landed alien trade offer */
   respondTrade(accept: boolean): void { bridge?.respondTrade(accept); },
   reset(): void {
-    bridge?.reset();
+    bridge?.reset(settings.value.nextDifficulty); // the chosen difficulty starts here
     council?.reset();
     sentinel?.reset();
     director?.reset();
-    bridge?.setDirector(true); // reset() reseeds the colony with the scheduler on
+    bridge?.setDirector(settings.value.directorEnabled); // reset() reseeds with the scheduler on
     // the planet keeps its cross-run memory; re-aim the opening for the new run
     directorBias = openingBias(playerModel);
     lastCritRes = null;
