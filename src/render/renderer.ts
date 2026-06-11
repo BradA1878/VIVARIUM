@@ -6,7 +6,7 @@
    5 Hz sim split). Placement raycasting is layered on in Phase 4.
    ============================================================================ */
 import * as THREE from "three";
-import type { BuildingDef, BuildingState, Snapshot } from "@shared/types";
+import type { BuildingDef, BuildingState, ColonyEvent, Snapshot } from "@shared/types";
 import { DEFS, SIDE_DELTA } from "@/engine";
 import type { SimBridge } from "@/worker/bridge";
 import { SceneManager, nightLevel } from "./three/scene";
@@ -16,6 +16,7 @@ import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh, type KitEnv } from "./three/kit";
 import { PlacementController, type HoverInfo, type SelectInfo } from "./three/placement";
 import { Atmosphere } from "./three/atmosphere";
+import { StormFx } from "./three/stormfx";
 import { HazardFx } from "./three/hazardfx";
 import { buildAstronaut, type AstronautMesh } from "./three/kit/astronaut";
 import { buildDeposit, type DepositMesh } from "./three/kit/deposit";
@@ -51,6 +52,8 @@ const MOVING_STATES = new Set(["toWork", "toHome", "toMedbay", "mining", "haulin
 /** the established signature cyan, for transient FX (placed / possession rings) */
 const FX_CYAN = 0x7fd4e8;
 const FX_CYAN_DIM = 0x3f6a74;
+/** the evil UFO's hot red, for abduction FX at the saucer */
+const UFO_RED = 0xff3322;
 
 /** placed-pop scale-in duration (seconds) */
 const POP_TIME = 0.35;
@@ -93,6 +96,7 @@ export class ThreeRenderer {
   private bridge: SimBridge;
   private placement: PlacementController;
   private atmosphere: Atmosphere;
+  private stormFx: StormFx;
   private hazardFx: HazardFx;
   private unsubEvents: () => void;
   private raf = 0;
@@ -113,6 +117,8 @@ export class ThreeRenderer {
   private alienShip: AlienShipMesh | null = null;
   private ufo: UfoMesh | null = null;
   private depot: DepotMesh | null = null;
+  // DEV-only: a scripted saucer for screenshotting rare FX (debugFx("ufo"))
+  private debugUfo: UfoMesh | null = null;
 
   // follow-cam: lerped focus + ortho extent driven toward the possessed target
   private camFocus = new THREE.Vector3(0, 0, 0);
@@ -143,19 +149,31 @@ export class ThreeRenderer {
     this.scene.scene.add(this.placement.group);
     this.atmosphere = new Atmosphere(this.grid);
     this.scene.scene.add(this.atmosphere.points);
+    this.stormFx = new StormFx(this.grid);
+    this.scene.scene.add(this.stormFx.group);
     this.hazardFx = new HazardFx(this.grid);
     this.scene.scene.add(this.hazardFx.group);
-    // the renderer observes the event stream for transient hazard FX (doc §0)
-    this.unsubEvents = bridge.onEvent((e) => {
-      this.hazardFx.onEvent(e);
-      // hazard kills already burst via hazardFx — remember the cell briefly so
-      // the reconcile-removal puff doesn't fire a second burst on the same spot
-      if (e.type === "building_destroyed" && e.gx !== undefined && e.gy !== undefined) {
-        this.recentDestroyed.set(`${e.gx},${e.gy}`, performance.now());
-      }
-    });
+    // the renderer observes the event stream for transient FX (doc §0)
+    this.unsubEvents = bridge.onEvent((e) => this.onColonyEvent(e));
     this.onResize = this.onResize.bind(this);
     window.addEventListener("resize", this.onResize);
+  }
+
+  /** route ColonyEvents into render-side FX. Everything forwards to hazardFx
+   *  (it ignores what it doesn't know); the abduction pair carries no
+   *  coordinates, so the live UFO mesh position is the only correct anchor. */
+  private onColonyEvent(e: ColonyEvent): void {
+    this.hazardFx.onEvent(e);
+    // hazard kills already burst via hazardFx — remember the cell briefly so
+    // the reconcile-removal puff doesn't fire a second burst on the same spot
+    if (e.type === "building_destroyed" && e.gx !== undefined && e.gy !== undefined) {
+      this.recentDestroyed.set(`${e.gx},${e.gy}`, performance.now());
+    }
+    if (e.type === "abducted" && this.ufo) {
+      this.hazardFx.flash(this.ufo.object.position, UFO_RED);
+    } else if (e.type === "abduction_blocked" && this.ufo) {
+      this.hazardFx.ringPulse(this.ufo.object.position, FX_CYAN, 1.6);
+    }
   }
 
   // ---- tool controls (driven by the HUD palette, Phase 5) -------------------
@@ -172,6 +190,33 @@ export class ThreeRenderer {
   // upcoming settings UI consumes.
   setQuality(q: "low" | "high"): void { this.scene.setQuality(q); }
   getQuality(): "low" | "high" { return this.scene.getQuality(); }
+
+  /** DEV-only: drive rare render FX directly (zero sim coupling) so visual
+   *  verification can screenshot them without waiting for the scheduler.
+   *  "ufo" toggles a scripted hover-loop at grid center; call it again to
+   *  despawn. The guard makes the whole body dead code in prod builds. */
+  debugFx(name: "ufo" | "abduct" | "devil" | "pop"): void {
+    if (!import.meta.env.DEV) return;
+    const center = this.grid.cellCenter((this.grid.N - 1) / 2, (this.grid.N - 1) / 2);
+    if (name === "ufo") {
+      if (this.debugUfo) {
+        this.scene.scene.remove(this.debugUfo.object);
+        this.debugUfo.dispose();
+        this.debugUfo = null;
+      } else {
+        this.debugUfo = buildUfo();
+        this.debugUfo.object.position.set(center.x, 3, center.z);
+        this.scene.scene.add(this.debugUfo.object);
+      }
+    } else if (name === "abduct") {
+      const at = this.debugUfo?.object.position ?? this.ufo?.object.position ?? center;
+      this.hazardFx.flash(at, UFO_RED);
+    } else if (name === "devil") {
+      this.stormFx.debugDevil();
+    } else if (name === "pop") {
+      this.hazardFx.ringPulse(center, FX_CYAN, 1.2);
+    }
+  }
 
   start(): void {
     if (this.running) return;
@@ -205,6 +250,7 @@ export class ThreeRenderer {
     const snap = this.bridge.latest;
     if (!snap) {
       this.atmosphere.update(dt, false);
+      this.stormFx.update(dt, null);
       this.hazardFx.update(dt);
       this.scene.render();
       return;
@@ -230,11 +276,13 @@ export class ThreeRenderer {
     this.reconcileDeposits(snap, now);
     this.reconcileTrade(snap, dt, now);
     this.reconcileUfo(snap, dt, now);
+    if (this.debugUfo) this.debugUfo.update("hovering", dt, now);
     this.reconcileDepot(snap, now);
     this.updateTransients(dt, now);
     this.updateCamera(snap, dt);
     this.placement.update();
     this.atmosphere.update(dt, snap.weather === "dust");
+    this.stormFx.update(dt, snap);
     this.hazardFx.update(dt);
     this.scene.render();
   }
@@ -597,6 +645,7 @@ export class ThreeRenderer {
     this.unsubEvents();
     this.placement.dispose();
     this.atmosphere.dispose();
+    this.stormFx.dispose();
     this.hazardFx.dispose();
     this.airlockGeo.dispose();
     this.airlockMat.dispose();
@@ -619,6 +668,7 @@ export class ThreeRenderer {
     this.deposits.clear();
     if (this.alienShip) { this.alienShip.dispose(); this.alienShip = null; }
     if (this.ufo) { this.ufo.dispose(); this.ufo = null; }
+    if (this.debugUfo) { this.debugUfo.dispose(); this.debugUfo = null; }
     if (this.depot) { this.depot.dispose(); this.depot = null; }
     this.terrain.dispose();
     this.scene.dispose();

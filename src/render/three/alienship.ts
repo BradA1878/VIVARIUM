@@ -82,6 +82,50 @@ export function buildAlienShip(): AlienShipMesh {
   const beam = new THREE.Mesh(beamGeo, beamMat);
   object.add(beam);
 
+  // --- landing struts: a deploy flourish while landed. The ship keeps hovering
+  // (no ground contact) — they fold flat against the hull rim and swing ~40°
+  // down-and-out with a slight extension as `deploy01` rises.
+  const strutMat = new THREE.MeshStandardMaterial({
+    color: 0x3a3354,
+    roughness: 0.5,
+    metalness: 0.7,
+    emissive: 0x140e26,
+    emissiveIntensity: 0.4,
+  });
+  const STRUT_LEN = 0.4;
+  const strutGeo = new THREE.CylinderGeometry(0.025, 0.018, STRUT_LEN, 6);
+  const struts: { hinge: THREE.Group; leg: THREE.Mesh }[] = [];
+  for (let i = 0; i < 3; i++) {
+    const arm = new THREE.Group();
+    arm.rotation.y = (i / 3) * Math.PI * 2;
+    const hinge = new THREE.Group();
+    hinge.position.set(0.5, -0.08, 0); // on the hull rim, just under the skin
+    const leg = new THREE.Mesh(strutGeo, strutMat);
+    leg.rotation.z = -Math.PI / 2; // cylinder axis → hinge-local +X (outward)
+    leg.position.x = (STRUT_LEN / 2) * 0.7;
+    hinge.add(leg);
+    arm.add(hinge);
+    object.add(arm);
+    struts.push({ hinge, leg });
+  }
+  let deploy01 = 0;
+
+  // --- ground glow disc, pinned to the pad while the struts are out -----------
+  const padMat = new THREE.MeshBasicMaterial({
+    color: 0x9b6cff,
+    transparent: true,
+    opacity: 0.0,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  });
+  const padGeo = new THREE.CircleGeometry(0.9, 28);
+  const pad = new THREE.Mesh(padGeo, padMat);
+  pad.rotation.x = -Math.PI / 2;
+  pad.renderOrder = 10;
+  object.add(pad);
+
   return {
     object,
     update(phase, dt, now) {
@@ -106,6 +150,20 @@ export function buildAlienShip(): AlienShipMesh {
       beam.position.y = -beamH / 2;
       const landedness = phase === "landed" ? 1 : phase === "inbound" ? 0.25 : 0.0;
       beamMat.opacity = (0.18 + 0.12 * (0.5 + 0.5 * Math.sin(now / 250))) * landedness;
+
+      // struts swing out while landed, fold back for flight
+      deploy01 += ((phase === "landed" ? 1 : 0) - deploy01) * Math.min(1, 3 * dt);
+      const ext = 0.7 + 0.3 * deploy01; // slight extension as they deploy
+      for (const s of struts) {
+        s.hinge.rotation.z = -0.7 * deploy01; // 0 (flat) → ~40° down-and-out
+        s.leg.scale.y = ext;
+        s.leg.position.x = (STRUT_LEN / 2) * ext;
+      }
+
+      // pad glow pinned at world y≈0.03, fading with the landed factor
+      pad.position.y = 0.03 - object.position.y;
+      padMat.opacity = (0.14 + 0.05 * (0.5 + 0.5 * Math.sin(now / 500))) * deploy01;
+      pad.visible = deploy01 > 0.01;
     },
     dispose() {
       disposeObject(object);
