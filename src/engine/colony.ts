@@ -26,9 +26,10 @@ import { seedDeposits, seedVents } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
 import { ufoView } from "./ufo";
 import { roverViews } from "./rover";
+import { robotViews } from "./robots";
 import {
   START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
-  MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT, ROVER_BUILD_TIME,
+  MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT, ROVER_BUILD_TIME, ROBOT_BUILD_TIME,
 } from "./tuning";
 
 export class Colony {
@@ -254,6 +255,7 @@ export class Colony {
       deposits: depositViews(s),
       vents: s.vents.map((v) => ({ ...v })),
       rovers: roverViews(s),
+      robots: robotViews(s),
       depot: { ...s.depot },
       possessed: s.possessed,
       trade: tradeView(s),
@@ -314,6 +316,7 @@ export class Colony {
         materials: { ...this.s.materials },
         colonists: this.s.colonists.map((c) => ({ ...c })),
         rovers: this.s.rovers.map((r) => ({ ...r, cargo: { ...r.cargo } })),
+        robots: this.s.robots.map((r) => ({ ...r })),
         deposits: this.s.deposits.map((d) => ({ ...d })),
         vents: this.s.vents.map((v) => ({ ...v })),
         depot: { ...this.s.depot },
@@ -355,6 +358,8 @@ export class Colony {
       // legacy saves carry no machines: an empty fleet and a fresh countdown
       rovers: (st.rovers ?? []).map((r) => ({ ...r, cargo: { ...r.cargo } })),
       roverFab: st.roverFab ?? ROVER_BUILD_TIME,
+      robots: (st.robots ?? []).map((r) => ({ ...r })),
+      robotFab: st.robotFab ?? ROBOT_BUILD_TIME,
       windLevel: st.windLevel ?? 0,
       depot: st.depot ? { ...st.depot } : { gx: 6, gy: 5 },
       moveIntent: st.moveIntent ? { ...st.moveIntent } : { dx: 0, dy: 0 },
@@ -403,6 +408,8 @@ function freshState(difficulty: Difficulty): ColonyState {
     colonists: [],
     rovers: [],
     roverFab: ROVER_BUILD_TIME,
+    robots: [],
+    robotFab: ROBOT_BUILD_TIME,
     deposits: [],
     vents: [],
     depot: { gx: 6, gy: 5 }, // a clear collection point beside the hub (set in seedColony)

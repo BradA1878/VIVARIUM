@@ -52,6 +52,7 @@ function makeSnap(over: Partial<Snapshot> = {}): Snapshot {
     deposits: [],
     vents: [],
     rovers: [],
+    robots: [],
     depot: { gx: 8, gy: 6 },
     possessed: null,
     trade: null,

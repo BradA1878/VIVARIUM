@@ -13,6 +13,7 @@ import { idx, removeBuilding } from "./grid";
 import { recomputeCaps } from "./caps";
 import { applyStrikeInjuries } from "./injury";
 import { applyStrikeMachines } from "./rover";
+import { faultRobots } from "./robots";
 import type { ColonyState, HazardInstance } from "./state";
 import type { BuildingState } from "@shared/types";
 import type { RNG } from "./rng";
@@ -92,7 +93,14 @@ export function updateHazards(s: ColonyState, dt: number, rng: RNG, emit: Emit):
   for (const h of s.hazards) {
     h.tLeft -= dt;
     if (h.phase === "telegraph") {
-      if (h.tLeft <= 0) { h.phase = "active"; h.tLeft = h.activeDur; emit({ type: "hazard_start", kind: h.kind, detail: h.kind }); }
+      if (h.tLeft <= 0) {
+        h.phase = "active";
+        h.tLeft = h.activeDur;
+        emit({ type: "hazard_start", kind: h.kind, detail: h.kind });
+        // counterplay: the flare's activation front stuns the robot fleet —
+        // deterministic, ZERO rng draws, so the main stream is untouched
+        if (h.kind === "flare") faultRobots(s);
+      }
       keep.push(h);
       continue;
     }

@@ -21,6 +21,7 @@ export const SEV: Record<EventType, number> = {
   ufo_inbound: 4, abducted: 5, abduction_blocked: 3, ufo_left: 1, // the abductor
   birth: 2, // the colony grows from within
   rover_ready: 2, // the Rover Bay rolls one out (bank lands with the dry rewrite)
+  robot_ready: 2, robot_destroyed: 2, // the Robotics Bay's fleet (banks land with the dry rewrite)
   morale_low: 3, morale_recovered: 1, // the colony's mood (latched, like brownout)
   colonist_injured: 2, colonist_recovered: 1, // strike wounds + the medbay loop
   idle: 0, // agent-originated (council banter); never competes with a real beat

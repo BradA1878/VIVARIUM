@@ -24,6 +24,7 @@ import { updateHazards, hazardMods, type HazardMods } from "./hazards";
 import { stepColonists } from "./colonists";
 import { updateInjuries, injuredCount } from "./injury";
 import { pilotRover, updateRoverFab } from "./rover";
+import { stepRobots, updateRobotFab } from "./robots";
 import { roleMatchCount } from "./roster";
 import { bumpMorale, moraleMult, updateMorale } from "./morale";
 import { respawnDeposits } from "./deposits";
@@ -263,13 +264,18 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   updateTrade(s, dt, envRng, emit);
   updateUfo(s, dt, envRng, emit);
   updateInjuries(s, dt, emit); // before stepColonists: the healed rejoin assign now
-  stepColonists(s, dt);
+  const claims = stepColonists(s, dt); // the unified gather-claim set (colonists + robots)
   // rung 2 of the automation ladder — the Rover Bay's fabrication line, the
   // fleet's self-repair, and piloting for whichever possessed actor is a rover
   // (stepColonists already piloted a possessed colonist; ids never collide).
   updateRoverFab(s, dt, emit);
   const rover = s.rovers.find((r) => r.id === s.possessed);
   if (rover) pilotRover(s, rover, dt);
+  // rung 3 — the Robotics Bay's line + the autonomous miners. Robots work sol
+  // AND night and never shelter; they step through the SAME claim set the
+  // colonists' pass built, so the species never thrash over a node.
+  updateRobotFab(s, dt, emit);
+  stepRobots(s, dt, claims);
 
   // 8. Campaign — the launch-window arc (doc §2.5) -----------------------------
   if (s.outcome === null) {

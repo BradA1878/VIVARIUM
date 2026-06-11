@@ -197,6 +197,25 @@ export interface RoverView {
   possessed: boolean;
 }
 
+/** an autonomous mining robot — rung 3 of the automation ladder. NOT
+ *  possessable (possession resolves colonists + rovers only): it runs the
+ *  shared gather brain sol and night, never shelters, and draws no life
+ *  support. A flare's activation stuns the fleet ("faulted"); a meteor/quake
+ *  strike close enough scraps one outright. */
+export interface RobotView {
+  id: number;
+  x: number;
+  y: number;
+  /** facing angle in radians (world XZ) */
+  facing: number;
+  /** single-kind hands, like a suit's (the rover is the multi-kind hauler) */
+  carryKind: DepositKind | null;
+  carryAmt: number;
+  /** seconds of flare stun remaining; 0 = running */
+  faulted: number;
+  state: "idle" | "gathering" | "mining" | "hauling" | "faulted";
+}
+
 export type TradePhase = "inbound" | "landed" | "leaving";
 
 /** what an offer hands over: a resource, the build currency, or a permanent
@@ -254,6 +273,8 @@ export interface Snapshot {
   vents: VentView[];
   /** drivable rovers — bulk haulers fabricated at the Rover Bay */
   rovers: RoverView[];
+  /** autonomous mining robots — fabricated at the Robotics Bay, never possessable */
+  robots: RobotView[];
   /** the collection depot cell — where the possessed colonist drops materials */
   depot: { gx: number; gy: number };
   /** the id of the colonist the player is piloting, or null */
@@ -358,6 +379,10 @@ export type EventType =
   | "birth"
   /** the Rover Bay finished fabricating a rover (it rolls out by the bay door) */
   | "rover_ready"
+  /** the Robotics Bay finished a mining robot (it rolls out by the bay door) */
+  | "robot_ready"
+  /** a meteor/quake strike scrapped a robot (its cell in gx/gy) */
+  | "robot_destroyed"
   /** campaign end states (doc §2.5) */
   | "victory"
   | "defeat"

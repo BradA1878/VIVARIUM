@@ -33,13 +33,13 @@ export function nameOf(id: number): string {
 }
 
 /** the trade each staffed building wants on its slots (defId → role). A role
- *  can match several buildings — the engineer's trade covers electrolysis AND
- *  the reactor (the Robotics Bay joins in a later commit). Unmapped defIds
- *  simply never match. */
+ *  can match several buildings — the engineer's trade covers electrolysis,
+ *  the reactor, AND the Robotics Bay. Unmapped defIds simply never match. */
 export const BUILDING_ROLE: Record<string, ColonistRole> = {
   extractor: "miner",
   electrolysis: "engineer",
   reactor: "engineer",
+  roboticsbay: "engineer",
   greenhouse: "botanist",
   medbay: "medic",
 };

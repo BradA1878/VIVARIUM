@@ -18,6 +18,7 @@ import {
 } from "./tuning";
 import { accessCell, freeCellNear } from "./colonists";
 import { cargoTotal } from "./gather";
+import { destroyRobotsNear } from "./robots";
 
 const BAY_ID = "roverbay";
 
@@ -62,17 +63,19 @@ export function pilotRover(s: ColonyState, r: RoverInstance, dt: number): void {
   }
 }
 
-/** a meteor/quake strike at (gx,gy) dents the machines near the impact: a flat
- *  ROVER_STRIKE_DMG off integrity, clamped at 0 — a rover is NEVER destroyed
- *  (a big purchase must not evaporate); it limps below FUNC_THRESHOLD until
- *  self-repair restores it. Runs beside applyStrikeInjuries on every strike
- *  path (hazards.ts). Guarded for minimal test states. */
+/** a meteor/quake strike at (gx,gy) hits the machines near the impact. Rovers
+ *  take a flat ROVER_STRIKE_DMG off integrity, clamped at 0 — a rover is NEVER
+ *  destroyed (a big purchase must not evaporate); it limps below FUNC_THRESHOLD
+ *  until self-repair restores it. Robots inside ROBOT_HIT_RADIUS are scrapped
+ *  outright (the cheap, replaceable rung — engine/robots.ts). Runs beside
+ *  applyStrikeInjuries on every strike path (hazards.ts). Guarded for minimal
+ *  test states. */
 export function applyStrikeMachines(s: ColonyState, gx: number, gy: number, emit: Emit): void {
-  void emit; // reserved: the robots' destruction event lands here on the next rung
   for (const r of s.rovers ?? []) {
     if (Math.hypot(r.x - gx, r.y - gy) > ROVER_HIT_RADIUS) continue;
     r.integrity = Math.max(0, r.integrity - ROVER_STRIKE_DMG);
   }
+  destroyRobotsNear(s, gx, gy, emit);
 }
 
 /** snapshot view — cargoTotal precomputed so the HUD/renderer never re-derives */

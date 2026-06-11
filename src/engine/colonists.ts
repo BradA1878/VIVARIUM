@@ -237,8 +237,12 @@ export function interactPossessed(s: ColonyState): "picked" | "dropped" | null {
   return null;
 }
 
-/** the tick's colonist pass — runs after staffing/casualties are resolved */
-export function stepColonists(s: ColonyState, dt: number): void {
+/** the tick's colonist pass — runs after staffing/casualties are resolved.
+ *  Returns the UNIFIED gather-claim set: seeded from every standing claim
+ *  across colonists AND robots (one id space, the shared actor counter), grown
+ *  as this pass claims, then threaded through stepRobots — so a robot and a
+ *  colonist never thrash over one deposit. */
+export function stepColonists(s: ColonyState, dt: number): Set<number> {
   reconcileColonists(s);
   assign(s);
 
@@ -246,10 +250,14 @@ export function stepColonists(s: ColonyState, dt: number): void {
   const day = s.tod > DAY_START && s.tod < DAY_END;
 
   // sticky gather claims this pass — every live claim held by an auto colonist
-  // (the possessed one is piloted, so its claim neither acts nor blocks)
+  // (the possessed one is piloted, so its claim neither acts nor blocks) or by
+  // a robot (faulted ones included: a stunned robot keeps its node)
   const claimed = new Set<number>();
   for (const c of s.colonists) {
     if (c.id !== s.possessed && c.gatherDepositId != null) claimed.add(c.gatherDepositId);
+  }
+  for (const r of s.robots ?? []) {
+    if (r.gatherDepositId != null) claimed.add(r.gatherDepositId);
   }
 
   for (const c of s.colonists) {
@@ -297,6 +305,8 @@ export function stepColonists(s: ColonyState, dt: number): void {
       : arriveState === "recovering" ? "toMedbay"
       : "toHome";
   }
+
+  return claimed;
 }
 
 export function colonistViews(s: ColonyState): ColonistView[] {

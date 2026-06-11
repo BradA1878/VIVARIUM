@@ -58,6 +58,26 @@ export interface RoverInstance {
   integrity: number;
 }
 
+/** an autonomous mining robot (the renderer sees RobotView) — NOT possessable.
+ *  Its id draws from colonistCounter, the shared actor counter, so the unified
+ *  deposit-claim set resolves in one global id order across species. It runs
+ *  the shared gather brain (engine/gather.ts); `faulted` is the flare stun. */
+export interface RobotInstance {
+  id: number;
+  x: number;
+  y: number;
+  facing: number;
+  state: ColonistAct;
+  carryKind: DepositKind | null;
+  carryAmt: number;
+  /** seconds of flare stun remaining; 0 = running */
+  faulted: number;
+  /** the deposit this robot has claimed, or null (engine/gather.ts) */
+  gatherDepositId: number | null;
+  /** seconds spent mining at the claimed node so far (the dwell timer) */
+  gatherT: number;
+}
+
 /** a surface resource node */
 export interface DepositInstance {
   id: number;
@@ -119,6 +139,12 @@ export interface ColonyState {
   /** the Rover Bay's fabrication countdown, seconds — pauses (never resets)
    *  while the bay is offline */
   roverFab: number;
+  /** autonomous mining robots fabricated by the Robotics Bay (ids share the
+   *  actor counter; never possessable) */
+  robots: RobotInstance[];
+  /** the Robotics Bay's fabrication countdown, seconds — pauses while the bay
+   *  is down/unstaffed and HOLDS at 0 until the completion fee is affordable */
+  robotFab: number;
   deposits: DepositInstance[];
   /** geothermal vents — static world-gen terrain the geothermal tap sits on */
   vents: VentInstance[];

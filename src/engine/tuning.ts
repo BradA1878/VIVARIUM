@@ -124,6 +124,23 @@ export const ROVER_STRIKE_DMG = 0.35;  // integrity lost per nearby meteor/quake
 export const ROVER_HIT_RADIUS = 1.6;   // cells: strike-to-rover distance that dents
 export const ROVER_REPAIR_RATE = 0.02; // integrity/sec self-repair toward 1
 
+/** mining robots — rung 3 of the automation ladder. The Robotics Bay (staffed,
+ *  unlike the rover's garage) fabricates a small fleet of autonomous gatherers
+ *  that run the SHARED gather brain (engine/gather.ts) sol and night, never
+ *  shelter, draw no life support, and never count in population/labor. The fee
+ *  is charged at COMPLETION — an unaffordable chassis holds at zero until the
+ *  stock covers it. Counterplay is deterministic (zero rng draws): a flare's
+ *  activation stuns the whole fleet; a meteor/quake strike inside
+ *  ROBOT_HIT_RADIUS scraps a robot outright (unlike the rover, which only
+ *  dents — robots are the cheap, replaceable rung). */
+export const ROBOT_CAP = 3;          // fleet size the bay builds up to
+export const ROBOT_MAT_COST = 40;    // materials drawn when a chassis completes
+export const ROBOT_BUILD_TIME = 60;  // fabrication seconds per robot
+export const ROBOT_SPEED = 1.6;      // cells/sec — brisker than a walking suit
+export const ROBOT_CARRY = 30;       // units hauled per trip (one kind, like hands)
+export const ROBOT_FLARE_FAULT = 12; // seconds a flare's activation stuns the fleet
+export const ROBOT_HIT_RADIUS = 1.6; // cells: a strike this close DESTROYS a robot
+
 /** the seeded deposit field (uses a SEPARATE env-rng so the main hazard/arrival
  *  stream is byte-for-byte unchanged) */
 export const DEPOSIT_COUNT = 11;      // deposits scattered at colony start (more, for the bigger map)
