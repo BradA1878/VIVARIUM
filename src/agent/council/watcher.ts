@@ -1,9 +1,9 @@
 /* ============================================================================
    THE WATCHER (doc §3.3, §7) — a Sentinel-flavored sensor intelligence on the
-   council. Clinical, terse, paranoid; obsessed with patterns and root causes. It
-   reads the colony's causal graph and names *why* a pool is failing. Register is
-   cold machine telemetry, not the keeper's warm serif. The Watcher cuts in only
-   on sharp events — a pool emptying, a brownout, an incoming storm — and defers
+   council. Diagnostics in the dry register: it reads the colony's causal graph
+   and names the CAUSAL CHAIN root-cause-first, with the number that proves it.
+   It diagnoses; it never consoles. The Watcher cuts in only on sharp events — a
+   pool emptying, a brownout, an incoming hazard, a structure lost — and defers
    on ordinary beats. Stateless w.r.t. timing (the Council owns cooldowns); the
    only state here is a deterministic line rotator, cleared on colony reset.
    ============================================================================ */
@@ -15,88 +15,95 @@ import type { Candidate, Voice, VoiceContext } from "./types";
 /** Generic clinical fallbacks when the causal trace comes back empty. */
 const GENERIC: Record<string, string[]> = {
   oxygen: [
-    "Oxygen at zero. No upstream cause resolves. Anomalous. I am watching.",
-    "Oxygen pool empty. The chain is silent. I log the gap and keep watch.",
+    "Oxygen at zero. No upstream fault resolves. Flagged as anomalous.",
+    "Oxygen pool empty. The causal trace returns nothing. Watching.",
   ],
   water: [
-    "Water at zero. No producer accounts for it. I flag the inconsistency.",
-    "Water pool empty. Cause unresolved. I am modeling alternatives.",
+    "Water at zero. No producer accounts for the loss. Flagged.",
+    "Water pool empty. Cause unresolved. Trace logged.",
   ],
   food: [
-    "Food at zero. The trace returns nothing. I do not trust silence.",
-    "Food pool empty. No root cause logged. I keep the sensors open.",
+    "Food at zero. The trace returns no root cause. Sensors open.",
+    "Food pool empty. No fault upstream. The gap itself is the finding.",
   ],
   power: [
-    "Power at zero. The grid reports no fault. That is itself a fault.",
-    "Power pool empty. Cause unresolved. I am already modeling the dark.",
+    "Power at zero. The grid reports no fault. That is the fault.",
+    "Power pool empty. Cause unresolved. Modeling the dark.",
   ],
 };
 
 const CRIT: string[] = [
-  "Cascade. {chain}. I logged the shape.",
-  "Cascade detected. {chain}. I have seen this shape before.",
-  "Failure propagates. {chain}. The pattern resolves.",
+  "Cascade. {chain}. Root cause first.",
+  "Cascade detected. {chain}. Pattern logged.",
+  "Failure chain resolved: {chain}.",
 ];
 
 const BROWNOUT: string[] = [
-  "Power deficit. Load shed at the margins. The pattern resolves to the dark.",
-  "Brownout. Demand exceeds supply. I am cutting the non-essential.",
-  "Grid sagging. The draw outpaces the make. I log the deficit.",
+  "Power deficit. Draw exceeds supply. Lowest-priority loads shed first.",
+  "Brownout. Demand over generation. Deficit logged.",
+  "Grid sagging. Output short of draw. Shed order is priority, ascending.",
 ];
 
 const STORM: string[] = [
-  "Dust on the long-range return. {secs} seconds. I am already modeling the loss.",
+  "Dust on the long-range return. {secs} seconds. Solar loss modeled.",
   "Storm inbound. {secs} seconds to contact. The light is forfeit.",
-  "Particulate front detected. {secs} seconds. I have seen this shape before.",
+  "Particulate front. {secs} seconds. Solar projection: down by up to 88 percent.",
 ];
 
 /** incoming-hazard telegraphs, keyed by kind ({secs} = time to impact) */
 const HAZARD_WARN: Record<string, string[]> = {
   dust: [
-    "Dust on the long-range return. {secs} seconds. I am dimming what we do not need.",
-    "A storm comes for the light. {secs} seconds. I have started to hold our breath.",
+    "Dust front inbound. {secs} seconds. Solar output will drop by up to 88 percent.",
+    "Dust storm on approach. {secs} seconds. Expect solar between a tenth and a third.",
   ],
   meteor: [
-    "Meteors on the descent track. Impact in {secs}. I am modeling every rock.",
-    "Debris field inbound. {secs} seconds to the first strike. Move nothing important into the open.",
+    "Meteors on the descent track. Impact in {secs} seconds. Structures in the open are at risk.",
+    "Debris field inbound. {secs} seconds to first strike. Buildings may take damage.",
   ],
   flare: [
-    "Flare off the sun, {secs} seconds out. The electronics will feel it before you do.",
-    "Coronal ejection inbound. {secs} seconds. Charge what you can; it will take the rest.",
+    "Solar flare inbound. {secs} seconds. Electronics will take the surge first.",
+    "Coronal ejection detected. {secs} seconds. Expect interference and a generation dip.",
   ],
   coldsnap: [
-    "The temperature is falling, {secs} seconds to the front. The habs will burn power to stay warm.",
-    "A cold mass approaches. {secs} seconds. Heating load is about to climb.",
+    "Temperature front falling. {secs} seconds. Heating load will climb sharply.",
+    "Cold mass on approach. {secs} seconds. Power demand projection: up.",
   ],
   quake: [
-    "Tremor signature building. {secs} seconds. The seal is the thing I fear for.",
-    "Subsurface movement. {secs} seconds to the jolt. I am watching the corridors.",
+    "Tremor signature building. {secs} seconds. Seals are the weak point.",
+    "Subsurface movement. {secs} seconds to the jolt. Watching the corridors.",
   ],
 };
 
 const DESTROYED: string[] = [
-  "Structure lost. The {name} is gone. I logged the moment it stopped existing.",
-  "We have lost the {name}. I have already recomputed everything that depended on it.",
-  "The {name} is rubble. The {cause} took it. I told you what the {cause} does.",
+  "Structure lost: the {name}. Cause: {cause}. Dependencies recomputed.",
+  "The {name} is gone. {cause} confirmed as cause. Grid and supply remapped.",
+  "The {name}: destroyed by the {cause}. Its output is now zero.",
+];
+
+/** a strike scrapped a mining robot — the fleet diagnosis, with the cause */
+const ROBOT_DESTROYED: string[] = [
+  "Mining robot destroyed. Cause: {cause}. Fleet count is lower.",
+  "Robot lost at the impact point. Cause: {cause}. Gather rate recomputed.",
+  "One robot scrapped. {cause} confirmed. Replacement requires the bay.",
 ];
 
 /** the Sentinel's learned-model anomalies (Phase 13) — drift no threshold caught */
 const ANOMALY: string[] = [
-  "Anomaly. {detail} does not match any sol I have learned — {sigma} sigma from normal. I am watching it.",
-  "The model flags {detail}. {sigma} sigma off the manifold. Nothing has tripped yet. That is what concerns me.",
-  "Deviation in {detail}. {sigma} sigma. I have not seen this shape before. I am recording it.",
+  "Anomaly. {detail} is {sigma} sigma from learned normal. No threshold tripped. Watching.",
+  "The model flags {detail}: {sigma} sigma off baseline. Nothing else has noticed yet.",
+  "Deviation in {detail}. {sigma} sigma. New shape. Recording.",
 ];
 
 /** the clinical read on a sagging colony mood */
 const MORALE_LOW: string[] = [
-  "Morale below threshold. Work-rate variance climbing. A tired colony makes the errors I cannot model.",
-  "Mood telemetry sagging; output follows it down. The graphs agree: they need relief, not orders.",
+  "Morale below threshold. Work-rate variance climbing. Tired crews make unmodeled errors.",
+  "Mood telemetry low. Output tracks it down. The fix is relief, not orders.",
 ];
 
 /** a telegraph the Director chose — the Watcher names the intent (UI annotation) */
 const DIRECTED: string[] = [
-  "This {kind} did not come from the weather. Something chose it. The timing fits a pattern I have been tracking.",
-  "Hazard signature inbound — and it is too well-aimed for chance. Random skies do not aim. I am logging intent.",
+  "This {kind} did not drift in. Something chose it. The timing fits a tracked pattern.",
+  "Hazard inbound — too well-aimed for chance. Random skies do not aim. Logging intent.",
 ];
 
 /** how each hazard kind reads inside the attribution lines */
@@ -106,16 +113,16 @@ const KIND_NOUN: Record<string, string> = {
 
 /** idle telemetry — names the tightest margin when one exists */
 const IDLE_MARGIN: string[] = [
-  "Quiet. The tightest margin is {res}: {eta} seconds at the current draw. I am watching it.",
+  "Quiet. Tightest margin: {res}, {eta} seconds at the current draw. Watching it.",
   "Telemetry nominal. Nearest edge: {res}, {eta} seconds out. Margins are not promises.",
-  "All channels steady. {res} runs thinnest — {eta} seconds if nothing changes. Something always changes.",
+  "All channels steady. {res} runs thinnest: {eta} seconds if nothing changes.",
 ];
 
 /** ...and distrusts the silence when nothing does */
 const IDLE_CALM: string[] = [
-  "No risks resolve. Every pool holds. I have learned not to trust that.",
-  "Nominal across all channels. Anomalies prefer moments like this one.",
-  "Nothing to flag. I widen the sweep anyway. Calm is a pattern I have not broken yet.",
+  "No risks resolve. Every pool holds. Calm is the pattern I trust least.",
+  "Nominal across all channels. Anomalies prefer hours like this one.",
+  "Nothing to flag. Widening the sweep anyway.",
 ];
 
 export class WatcherVoice implements Voice {
@@ -159,6 +166,11 @@ export class WatcherVoice implements Voice {
           .replace(/\{name\}/g, name)
           .replace(/\{cause\}/g, e.detail ?? "planet");
         return this.make(line, 4);
+      }
+      case "robot_destroyed": {
+        const line = this.rotate("robot_destroyed", ROBOT_DESTROYED)
+          .replace(/\{cause\}/g, e.detail ?? "strike");
+        return this.make(line, 3);
       }
       default:
         return null;

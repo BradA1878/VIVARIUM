@@ -1,24 +1,25 @@
 /* ============================================================================
    VIVARIUM — the keeper. The original voice and the council's host: it speaks to
-   most events in the established serif-italic register (doc §4.5). The other
-   members defer to it on ordinary beats and only cut in where their concern is
-   sharper. Reuses the scripted banks from lines.ts.
+   most events in the dry status-report register (doc §4.5) — what changed, the
+   key number, what the kernel is doing about it, plus at most one dry aside.
+   The other members defer to it on ordinary beats and only cut in where their
+   concern is sharper. Reuses the scripted banks from lines.ts.
    ============================================================================ */
 import { LINES, SEV } from "../lines";
 import type { Candidate, Voice, VoiceContext } from "./types";
 
 type Bank = string[] | Record<string, string[]>;
 
-/** severity-0 housekeeping for the quiet stretches — the caretaker at rest */
+/** severity-0 housekeeping for the quiet stretches — the kernel at rest */
 const IDLE: string[] = [
-  "All quiet. I am running the air through one more filter than it needs. Habit.",
-  "I counted the colonists twice this hour. The number matched. I will count again.",
-  "The pumps hold their rhythm. I listen to them the way you might listen to rain.",
-  "Dust settles on the panels a little faster than I clean it. We are even, for now.",
-  "Nothing needs me this minute. I check the seals anyway. That is what I am for.",
-  "The corridors are warm. The tanks are quiet. I am almost at ease. Almost.",
-  "I dimmed the lights in the empty rooms. The full ones, I am watching.",
-  "A calm hour. I spend it rehearsing every alarm I hope never to use.",
+  "All systems nominal. I am running the air through one extra filter. Habit.",
+  "Quiet hour. I counted the colonists twice. The numbers matched.",
+  "Pumps steady. Pressure steady. Nothing requires me. I am checking the seals anyway.",
+  "Telemetry flat. Dust on the panels within tolerance. I am cleaning it anyway.",
+  "No alarms this hour. I am rehearsing them anyway.",
+  "Power, water, oxygen, food: all holding. I logged the hour as uneventful.",
+  "Empty rooms dimmed. Occupied rooms watched. Standard cycle.",
+  "Nominal across the board. I will say so again in an hour, if it stays true.",
 ];
 
 export class VivariumVoice implements Voice {

@@ -45,7 +45,7 @@ export async function generateLine(
       .join(" ")
       .trim();
     // collapse to a single line; strip stray quotes the model might add
-    const line = text.split("\n")[0].trim().replace(/^["']|["']$/g, "");
+    const line = text.split("\n")[0].trim().replace(/^["']|["']$/g, "").slice(0, 200);
     return line || null;
   } catch (err) {
     if (err instanceof Anthropic.APIError) {

@@ -24,32 +24,32 @@ type Concern = "battery" | "water" | "housing" | "food" | "labor";
 /** 1–2 scripted variants per concern, rotated deterministically */
 const SCRIPTS: Record<Concern, readonly string[]> = {
   battery: [
-    "Nothing stores the day. One dark sol will end them. Build a battery.",
-    "You hold no charge. When the sun fails, so does everything. A battery.",
+    "Stored power: zero. One night ends the colony. Build a battery.",
+    "No charge survives dusk. Night demand goes unmet. Build a battery.",
   ],
   water: [
-    "You make oxygen but draw no ice. The water will run out before the seal matters. An extractor.",
-    "No source feeds the water. It only ever falls from here. Build an extractor.",
+    "Oxygen production draws water nothing replaces. Build an extractor.",
+    "Water sources on the grid: zero. The pool only falls. Build an extractor.",
   ],
   housing: [
-    "Every berth is full. No more hands will come until you raise a roof. A habitat.",
-    "There is nowhere left to sleep. Growth stops at the wall. A habitat.",
+    "Housing full. Growth is capped at the berth count. Build a habitat.",
+    "Every berth taken. No arrivals until there is a roof. Build a habitat.",
   ],
   food: [
-    "The fields are losing. Food trends to nothing. Hydroponics, before Sol turns.",
-    "You eat faster than you grow. The shortfall is only patient. Hydroponics.",
+    "Food flow is negative. Stores trend to zero. Build hydroponics.",
+    "Consumption exceeds growth. The shortfall compounds. Build hydroponics.",
   ],
   labor: [
-    "Every crew is spent. The work outpaces the workers. House more hands. A habitat.",
-    "No one is idle, and that is not strength. Raise a habitat and bring more.",
+    "Labor at 100 percent. Buildings stand unstaffed. Build a habitat.",
+    "Every hand assigned. The work outpaces the workers. Build a habitat.",
   ],
 };
 
 /** generic build nudges for a colony with no named bottleneck — idle is the one
  *  beat where unprompted advice fits */
 const IDLE_NUDGES: readonly string[] = [
-  "Nothing burns. Use the lull: the next building costs less now than it will mid-crisis.",
-  "A quiet sol is budget. Spend it on redundancy before the planet spends it for you.",
+  "No active deficit. The lull is budget. Build spare capacity.",
+  "Quiet sol. Buildings cost less now than mid-crisis. Build ahead of need.",
 ];
 
 export class StrategistVoice implements Voice {
