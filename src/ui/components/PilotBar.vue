@@ -7,12 +7,17 @@
    3 ore / 80"), and both surface a CONTEXT prompt: stand on a deposit → "P:
    mine/load"; carry a load to the depot → "P: drop/unload". The F key (release)
    and P key (interact) are bound in App.vue.
+
+   The commander: piloting the LEADER (ui/lead.ts) shows a CMDR tag, and when a
+   functional rover sits within mounting range the F hint flips to "board rover"
+   — that is what F actually does there (the store's possession chain).
    ============================================================================ */
 import { computed } from "vue";
 import { useColony } from "../stores/colony";
 import { fmt } from "../format";
 import { PICKUP_RADIUS, DEPOT_RADIUS, CARRY_CAP, ROVER_CARGO_CAP } from "@/engine/tuning";
 import { CARGO_KINDS } from "@/engine/gather";
+import { leaderId, boardableRover } from "../lead";
 
 const { snapshot } = useColony();
 
@@ -36,6 +41,18 @@ const CARRY_COL: Record<"ice" | "ore" | "cache", string> = {
 };
 /** the rover chrome's amber — matches the ore/machine accent */
 const AMBER = "#e0913a";
+
+/** piloting the commander (the lowest living colonist id) */
+const isCmdr = computed(() => {
+  const s = snapshot.value;
+  return !!s && pilot.value != null && pilot.value.id === leaderId(s);
+});
+
+/** the F key boards instead of releasing: leader piloted + a functional rover in range */
+const canBoard = computed(() => {
+  const s = snapshot.value;
+  return !!s && isCmdr.value && boardableRover(s) != null;
+});
 
 const carryCol = computed(() =>
   pilot.value?.carryKind ? CARRY_COL[pilot.value.carryKind] : undefined,
@@ -90,7 +107,7 @@ const roverAction = computed(() => {
 
 <template>
   <div v-if="pilot" class="pilot">
-    <span class="pilot-tag">&#9654; PILOTING — {{ pilot.name.toUpperCase() }} · {{ pilot.role.toUpperCase() }}</span>
+    <span class="pilot-tag">&#9654; PILOTING — <b v-if="isCmdr" class="cmdr">CMDR&nbsp;</b>{{ pilot.name.toUpperCase() }} · {{ pilot.role.toUpperCase() }}</span>
     <span class="pilot-sep" />
     <span v-if="pilot.carryKind" class="pilot-carry" :style="{ color: carryCol }">
       carrying {{ fmt(pilot.carryAmt, 0) }} / {{ CARRY_CAP }} {{ pilot.carryKind }}
@@ -104,7 +121,8 @@ const roverAction = computed(() => {
       Arrow keys / WASD to move · find a glowing deposit, then walk to the depot
     </span>
     <span class="pilot-sep" />
-    <span class="pilot-key">F: release</span>
+    <span v-if="canBoard" class="pilot-key board">F: board rover</span>
+    <span v-else class="pilot-key">F: release</span>
   </div>
   <div v-else-if="rover" class="pilot drive">
     <span class="pilot-tag drive-tag">&#9654; DRIVING — ROVER</span>
@@ -168,5 +186,8 @@ const roverAction = computed(() => {
   font-weight: 700;
 }
 .pilot-key { color: var(--faint); letter-spacing: 0.12em; text-transform: uppercase; }
+/* the commander's rank tag + the contextual board prompt wear the leader amber */
+.cmdr { color: #e0a23a; font-weight: 600; }
+.pilot-key.board { color: #e0a23a; animation: pilot-pulse 1.1s ease-in-out infinite; }
 @keyframes pilot-pulse { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
 </style>

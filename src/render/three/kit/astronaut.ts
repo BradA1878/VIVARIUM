@@ -10,6 +10,13 @@
    suit; a carried resource floats as a glowing cube above the head. Everything is
    procedural and disposable — the renderer owns the per-id lifecycle, this owns the
    geometry/material lifetime via dispose().
+
+   The COMMANDER (ui/lead.ts — the lowest living colonist id) wears rank, not
+   possession: setLeader(true) swaps the cyan accents (visor glow, antenna tip,
+   suit trim, backpack accent) to amber-gold and reveals a chest chevron. The
+   possession ring stays cyan — rank and possession are different signals — and
+   succession repaints automatically because the renderer re-applies the flag
+   every frame.
    ============================================================================ */
 import * as THREE from "three";
 import type { DepositKind } from "@shared/types";
@@ -23,6 +30,12 @@ const CARRY_COLOR: Record<DepositKind, number> = {
   cache: 0x6fcf7f,
 };
 
+// crew accents (cyan) vs the commander's amber-gold rank treatment
+const ACCENT_CYAN = 0x7fd4e8;
+const VISOR_CYAN = 0x2c4a55;
+const ACCENT_LEAD = 0xe0a23a;
+const VISOR_LEAD = 0x5a431f; // the same dim register as the cyan visor glow
+
 export interface AstronautMesh {
   /** the root, positioned by the renderer in world space (feet ~ y=0) */
   object: THREE.Group;
@@ -33,6 +46,9 @@ export interface AstronautMesh {
   /** drive the walk cycle: phase advances with travel, amp (0..1) scales the
    *  limb swing, lean tips the upper body into the stride. amp < 0.05 = idle. */
   setGait(phase: number, amp: number, lean: number): void;
+  /** the commander's rank treatment: amber accents + chest chevron on, cyan
+   *  crew accents off. Idempotent — safe to re-apply every frame. */
+  setLeader(on: boolean): void;
   dispose(): void;
 }
 
@@ -56,13 +72,16 @@ export function buildAstronaut(): AstronautMesh {
   });
   const visorMat = new THREE.MeshStandardMaterial({
     color: 0x0b1318, roughness: 0.18, metalness: 0.7,
-    emissive: 0x2c4a55, emissiveIntensity: 0.65,
+    emissive: VISOR_CYAN, emissiveIntensity: 0.65,
   });
   const packMat = new THREE.MeshStandardMaterial({
     color: 0x9aa2ac, roughness: 0.55, metalness: 0.55,
   });
-  const accentMat = new THREE.MeshStandardMaterial({ // antenna tip
-    color: 0x7fd4e8, emissive: 0x7fd4e8, emissiveIntensity: 1.0, roughness: 0.4,
+  const accentMat = new THREE.MeshStandardMaterial({ // antenna tip, suit trim, pack accent
+    color: ACCENT_CYAN, emissive: ACCENT_CYAN, emissiveIntensity: 1.0, roughness: 0.4,
+  });
+  const chevronMat = new THREE.MeshStandardMaterial({ // the commander's chest chevron
+    color: ACCENT_LEAD, emissive: ACCENT_LEAD, emissiveIntensity: 0.85, roughness: 0.4,
   });
   const carryMat = new THREE.MeshStandardMaterial({
     color: 0x7fd4e8, emissive: 0x7fd4e8, emissiveIntensity: 1.0,
@@ -108,6 +127,23 @@ export function buildAstronaut(): AstronautMesh {
   const torso = add(torsoG, new THREE.CapsuleGeometry(0.135, 0.13, 5, 10), suitMat, 0, 0.34 - HIP_Y, 0);
   torso.scale.set(1.05, 1, 0.85);
   add(torsoG, new THREE.BoxGeometry(0.11, 0.1, 0.04), trimMat, 0, 0.32 - HIP_Y, 0.12, false); // chest panel
+  // suit accent trim: a slim glowing belt-line under the chest panel
+  add(torsoG, new THREE.BoxGeometry(0.17, 0.016, 0.016), accentMat, 0, 0.255 - HIP_Y, 0.118, false);
+
+  // --- commander chevron: two thin angled bars meeting in a ∧ above the chest
+  //     panel — hidden on the crew, revealed by setLeader(true) ----------------
+  const chevron = new THREE.Group();
+  chevron.position.set(0, 0.4 - HIP_Y, 0.115);
+  const chevronGeo = new THREE.BoxGeometry(0.062, 0.015, 0.012);
+  const chevL = new THREE.Mesh(chevronGeo, chevronMat);
+  chevL.position.x = -0.024;
+  chevL.rotation.z = 0.55;
+  const chevR = new THREE.Mesh(chevronGeo, chevronMat);
+  chevR.position.x = 0.024;
+  chevR.rotation.z = -0.55;
+  chevron.add(chevL, chevR);
+  chevron.visible = false;
+  torsoG.add(chevron);
 
   // --- shoulders + arms (angled slightly out) in shoulder pivots --------------
   const buildArm = (sx: number): THREE.Group => {
@@ -139,8 +175,9 @@ export function buildAstronaut(): AstronautMesh {
   add(head, new THREE.CylinderGeometry(0.006, 0.006, 0.09, 5), trimMat, 0.07, 0.69 - NECK_Y, -0.02, false);
   add(head, new THREE.SphereGeometry(0.018, 8, 8), accentMat, 0.07, 0.74 - NECK_Y, -0.02, false);
 
-  // --- life-support backpack on the BACK (−Z) --------------------------------
+  // --- life-support backpack on the BACK (−Z), with a glowing accent strip ---
   add(torsoG, new THREE.BoxGeometry(0.21, 0.26, 0.1), packMat, 0, 0.35 - HIP_Y, -0.14);
+  add(torsoG, new THREE.BoxGeometry(0.05, 0.12, 0.016), accentMat, 0.06, 0.35 - HIP_Y, -0.195, false);
 
   // --- possessed ground ring (on the root, so it stays flat + un-bobbed) ------
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.24, 24), ringMat);
@@ -155,6 +192,9 @@ export function buildAstronaut(): AstronautMesh {
   carry.visible = false;
   body.add(carry);
 
+  // rank state — guarded so the renderer can re-assert it every frame for free
+  let isLeader = false;
+
   return {
     object,
     body,
@@ -163,6 +203,7 @@ export function buildAstronaut(): AstronautMesh {
       // antenna tip + visor brighten at night so figures read in the dark
       accentMat.emissiveIntensity = 1.0 + 0.8 * night;
       visorMat.emissiveIntensity = 0.65 + 0.5 * night;
+      chevronMat.emissiveIntensity = 0.85 + 0.6 * night; // modest — rank, not a beacon
       ring.visible = possessed;
       if (possessed) {
         ringMat.opacity = 0.55 + 0.35 * pulse;
@@ -201,6 +242,14 @@ export function buildAstronaut(): AstronautMesh {
       torsoG.rotation.x = lean * 0.14; // lean into the stride
       head.rotation.x = lean * 0.06;
       torsoG.rotation.z *= 0.85; // the idle sway hands off as the walk takes over
+    },
+    setLeader(on) {
+      if (on === isLeader) return;
+      isLeader = on;
+      chevron.visible = on;
+      accentMat.color.setHex(on ? ACCENT_LEAD : ACCENT_CYAN);
+      accentMat.emissive.setHex(on ? ACCENT_LEAD : ACCENT_CYAN);
+      visorMat.emissive.setHex(on ? VISOR_LEAD : VISOR_CYAN);
     },
     dispose() {
       disposeObject(object);

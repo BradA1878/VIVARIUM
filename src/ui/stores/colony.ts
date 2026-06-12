@@ -28,6 +28,7 @@ import {
   type RunHistory,
 } from "./history";
 import { Hints, type Hint } from "../hints";
+import { leaderId, boardableRover } from "../lead";
 
 // player preferences (persisted) — gate the director, the live narrator, render
 // quality, the audio gains, and the next run's difficulty. The deep watch below
@@ -377,13 +378,24 @@ const controls = {
   togglePause(): void { if (bridge && snapshot.value) bridge.setPaused(!snapshot.value.paused); },
   setSpeed(n: number): void { bridge?.setPaused(false); bridge?.setSpeed(n); },
   storm(): void { bridge?.forceStorm(); },
-  /** F — possess the colonist nearest the colony, or release if already piloting */
+  /** F — the commander chain: unpossessed → possess the LEADER (lowest living
+   *  colonist id, ui/lead.ts); piloting the leader beside a functional rover →
+   *  board it; otherwise (driving, or no rover in reach) → release. */
   possessToggle(): void {
     const s = snapshot.value;
     if (!bridge || !s) return;
-    if (s.possessed != null) { bridge.possess(null); return; }
-    bridge.setPaused(false); // piloting runs the clock
-    bridge.possessNearest((s.N - 1) / 2, (s.N - 1) / 2);
+    if (s.possessed == null) {
+      const lead = leaderId(s);
+      if (lead == null) return; // no one left to command
+      bridge.setPaused(false); // piloting runs the clock
+      bridge.possess(lead);
+      return;
+    }
+    if (s.possessed === leaderId(s)) {
+      const rover = boardableRover(s);
+      if (rover) { bridge.possess(rover.id); return; } // step from the suit into the rover
+    }
+    bridge.possess(null);
   },
   /** the player's standing WASD direction for the possessed colonist */
   moveIntent(dx: number, dy: number): void { bridge?.moveIntent(dx, dy); },

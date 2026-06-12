@@ -6,8 +6,9 @@
    5 Hz sim split). Placement raycasting is layered on in Phase 4.
    ============================================================================ */
 import * as THREE from "three";
-import type { BuildingDef, BuildingState, ColonyEvent, Snapshot } from "@shared/types";
+import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, Snapshot } from "@shared/types";
 import { DEFS, SIDE_DELTA } from "@/engine";
+import { leaderId } from "@/ui/lead";
 import type { SimBridge } from "@/worker/bridge";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
@@ -27,6 +28,7 @@ import { ROVER_CARGO_CAP } from "@/engine/tuning";
 import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
 import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
+import { BubbleSystem, reactionFor } from "./three/bubbles";
 
 interface Placed {
   mesh: KitMesh;
@@ -48,11 +50,20 @@ interface ColonistRec {
   gaitPhase: number;
   /** last frame's smoothed position, the speed estimate's scratch */
   prevPos: THREE.Vector3;
+  /** last seen ColonistAct — reaction bubbles fire on CHANGE only */
+  state: ColonistAct;
 }
 
 /** colonist states that should show the walk cycle ("mining" is a stationary
  *  dwell at the node, so it idles like any other standstill) */
 const MOVING_STATES = new Set(["toWork", "toHome", "toMedbay", "gathering", "hauling", "piloted"]);
+
+/** states that put a colonist on the open surface — only these witness a
+ *  hazard telegraph first-hand ("working"/"recovering"/"sheltering"-arrived
+ *  colonists are indoors) */
+const OUTSIDE_STATES = new Set<ColonistAct>([
+  "idle", "toWork", "toHome", "toMedbay", "gathering", "mining", "hauling",
+]);
 
 /** a rover's render record — the colonist template, with rolling wheels: the
  *  smoothed-speed estimate integrates a wheelPhase so the wheels turn with
@@ -146,6 +157,8 @@ export class ThreeRenderer {
   private roversGroup = new THREE.Group();
   private robots = new Map<number, RobotRec>();
   private robotsGroup = new THREE.Group();
+  /** reaction bubbles — pooled comic chips above colonists' heads */
+  private bubbles = new BubbleSystem();
   private alienShip: AlienShipMesh | null = null;
   private ufo: UfoMesh | null = null;
   private depot: DepotMesh | null = null;
@@ -186,6 +199,7 @@ export class ThreeRenderer {
     this.scene.scene.add(this.colonistsGroup);
     this.scene.scene.add(this.roversGroup);
     this.scene.scene.add(this.robotsGroup);
+    this.scene.scene.add(this.bubbles.group);
     this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
     this.scene.scene.add(this.placement.group);
     this.atmosphere = new Atmosphere(this.grid);
@@ -202,7 +216,9 @@ export class ThreeRenderer {
 
   /** route ColonyEvents into render-side FX. Everything forwards to hazardFx
    *  (it ignores what it doesn't know); the abduction pair carries no
-   *  coordinates, so the live UFO mesh position is the only correct anchor. */
+   *  coordinates, so the live UFO mesh position is the only correct anchor.
+   *  One-shot reaction WORDS spawn here too — the bubble system enforces the
+   *  noise rules (concurrency, cooldown, never the possessed). */
   private onColonyEvent(e: ColonyEvent): void {
     this.hazardFx.onEvent(e);
     // hazard kills already burst via hazardFx — remember the cell briefly so
@@ -212,9 +228,49 @@ export class ThreeRenderer {
     }
     if (e.type === "abducted" && this.ufo) {
       this.hazardFx.flash(this.ufo.object.position, UFO_RED);
+      this.bubbleNearestWitness(this.ufo.object.position, "taken!");
     } else if (e.type === "abduction_blocked" && this.ufo) {
       this.hazardFx.ringPulse(this.ufo.object.position, FX_CYAN, 1.6);
+    } else if (e.type === "hazard_warn") {
+      // ONE free colonist calls the telegraph: the lowest id outside that can
+      // actually speak (not piloted, not on cooldown) — deterministic, no RNG
+      const snap = this.bridge.latest;
+      if (snap) {
+        const nowMs = performance.now();
+        let pick: number | null = null;
+        for (const c of snap.colonists) {
+          if (!OUTSIDE_STATES.has(c.state) || !this.bubbles.available(c.id, nowMs)) continue;
+          if (pick === null || c.id < pick) pick = c.id;
+        }
+        const rec = pick != null ? this.colonists.get(pick) : undefined;
+        if (pick != null && rec) this.bubbles.spawn(pick, rec.pos, "storm!", "rust", nowMs);
+      }
+    } else if (e.type === "colonist_injured" && e.id !== undefined) {
+      const rec = this.colonists.get(e.id);
+      if (rec) this.bubbles.spawn(e.id, rec.pos, "ouch", "rust", performance.now());
     }
+  }
+
+  /** "taken!" at the nearest colonist to the UFO — restricted to ids still in
+   *  the latest snapshot (the victim is already gone from it) that are free to
+   *  speak, so the reaction always lands on a watchable witness. */
+  private bubbleNearestWitness(at: THREE.Vector3, word: string): void {
+    const snap = this.bridge.latest;
+    if (!snap) return;
+    const nowMs = performance.now();
+    const alive = new Set(snap.colonists.map((c) => c.id));
+    let bestId: number | null = null;
+    let bestD = Infinity;
+    for (const [id, rec] of this.colonists) {
+      if (!alive.has(id) || !this.bubbles.available(id, nowMs)) continue;
+      const d = rec.pos.distanceToSquared(at); // the UFO's altitude offsets all candidates equally
+      if (d < bestD || (d === bestD && bestId !== null && id < bestId)) {
+        bestD = d;
+        bestId = id;
+      }
+    }
+    const rec = bestId != null ? this.colonists.get(bestId) : undefined;
+    if (bestId != null && rec) this.bubbles.spawn(bestId, rec.pos, word, "rust", nowMs);
   }
 
   // ---- tool controls (driven by the HUD palette, Phase 5) -------------------
@@ -328,6 +384,7 @@ export class ThreeRenderer {
     this.reconcileUfo(snap, dt, now);
     this.updateDebugUfo(dt, now);
     this.reconcileDepot(snap, now);
+    this.bubbles.update(dt);
     this.updateTransients(dt, now);
     this.updateCamera(snap, dt);
     this.placement.update();
@@ -482,6 +539,10 @@ export class ThreeRenderer {
     const seen = new Set<number>();
     const posLerp = 1 - Math.exp(-12 * dt); // frame-rate independent smoothing
     const pulse = 0.5 + 0.5 * Math.sin(now / 400);
+    // the commander (lowest living id) wears amber — re-asserted every frame,
+    // so succession repaints automatically and exactly one mesh holds the flag
+    const lead = leaderId(snap);
+    this.bubbles.setPossessed(snap.possessed);
 
     for (const c of snap.colonists) {
       seen.add(c.id);
@@ -491,8 +552,13 @@ export class ThreeRenderer {
         const mesh = buildAstronaut();
         this.colonistsGroup.add(mesh.object);
         // phase seeded by id so strides don't sync across the crew
-        rec = { mesh, pos: target.clone(), facing: c.facing, gaitPhase: c.id, prevPos: target.clone() };
+        rec = { mesh, pos: target.clone(), facing: c.facing, gaitPhase: c.id, prevPos: target.clone(), state: c.state };
         this.colonists.set(c.id, rec);
+      } else if (rec.state !== c.state) {
+        // a state CHANGE is a reaction beat — the crew thinks out loud
+        const r = reactionFor(c.state, this.env.night);
+        if (r) this.bubbles.spawn(c.id, rec.pos, r[0], r[1], now);
+        rec.state = c.state;
       }
       // interpolate world position toward the snapshot
       rec.pos.lerp(target, posLerp);
@@ -516,6 +582,7 @@ export class ThreeRenderer {
       rec.mesh.setGait(rec.gaitPhase, amp, amp);
 
       rec.mesh.setState(c.id === snap.possessed, c.carryKind, pulse, this.env);
+      rec.mesh.setLeader(c.id === lead); // amber rank on the leader, cleared off everyone else
     }
 
     for (const [id, rec] of this.colonists) {
@@ -859,6 +926,7 @@ export class ThreeRenderer {
       entry.mesh.dispose();
     }
     this.placed.clear();
+    this.bubbles.dispose();
     for (const rec of this.colonists.values()) rec.mesh.dispose();
     this.colonists.clear();
     for (const rec of this.rovers.values()) rec.mesh.dispose();
