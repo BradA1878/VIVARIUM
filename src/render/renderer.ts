@@ -10,6 +10,7 @@ import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, Snapshot } f
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { SimBridge } from "@/worker/bridge";
+import { PerfGovernor, STEP_HIGH, STEP_LOW } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
 import { CELL, GridSpace } from "./three/coords";
@@ -141,10 +142,14 @@ export class ThreeRenderer {
   private lastFrame = 0;
   // frame-rate cap — the sim is slow + iso, so ~30fps is plenty and saves a lot
   // of GPU/battery vs rendering at a 120Hz display's full rate (and lower while
-  // paused, since almost nothing animates then).
+  // paused, since almost nothing animates then). The cap is the governor's fps
+  // lever: the ladder can raise it to 60 with deep headroom or hold 30 down it.
   private lastRender = 0;
-  private static readonly FPS_ACTIVE = 30;
   private static readonly FPS_PAUSED = 12;
+  // adaptive quality: the governor walks the LADDER off measured frame-BODY
+  // cost; the explicit LOW/HIGH tiers pin it (setQuality), AUTO lets it drive
+  private governor = new PerfGovernor();
+  private fpsCap = this.governor.step().fps;
 
   // embodied colony: astronauts, deposits, vents, machines, the trader saucer
   private colonists = new Map<number, ColonistRec>();
@@ -283,10 +288,22 @@ export class ThreeRenderer {
   onHover(cb: (info: HoverInfo | null) => void): void { this.placement.onHover(cb); }
   onSelect(cb: (info: SelectInfo | null) => void): void { this.placement.onSelect(cb); }
 
-  // graphics tier (default "high") — this exact signature is the contract the
-  // upcoming settings UI consumes.
-  setQuality(q: "low" | "high"): void { this.scene.setQuality(q); }
-  getQuality(): "low" | "high" { return this.scene.getQuality(); }
+  // graphics tier — this exact signature is the contract the settings UI
+  // consumes. HIGH/LOW pin the governor's ladder to the legacy steps; AUTO
+  // un-pins it to adapt off measured frame cost.
+  setQuality(q: "auto" | "low" | "high"): void {
+    this.governor.pin(q === "high" ? STEP_HIGH : q === "low" ? STEP_LOW : null);
+    this.syncStep();
+  }
+  getQuality(): "auto" | "low" | "high" {
+    const p = this.governor.pinned();
+    return p === STEP_HIGH ? "high" : p === STEP_LOW ? "low" : "auto";
+  }
+
+  /** DEV observability — the governor's live read for window.__viv */
+  perfInfo(): { step: number; ema: number; pinned: number | null; calibrating: boolean } {
+    return this.governor.info();
+  }
 
   /** DEV-only: drive rare render FX directly (zero sim coupling) so visual
    *  verification can screenshot them without waiting for the scheduler.
@@ -325,14 +342,37 @@ export class ThreeRenderer {
       // don't render an off-screen tab at all (belt-and-suspenders: rAF already
       // throttles hidden tabs, but this is explicit)
       if (typeof document !== "undefined" && document.hidden) return;
-      // cap the frame rate — render at most FPS_ACTIVE (FPS_PAUSED when paused)
-      const fps = this.bridge.latest?.paused ? ThreeRenderer.FPS_PAUSED : ThreeRenderer.FPS_ACTIVE;
+      // cap the frame rate — render at most the governor's step fps (FPS_PAUSED when paused)
+      const fps = this.bridge.latest?.paused ? ThreeRenderer.FPS_PAUSED : this.fpsCap;
       const minGap = 1000 / fps - 1; // small slack so we lock cleanly to a divisor of the display rate
       if (t - this.lastRender < minGap) return;
       this.lastRender = t;
+      // the governor judges headroom by the frame BODY's cost: the throttle
+      // clamps the inter-frame delta to the cap, so wall-clock dt says nothing
+      const t0 = performance.now();
       this.frame();
+      const t1 = performance.now();
+      this.governor.sample(t1 - t0, t1);
+      this.syncStep();
     };
     this.raf = requestAnimationFrame(loop);
+  }
+
+  /** the render-loop fps cap — the governor's fps lever (pause still floors it) */
+  private setFpsCap(n: number): void {
+    this.fpsCap = n;
+  }
+
+  /** apply the governor's step to the live levers — only when it changed (each
+   *  scene lever also no-ops on an unchanged value, so steps never churn) */
+  private syncStep(): void {
+    if (!this.governor.stepChanged) return;
+    this.governor.stepChanged = false;
+    const s = this.governor.step();
+    this.setFpsCap(s.fps);
+    this.scene.setPixelRatio(s.ratio);
+    this.scene.setBloom(s.bloom);
+    this.scene.setShadows(s.shadows);
   }
 
   private onResize(): void {

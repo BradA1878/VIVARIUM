@@ -41,7 +41,6 @@ export class SceneManager {
   readonly renderer: THREE.WebGLRenderer;
   readonly postfx: PostFx;
 
-  private quality: "low" | "high" = "high";
   private sun: THREE.DirectionalLight;
   private ambientLight: THREE.AmbientLight;
   private hemi: THREE.HemisphereLight;
@@ -87,26 +86,33 @@ export class SceneManager {
     this.resize();
   }
 
-  /** the whole graphics tier in one switch: postfx + pixel ratio + shadows */
-  setQuality(q: "low" | "high"): void {
-    if (q === this.quality) return;
-    this.quality = q;
-    const high = q === "high";
-    // high keeps the existing 1.5 cap (see the constructor note); low drops to 1.0
-    this.renderer.setPixelRatio(high ? Math.min(1.5, window.devicePixelRatio || 1) : 1);
-    this.renderer.shadowMap.enabled = high;
-    // a shadow-map toggle only takes hold after the materials recompile
+  // ---- graphics levers (the perf governor's ladder drives these one by one;
+  // each is a no-op when the value already holds, so steps never churn) -------
+
+  /** pixel-ratio CAP — the device ratio still floors it (see the constructor
+   *  note on why 1.5 is the ceiling) */
+  setPixelRatio(cap: number): void {
+    const r = Math.min(cap, window.devicePixelRatio || 1);
+    if (r === this.renderer.getPixelRatio()) return;
+    this.renderer.setPixelRatio(r);
+    this.postfx.setPixelRatio(r); // a LIVE bloom chain re-targets to match
+    this.resize(); // re-applies the drawing-buffer size at the new pixel ratio
+  }
+
+  /** shadow maps on/off — the toggle only takes hold after the materials recompile */
+  setShadows(on: boolean): void {
+    if (on === this.renderer.shadowMap.enabled) return;
+    this.renderer.shadowMap.enabled = on;
     this.scene.traverse((o) => {
       const mat = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
       if (Array.isArray(mat)) for (const m of mat) m.needsUpdate = true;
       else if (mat) mat.needsUpdate = true;
     });
-    this.postfx.setEnabled(high);
-    this.resize(); // re-applies the drawing-buffer size at the new pixel ratio
   }
 
-  getQuality(): "low" | "high" {
-    return this.quality;
+  /** bloom + ACES as one switch (PostFx dedupes and frees its targets when off) */
+  setBloom(on: boolean): void {
+    this.postfx.setEnabled(on);
   }
 
   resize(): void {

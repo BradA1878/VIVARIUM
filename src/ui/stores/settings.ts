@@ -15,7 +15,9 @@ import type { Difficulty } from "@shared/types";
 export interface Settings {
   v: 1;
   audio: { master: number; sfx: number; ambient: number; muted: boolean };
-  graphics: { quality: "low" | "high" };
+  /** "auto" hands the renderer's quality ladder to the perf governor; "low"/
+   *  "high" pin it to the legacy tiers */
+  graphics: { quality: "auto" | "low" | "high" };
   narratorLive: boolean;
   directorEnabled: boolean;
   /** applied on the next reset — never mid-run (difficulty lives in the seedable state) */
@@ -38,7 +40,7 @@ export const SETTINGS_KEY = "vivarium:settings:v1";
 export const DEFAULTS: Settings = {
   v: 1,
   audio: { master: 0.8, sfx: 0.9, ambient: 0.7, muted: false },
-  graphics: { quality: "high" },
+  graphics: { quality: "auto" },
   narratorLive: true,
   directorEnabled: true,
   nextDifficulty: "normal",
@@ -71,7 +73,12 @@ function normalize(raw: unknown): Settings {
       muted: bool(a.muted, DEFAULTS.audio.muted),
     },
     graphics: {
-      quality: g.quality === "low" || g.quality === "high" ? g.quality : DEFAULTS.graphics.quality,
+      // legacy profiles stored "low"/"high" — both pass through unchanged, so an
+      // explicit pre-AUTO choice stays pinned; only fresh/invalid values get auto
+      quality:
+        g.quality === "auto" || g.quality === "low" || g.quality === "high"
+          ? g.quality
+          : DEFAULTS.graphics.quality,
     },
     narratorLive: bool(o.narratorLive, DEFAULTS.narratorLive),
     directorEnabled: bool(o.directorEnabled, DEFAULTS.directorEnabled),

@@ -67,6 +67,13 @@ export class PostFx {
     this.composer?.setSize(w, h);
   }
 
+  /** keep a LIVE composer's targets at the renderer's pixel ratio — the perf
+   *  governor can re-step the ratio mid-bloom (the old all-or-nothing quality
+   *  flip always rebuilt the chain, so this case never existed) */
+  setPixelRatio(r: number): void {
+    this.composer?.setPixelRatio(r);
+  }
+
   /** solar-flare severity 0..1 — while > 0, update() runs the pulsed envelope */
   setFlare(level: number): void {
     const lvl = Math.max(0, Math.min(1, level));

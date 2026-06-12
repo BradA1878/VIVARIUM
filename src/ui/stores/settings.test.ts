@@ -46,7 +46,7 @@ describe("settings load/save", () => {
     expect(s.audio.master).toBe(0.5);
     expect(s.audio.sfx).toBe(DEFAULTS.audio.sfx); // missing leaves the default
     expect(s.audio.muted).toBe(false);
-    expect(s.graphics.quality).toBe("high");
+    expect(s.graphics.quality).toBe("auto");
     expect(s.nextDifficulty).toBe("normal");
   });
 
@@ -67,9 +67,31 @@ describe("settings load/save", () => {
     const s = loadSettings(st);
     expect(s.audio.master).toBe(DEFAULTS.audio.master);
     expect(s.audio.muted).toBe(false);
-    expect(s.graphics.quality).toBe("high");
+    expect(s.graphics.quality).toBe("auto");
     expect(s.narratorLive).toBe(true);
     expect(s.nextDifficulty).toBe("normal");
+  });
+
+  it("fresh profiles default to auto quality", () => {
+    expect(DEFAULTS.graphics.quality).toBe("auto");
+    expect(loadSettings(memStorage()).graphics.quality).toBe("auto");
+  });
+
+  it("accepts every quality tier through normalize, auto included", () => {
+    for (const q of ["auto", "low", "high"] as const) {
+      const st = memStorage({ [SETTINGS_KEY]: JSON.stringify({ graphics: { quality: q } }) });
+      expect(loadSettings(st).graphics.quality).toBe(q);
+    }
+  });
+
+  it("a legacy stored high/low pin survives normalize and a round-trip untouched", () => {
+    for (const q of ["high", "low"] as const) {
+      const st = memStorage({ [SETTINGS_KEY]: JSON.stringify({ v: 1, graphics: { quality: q } }) });
+      const s = loadSettings(st);
+      expect(s.graphics.quality).toBe(q); // an explicit pre-AUTO choice stays pinned
+      saveSettings(s, st);
+      expect(loadSettings(st).graphics.quality).toBe(q);
+    }
   });
 
   it("clamps out-of-range volumes into [0, 1]", () => {

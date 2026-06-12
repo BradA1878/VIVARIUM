@@ -32,7 +32,7 @@ function setVol(key: VolKey, e: Event): void {
   updateSettings({ audio: { [key]: v } as Partial<{ master: number; sfx: number; ambient: number }> });
 }
 
-const QUALITIES: ("low" | "high")[] = ["low", "high"];
+const QUALITIES: ("auto" | "low" | "high")[] = ["auto", "low", "high"];
 
 const DIFFS: { value: Difficulty; label: string }[] = [
   { value: "easy", label: "CALM" },
@@ -106,6 +106,7 @@ const KEYS: [string, string][] = [
             </button>
           </div>
         </div>
+        <p class="set-note">AUTO adapts to your machine</p>
       </section>
 
       <section class="set-sec">
