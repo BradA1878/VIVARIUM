@@ -7,7 +7,11 @@
    Rules: one toast at a time; a hint is marked seen AT SHOW TIME (a blocked or
    suppressed hint is not burned and may fire later); everything is suppressed
    while the FirstHint welcome card (key "vivarium:hinted:v1") is still unseen —
-   the player is reading the big card, not the margins.
+   the player is reading the big card, not the margins. unlock_* hints are the
+   one exception to silent dropping: their events fire ONCE per run, so a
+   schematic blocked by an occupied slot waits in a small session-local FIFO
+   and shows on the first pump after the slot frees (the store frees it only
+   after its inter-toast gap, so the gap is honored for queued cards too).
 
    Storage is injectable with try/catch around every access (the settings /
    memory.ts loadModel pattern); nothing touches window at import time.
@@ -190,11 +194,24 @@ export function firstHintSeen(storage?: HintStorage): boolean {
 
 // ---- the queue --------------------------------------------------------------------
 
+/** an unlock_* schematic toast — the only hints whose trigger fires once per run */
+function isUnlockHint(id: HintId): boolean {
+  return id.startsWith("unlock_");
+}
+
+/** the pending FIFO's cap — schematics beyond it drop unburned (a later run shows them) */
+const PENDING_CAP = 4;
+
 /** one toast at a time; seen is marked (and persisted) only when a hint shows */
 export class Hints {
   readonly scratch: HintScratch = freshScratch();
   private seen: Set<HintId>;
   private active: HintId | null = null;
+  /** blocked schematic toasts wait here (FIFO) — unlock events fire once per
+   *  run, so an occupied slot must not swallow the card. Session-local by
+   *  design, never persisted: an unshown queue dies with the tab, and since
+   *  seen only marks at show time the card simply fires again on a later run. */
+  private pending: HintId[] = [];
   /** caches `firstHintSeen` once true — it never goes back within a session */
   private unlocked = false;
   private readonly storage?: HintStorage;
@@ -209,13 +226,27 @@ export class Hints {
     return !this.unlocked;
   }
 
-  /** offer a candidate; returns the Hint to show now, or null (blocked hints are not burned) */
+  /** offer a candidate; returns the Hint to show now, or null. Blocked hints
+   *  are not burned; blocked unlock_* candidates queue instead of dropping,
+   *  and a freed slot serves the queue (oldest first) before new candidates. */
   private offer(id: HintId | null): Hint | null {
-    if (!id || this.active != null || this.suppressed() || this.seen.has(id)) return null;
-    this.seen.add(id); // seen AT SHOW TIME — one-shot from here on
+    if (this.suppressed()) return null;
+    // a schematic that cannot show RIGHT NOW (slot held, or older schematics
+    // already waiting) joins the FIFO — every other hint keeps the drop
+    // semantics, because its trigger re-fires naturally
+    if (
+      id && isUnlockHint(id) && (this.active != null || this.pending.length > 0) &&
+      !this.seen.has(id) && !this.pending.includes(id) && this.pending.length < PENDING_CAP
+    ) {
+      this.pending.push(id);
+    }
+    if (this.active != null) return null;
+    const pick = this.pending.length > 0 ? this.pending.shift()! : id;
+    if (!pick || this.seen.has(pick)) return null;
+    this.seen.add(pick); // seen AT SHOW TIME — one-shot from here on
     saveSeen(this.seen, this.storage);
-    this.active = id;
-    return HINTS[id];
+    this.active = pick;
+    return HINTS[pick];
   }
 
   onEvent(e: ColonyEvent): Hint | null {
@@ -229,13 +260,16 @@ export class Hints {
     // it is already in the forever seen-set (burned for good, and consuming the
     // scratch lets the corridor hint through while still possessed). A blocked
     // offer leaves the trigger intact to fire at the next opportunity this run.
-    if (id === "mining" && (hint != null || this.seen.has(id))) {
+    // NOTE the id match: offer may show a QUEUED schematic on this very pump,
+    // which must not count as the mining hint having shown.
+    if (id === "mining" && (hint?.id === id || this.seen.has(id))) {
       this.scratch.possessedOnce = true;
     }
     return hint;
   }
 
-  /** the toast was closed (or timed out) — the next hint may show */
+  /** the toast was closed (or timed out, or the gap elapsed) — the slot frees,
+   *  and the NEXT event/snapshot pump may show a hint (queued schematics first) */
   dismiss(): void {
     this.active = null;
   }

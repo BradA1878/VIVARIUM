@@ -251,3 +251,117 @@ describe("Hints queue", () => {
     expect(() => hints.dismiss()).not.toThrow();
   });
 });
+
+// ---- the pending schematic queue ---------------------------------------------------
+//
+// unlock_* events fire ONCE per run, so a card swallowed by an occupied slot is
+// lost for the whole run. Blocked schematics queue (small FIFO) and are served
+// by the next onEvent/onSnapshot pump after dismiss() frees the slot — in the
+// live app the store only calls dismiss() after its ~1.5 s inter-toast gap, so
+// the gap is honored without the queue knowing about wall clocks.
+
+describe("Hints queue — pending schematics", () => {
+  it("queues an unlock blocked by an active toast and shows it once the slot frees", () => {
+    const hints = new Hints(unlockedStorage());
+    expect(hints.onEvent(ev("brownout"))?.id).toBe("brownout"); // a card is up
+    expect(hints.onEvent(ev("unlock", { defId: "windturbine" }))).toBeNull(); // blocked → queued
+    // still blocked while the card is up — the queue never jumps the slot
+    expect(hints.onSnapshot(makeSnap({ t: 6 }))).toBeNull();
+    hints.dismiss(); // the store calls this after its inter-toast gap
+    // the next pump serves the queued schematic
+    expect(hints.onSnapshot(makeSnap({ t: 8 }))?.id).toBe("unlock_windturbine");
+  });
+
+  it("two queued unlocks show in arrival order, one per freed slot", () => {
+    const hints = new Hints(unlockedStorage());
+    expect(hints.onEvent(ev("brownout"))?.id).toBe("brownout");
+    expect(hints.onEvent(ev("unlock", { defId: "geothermal" }))).toBeNull();
+    expect(hints.onEvent(ev("unlock", { defId: "reactor" }))).toBeNull();
+    hints.dismiss();
+    expect(hints.onSnapshot(makeSnap({ t: 6 }))?.id).toBe("unlock_geothermal"); // FIFO
+    expect(hints.onSnapshot(makeSnap({ t: 7 }))).toBeNull(); // still one toast at a time
+    hints.dismiss();
+    expect(hints.onSnapshot(makeSnap({ t: 9 }))?.id).toBe("unlock_reactor");
+  });
+
+  it("a fresh unlock waits its turn behind already-queued schematics", () => {
+    const hints = new Hints(unlockedStorage());
+    expect(hints.onEvent(ev("brownout"))?.id).toBe("brownout");
+    expect(hints.onEvent(ev("unlock", { defId: "printer" }))).toBeNull(); // queued
+    hints.dismiss();
+    // the slot is free but printer is ahead — this pump shows printer and
+    // queues the incoming roverbay behind it
+    expect(hints.onEvent(ev("unlock", { defId: "roverbay" }))?.id).toBe("unlock_printer");
+    hints.dismiss();
+    expect(hints.onSnapshot(makeSnap({ t: 9 }))?.id).toBe("unlock_roverbay");
+  });
+
+  it("a queued-then-shown schematic is still one-shot — seen marks at show, not at enqueue", () => {
+    const st = unlockedStorage();
+    const hints = new Hints(st);
+    expect(hints.onEvent(ev("brownout"))?.id).toBe("brownout");
+    expect(hints.onEvent(ev("unlock", { defId: "reactor" }))).toBeNull(); // queued, NOT seen yet
+    expect(st.map.get(HINTS_SEEN_KEY) ?? "").not.toContain("unlock_reactor");
+    hints.dismiss();
+    expect(hints.onSnapshot(makeSnap({ t: 6 }))?.id).toBe("unlock_reactor"); // shows once
+    expect(st.map.get(HINTS_SEEN_KEY)).toContain("unlock_reactor"); // persisted at show time
+    hints.dismiss();
+    expect(hints.onEvent(ev("unlock", { defId: "reactor" }))).toBeNull(); // never again
+    expect(hints.onSnapshot(makeSnap({ t: 9 }))).toBeNull(); // and never re-queued
+  });
+
+  it("the queue is session-local — a reload starts empty, with nothing burned", () => {
+    const st = unlockedStorage();
+    const a = new Hints(st);
+    expect(a.onEvent(ev("brownout"))?.id).toBe("brownout");
+    expect(a.onEvent(ev("unlock", { defId: "roboticsbay" }))).toBeNull(); // queued; session ends here
+
+    const b = new Hints(st); // a new session over the same storage
+    expect(b.onSnapshot(makeSnap({ t: 5 }))).toBeNull(); // nothing spontaneously shows
+    // the card was never burned: a future run's unlock event still gets it
+    expect(b.onEvent(ev("unlock", { defId: "roboticsbay" }))?.id).toBe("unlock_roboticsbay");
+  });
+
+  it("caps the pending queue at four — a fifth blocked unlock drops, unburned", () => {
+    const hints = new Hints(unlockedStorage());
+    expect(hints.onEvent(ev("brownout"))?.id).toBe("brownout");
+    for (const d of ["windturbine", "geothermal", "reactor", "printer", "roverbay"]) {
+      expect(hints.onEvent(ev("unlock", { defId: d }))).toBeNull(); // all blocked
+    }
+    const shown: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      hints.dismiss();
+      const h = hints.onSnapshot(makeSnap({ t: 10 + i }));
+      if (h) shown.push(h.id);
+    }
+    expect(shown).toEqual([
+      "unlock_windturbine", "unlock_geothermal", "unlock_reactor", "unlock_printer",
+    ]); // the fifth fell off the cap…
+    // …but was never marked seen, so it can still show (e.g. on a later run)
+    expect(hints.onEvent(ev("unlock", { defId: "roverbay" }))?.id).toBe("unlock_roverbay");
+  });
+
+  it("a served schematic does not burn the mining trigger riding the same snapshot", () => {
+    const hints = new Hints(unlockedStorage());
+    expect(hints.onEvent(ev("brownout"))?.id).toBe("brownout");
+    expect(hints.onEvent(ev("unlock", { defId: "printer" }))).toBeNull(); // queued
+    hints.dismiss();
+    // the first possession lands on the same pump that serves the queued card
+    expect(hints.onSnapshot(makeSnap({ t: 6, possessed: 2 }))?.id).toBe("unlock_printer");
+    expect(hints.scratch.possessedOnce).toBe(false); // mining never showed — not burned
+    hints.dismiss();
+    expect(hints.onSnapshot(makeSnap({ t: 8, possessed: 2 }))?.id).toBe("mining");
+    expect(hints.scratch.possessedOnce).toBe(true); // consumed at its own show time
+  });
+
+  it("non-unlock hints keep the drop semantics — blocked events never queue", () => {
+    const hints = new Hints(unlockedStorage());
+    expect(hints.onEvent(ev("brownout"))?.id).toBe("brownout"); // a card is up
+    expect(hints.onEvent(ev("traders_inbound"))).toBeNull(); // blocked → dropped
+    hints.dismiss();
+    // nothing pends: the next pump with no candidate shows nothing
+    expect(hints.onSnapshot(makeSnap({ t: 6 }))).toBeNull();
+    // (the trade hint re-triggers naturally on the next traders_inbound)
+    expect(hints.onEvent(ev("traders_inbound"))?.id).toBe("trade");
+  });
+});

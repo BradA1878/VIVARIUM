@@ -6,6 +6,8 @@
      presses P to fill or empty the hands explicitly;
    - the AUTO-GATHER brain (stepGatherer): an idle colonist claims a node, walks
      to it, dwells to mine a load, hauls it to the depot, banks it, and repeats.
+     Fresh claims are NEED-AWARE (kindsByNeed): empty hands serve the scarcest
+     pool first, so a starving colony works caches before stockpiling more ore.
 
    Any agent matching GatherAgent structurally can run the brain — colonists
    today, robots later. Movement uses findPath/stepToward only, so routes replay
@@ -160,23 +162,37 @@ function walkToward(s: ColonyState, a: GatherAgent, goal: Pt, speed: number, dt:
   stepToward(a, wp, speed, dt);
 }
 
-/** the agent's deposit target this tick. Sticky: the current claim holds while
- *  its node lives. Otherwise the nearest live node by distance-squared (tie →
- *  lowest id), skipping nodes claimed by other agents and falling back to
- *  sharing the nearest when everything is claimed. A carrying agent only
- *  considers its own kind — one load, one pool. */
-function gatherTarget(s: ColonyState, a: GatherAgent, claimed: Set<number>): DepositInstance | null {
-  if (a.gatherDepositId != null) {
-    const cur = s.deposits.find((d) => d.id === a.gatherDepositId && d.amount > 0);
-    if (cur) return cur;
-    a.gatherDepositId = null;
-    a.gatherT = 0;
-  }
+/** the pool a kind banks into, for the need ranking (ore → the materials bank) */
+function poolFor(s: ColonyState, kind: DepositKind): { amount: number; capacity: number } {
+  const target = DEPOSIT_YIELD[kind];
+  return target === "materials" ? s.materials : s.pools[target];
+}
+
+/** the fixed tie order — survival first: food, then water, then build currency */
+const NEED_TIE_ORDER: DepositKind[] = ["cache", "ice", "ore"];
+
+/** deposit kinds ranked by colony need: ascending fill fraction of each kind's
+ *  destination pool (the emptiest pool eats first). A pure derivation of state
+ *  — zero RNG draws — so replay/save/lockstep hold; exact ties break in
+ *  NEED_TIE_ORDER (stable sort), making the ranking total and deterministic. */
+export function kindsByNeed(s: ColonyState): DepositKind[] {
+  const fill = (k: DepositKind): number => {
+    const p = poolFor(s, k);
+    return p.capacity > 0 ? p.amount / p.capacity : 1;
+  };
+  return [...NEED_TIE_ORDER].sort((a, b) => fill(a) - fill(b));
+}
+
+/** the nearest live node OF ONE KIND by distance-squared (tie → lowest id),
+ *  skipping nodes claimed by other agents and falling back to sharing the
+ *  nearest when every node of the kind is claimed. Claims the pick. */
+function claimNearestOfKind(
+  s: ColonyState, a: GatherAgent, claimed: Set<number>, kind: DepositKind,
+): DepositInstance | null {
   let best: DepositInstance | null = null, bestD = Infinity;       // unclaimed
   let bestAny: DepositInstance | null = null, bestAnyD = Infinity; // any node
   for (const dep of s.deposits) {
-    if (dep.amount <= 0) continue;
-    if (a.carryKind && dep.kind !== a.carryKind) continue;
+    if (dep.amount <= 0 || dep.kind !== kind) continue;
     const d2 = (dep.gx - a.x) ** 2 + (dep.gy - a.y) ** 2;
     if (d2 < bestAnyD || (d2 === bestAnyD && bestAny != null && dep.id < bestAny.id)) {
       bestAnyD = d2; bestAny = dep;
@@ -193,6 +209,28 @@ function gatherTarget(s: ColonyState, a: GatherAgent, claimed: Set<number>): Dep
     claimed.add(pick.id);
   }
   return pick;
+}
+
+/** the agent's deposit target this tick. Sticky: the current claim holds while
+ *  its node lives. A carrying agent only considers its own kind — one load,
+ *  one pool. An EMPTY-HANDED agent serves the colony's scarcest pool first
+ *  (kindsByNeed), falling through to the next-scarcest kind whenever the field
+ *  has no live node of one; within a kind the pick is the nearest by
+ *  distance-squared (tie → lowest id), unclaimed preferred, sharing the
+ *  nearest when every node of the kind is claimed. */
+function gatherTarget(s: ColonyState, a: GatherAgent, claimed: Set<number>): DepositInstance | null {
+  if (a.gatherDepositId != null) {
+    const cur = s.deposits.find((d) => d.id === a.gatherDepositId && d.amount > 0);
+    if (cur) return cur;
+    a.gatherDepositId = null;
+    a.gatherT = 0;
+  }
+  if (a.carryKind) return claimNearestOfKind(s, a, claimed, a.carryKind);
+  for (const kind of kindsByNeed(s)) {
+    const pick = claimNearestOfKind(s, a, claimed, kind);
+    if (pick) return pick;
+  }
+  return null;
 }
 
 /** the depot leg: haul the load home and bank it the moment it's in range */

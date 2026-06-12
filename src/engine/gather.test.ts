@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import { Colony } from "./index";
 import type { ColonyEvent } from "@shared/types";
 import type { ColonistInstance, ColonyState } from "./state";
+import { kindsByNeed } from "./gather";
 import { AUTO_CARRY, DAY_START, DAY_END } from "./tuning";
 
 /** reach the engine's private state (the suite's seam for injecting/inspecting) */
@@ -157,6 +158,100 @@ describe("idle colonists work the deposit field", () => {
       expect(a.gatherDepositId).toBe(claimA);
       expect(b.gatherDepositId).toBe(claimB);
     }
+  });
+});
+
+describe("need-aware targeting — the scarcest pool eats first", () => {
+  /** skew the colony's books so food is starving and the build bank is flush */
+  function starveFood(s: ColonyState): void {
+    s.pools.food.amount = s.pools.food.capacity * 0.1;    // food at 10%
+    s.pools.water.amount = s.pools.water.capacity * 0.95; // water comfortable
+    s.materials.amount = s.materials.capacity * 0.9;      // materials at 90%
+  }
+
+  it("ranks kinds by ascending pool fill, survival-first on exact ties", () => {
+    const { s } = controlled(11);
+    s.pools.food.amount = s.pools.food.capacity * 0.5;
+    s.pools.water.amount = s.pools.water.capacity * 0.5;
+    s.materials.amount = s.materials.capacity * 0.5;
+    // a dead tie breaks in the fixed survival order: food, water, ore
+    expect(kindsByNeed(s)).toEqual(["cache", "ice", "ore"]);
+    s.materials.amount = 0; // the build bank empties → ore jumps the queue
+    expect(kindsByNeed(s)).toEqual(["ore", "cache", "ice"]);
+    s.pools.food.amount = 0; // food joins ore at zero — the 0-vs-0 tie breaks survival-first
+    expect(kindsByNeed(s)).toEqual(["cache", "ore", "ice"]);
+  });
+
+  it("sends the gatherer to a far cache over a near ore when food is the scarcest", () => {
+    const { c, s } = controlled(11);
+    starveFood(s);
+    s.deposits = [
+      { id: 501, gx: 9, gy: 5, kind: "ore", amount: 140, max: 140 },     // near the base
+      { id: 502, gx: 13, gy: 13, kind: "cache", amount: 140, max: 140 }, // the far corner
+    ];
+    run(c, 2); // long enough for every free colonist to claim
+    const free = freeColonists(s);
+    expect(free.length).toBeGreaterThan(0);
+    for (const k of free) {
+      expect(k.gatherDepositId).toBe(502); // hunger outranks distance
+    }
+  });
+
+  it("the ranking is live — when the books flip, the next claim flips with them", () => {
+    const { c, s } = controlled(11);
+    starveFood(s);
+    s.deposits = [
+      { id: 501, gx: 9, gy: 5, kind: "ore", amount: 140, max: 140 },
+      { id: 502, gx: 12, gy: 12, kind: "cache", amount: 140, max: 140 },
+    ];
+    run(c, 2);
+    const g = freeColonists(s)[0];
+    expect(g.gatherDepositId).toBe(502); // food first while it is the scarcest
+
+    // the colony's books flip: food is now flush, the build bank nearly dry
+    s.pools.food.amount = s.pools.food.capacity * 0.95;
+    s.materials.amount = s.materials.capacity * 0.03;
+    s.deposits = s.deposits.filter((d) => d.id !== 502); // collapse the cache → claims release
+    run(c, 1);
+    expect(g.gatherDepositId).toBe(501); // the scarcest pool is now materials → ore
+  });
+
+  it("claims hold within the chosen kind — two gatherers take distinct caches, nobody drifts to ore", () => {
+    const { c, s } = controlled(23);
+    starveFood(s);
+    s.deposits = [
+      { id: 501, gx: 11, gy: 4, kind: "ore", amount: 140, max: 140 }, // nearest node of all
+      { id: 502, gx: 11, gy: 7, kind: "cache", amount: 140, max: 140 },
+      { id: 503, gx: 13, gy: 9, kind: "cache", amount: 140, max: 140 },
+    ];
+    c.tick(0.2); c.drainEvents(); // settle assignments
+    const free = freeColonists(s);
+    expect(free.length).toBeGreaterThanOrEqual(2);
+    const [a, b] = free;
+
+    run(c, 2);
+    const claims = [a.gatherDepositId, b.gatherDepositId];
+    expect(claims).toContain(502);
+    expect(claims).toContain(503); // distinct caches — the claim set is honored
+    expect(claims).not.toContain(501); // and nobody drifted to the flush ore pool
+  });
+
+  it("a carrying agent stays kind-locked even when another pool is scarcer", () => {
+    const { c, s } = controlled(13);
+    starveFood(s);
+    s.deposits = [
+      { id: 501, gx: 9, gy: 5, kind: "ore", amount: 140, max: 140 },
+      { id: 502, gx: 9, gy: 7, kind: "cache", amount: 140, max: 140 },
+    ];
+    c.tick(0.2); c.drainEvents();
+    const carrier = freeColonists(s)[0];
+    carrier.carryKind = "ore";        // half a load of ore in hand…
+    carrier.carryAmt = AUTO_CARRY / 2;
+    carrier.gatherDepositId = null;   // …and no standing claim
+    carrier.gatherT = 0;
+    c.tick(0.2); c.drainEvents();
+    // one load, one pool: the fresh claim is the ore node, not the needier cache
+    expect(carrier.gatherDepositId).toBe(501);
   });
 });
 

@@ -18,11 +18,15 @@ import { idx } from "./grid";
 import { baseCenter } from "./colonists";
 import type { RNG } from "./rng";
 
+/** kind weights: ore 40% / ice 32% / cache 28%. Caches were 21% and the larder
+ *  underran demand by ~sol 4 on an untouched colony — food needs the share.
+ *  Still exactly ONE rng draw, so the env stream's draw count (and every
+ *  position/amount after it) is unchanged. */
 function pickKind(rng: RNG): DepositKind {
   const r = rng.next();
-  if (r < 0.46) return "ore";   // build economy — a touch more common
-  if (r < 0.79) return "ice";   // → water
-  return "cache";               // → food, rarer
+  if (r < 0.4) return "ore";    // build economy
+  if (r < 0.72) return "ice";   // → water
+  return "cache";               // → food — common enough to keep pace
 }
 
 /** try to place one deposit on a free cell away from the base; returns true if placed */
