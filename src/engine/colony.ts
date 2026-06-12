@@ -22,6 +22,7 @@ import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData } from "./state";
 import { emptyBuilding } from "./state";
 import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed } from "./colonists";
+import { computeUnlocks } from "./unlocks";
 import { seedDeposits, seedVents } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
 import { ufoView } from "./ufo";
@@ -261,6 +262,7 @@ export class Colony {
       trade: tradeView(s),
       ufo: ufoView(s),
       acquiredTech: [...s.acquiredTech],
+      unlocks: computeUnlocks(s),
       population: s.population,
       housing: s.housing,
       labor: s.labor,
@@ -324,6 +326,7 @@ export class Colony {
         trade: this.s.trade ? { ...this.s.trade, give: { ...this.s.trade.give }, take: { ...this.s.trade.take } } : null,
         ufo: this.s.ufo ? { ...this.s.ufo } : null,
         acquiredTech: [...this.s.acquiredTech],
+        unlocked: [...this.s.unlocked],
         timers: { ...this.s.timers },
         hazards: this.s.hazards.map((h) => ({ ...h })),
       },
@@ -372,6 +375,9 @@ export class Colony {
       moraleLatch: st.moraleLatch ?? false,
       difficulty: st.difficulty ?? "normal",
       acquiredTech: [...(st.acquiredTech ?? [])],
+      // legacy saves carry no latch: re-derive the currently-true gates on the
+      // first tick, re-announcing the new buildings once (engine/unlocks.ts)
+      unlocked: [...(st.unlocked ?? [])],
       timers: { ...st.timers },
       hazards: (st.hazards ?? []).map((h) => ({ ...h })),
     };
@@ -422,6 +428,7 @@ function freshState(difficulty: Difficulty): ColonyState {
     nextUfo: UFO_FIRST * prof.ufoGapMult,
     nextBirth: BIRTH_FIRST,
     acquiredTech: [],
+    unlocked: [],
     colonistCounter: 1,
     depositCounter: 1,
     tradeCounter: 1,

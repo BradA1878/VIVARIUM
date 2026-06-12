@@ -31,6 +31,7 @@ import { respawnDeposits } from "./deposits";
 import { updateTrade } from "./trade";
 import { updateUfo } from "./ufo";
 import { techPassivePower, techDemandMult } from "./techs";
+import { updateUnlocks } from "./unlocks";
 import { windLevel } from "./wind";
 import type { RNG } from "./rng";
 
@@ -276,6 +277,10 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // colonists' pass built, so the species never thrash over a node.
   updateRobotFab(s, dt, emit);
   stepRobots(s, dt, claims);
+
+  // 7d. Abundance unlocks — the expansion palette latches open as the colony
+  // proves itself (pure derivations over the resolved state, zero rng draws)
+  updateUnlocks(s, emit);
 
   // 8. Campaign — the launch-window arc (doc §2.5) -----------------------------
   if (s.outcome === null) {

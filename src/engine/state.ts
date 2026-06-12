@@ -168,6 +168,10 @@ export interface ColonyState {
   nextBirth: number;
   /** permanent alien tech upgrades acquired through trade */
   acquiredTech: string[];
+  /** latched expansion unlocks (engine/unlocks.ts) — defIds whose gate has
+   *  been true once; an unlock never revokes. Legacy saves default to [] and
+   *  re-derive on their first tick. */
+  unlocked: string[];
   /** monotonic id counters */
   colonistCounter: number;
   depositCounter: number;

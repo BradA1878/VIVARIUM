@@ -20,6 +20,7 @@ export const SEV: Record<EventType, number> = {
   traders_inbound: 3, trade_done: 2, trade_left: 1, // first contact
   ufo_inbound: 4, abducted: 5, abduction_blocked: 3, ufo_left: 1, // the abductor
   birth: 2, // the colony grows from within
+  unlock: 2, // a gated def opens for placement (bank lands with the dry rewrite)
   rover_ready: 2, // the Rover Bay rolls one out (bank lands with the dry rewrite)
   robot_ready: 2, robot_destroyed: 2, // the Robotics Bay's fleet (banks land with the dry rewrite)
   morale_low: 3, morale_recovered: 1, // the colony's mood (latched, like brownout)

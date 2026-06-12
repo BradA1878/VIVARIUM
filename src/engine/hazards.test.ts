@@ -75,7 +75,7 @@ describe("the Director suppresses the engine scheduler", () => {
   it("no hazard auto-spawns while director-controlled", () => {
     const c = new Colony(7);
     c.setDirector(true);
-    const evs = step(c, 300); // well past the first scheduled hazard (~95s)
+    const evs = step(c, 300); // well past the first scheduled hazard (~180s)
     expect(evs.some((e) => e.type === "hazard_warn")).toBe(false);
   });
 

@@ -55,6 +55,8 @@ function controlled(seed: number): { c: Colony; s: ColonyState } {
 /** place a Robotics Bay on the first placeable 2×2 in the colony's east yard
  *  (deterministic per seed) and clear the build chatter */
 function placeBay(c: Colony): { gx: number; gy: number } {
+  const s = stateOf(c); // the gate is unlocks.test.ts's subject — open it here
+  if (!s.unlocked.includes("roboticsbay")) s.unlocked.push("roboticsbay");
   for (let gx = 9; gx <= 12; gx++) {
     for (let gy = 9; gy <= 12; gy++) {
       if (c.place("roboticsbay", gx, gy)) { c.drainEvents(); return { gx, gy }; }

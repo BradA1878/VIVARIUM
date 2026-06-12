@@ -22,10 +22,10 @@ export interface DirectorContext {
   comfort?: number;
 }
 
-const BASE_GAP = 180;     // sim-seconds between hazards early on
-const MIN_GAP = 105;      // floor even late — never faster than ~1.7 min apart
-const SOL_RAMP = 4;       // gap shrinks this much per sol (gentle, for the long arc)
-const FIRST_STRIKE = 150; // leave the player a sol+ to settle in
+const BASE_GAP = 340;     // sim-seconds between hazards early on
+const MIN_GAP = 200;      // floor even late — never faster than ~3.3 min apart
+const SOL_RAMP = 6;       // gap shrinks this much per sol (gentle, for the long arc)
+const FIRST_STRIKE = 220; // leave the player a sol+ to settle in
 const REPEAT_PENALTY = 0.4; // discourage throwing the same hazard twice running
 
 export class Director {
@@ -71,11 +71,11 @@ export class Director {
   /** strikes come faster as the colony matures — and faster still when the
    *  player has grown comfortable (the planet stops letting you settle) */
   private gap(s: Snapshot, comfort: number): number {
-    return Math.max(MIN_GAP, (BASE_GAP - s.sol * SOL_RAMP) * (1 - 0.3 * comfort));
+    return Math.max(MIN_GAP, (BASE_GAP - s.sol * SOL_RAMP) * (1 - 0.25 * comfort));
   }
 
   /** and harder, also nudged up by comfort */
   private intensity(s: Snapshot, comfort: number): number {
-    return Math.min(1, 0.4 + s.sol * 0.045 + 0.2 * comfort);
+    return Math.min(1, 0.35 + s.sol * 0.04 + 0.2 * comfort);
   }
 }

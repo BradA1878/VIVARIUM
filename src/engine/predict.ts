@@ -24,6 +24,7 @@ export function canPlacePredict(
 ): boolean {
   const def = DEFS[defId];
   if (!def) return false;
+  if (snap.unlocks[defId] === false) return false; // still gated (mirrors grid.ts via the latch)
   if ((def.matCost ?? 0) > snap.materials.amount) return false; // can't afford it
   const o = occ ?? occupancy(snap);
   for (const [x, y] of cellsFor(def, gx, gy)) {

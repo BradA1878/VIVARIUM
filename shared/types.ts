@@ -299,6 +299,10 @@ export interface Snapshot {
   solarMul: number;
   /** current wind level (pure anti-solar curve, engine/wind.ts), WIND_MIN..1 */
   windLevel: number;
+  /** palette availability — every def id → placeable? The founding tier is
+   *  always true; the expansion tier latches open as the colony proves itself
+   *  (engine/unlocks.ts; an unlock never revokes). */
+  unlocks: Record<string, boolean>;
   /** live hazards (telegraphed + active) for the HUD + renderer */
   hazards: HazardView[];
   /** whether an external Director is driving hazards (engine scheduler stands down) */
@@ -377,6 +381,8 @@ export type EventType =
   | "ufo_left"
   /** a colonist born in-colony as the settlement thrives */
   | "birth"
+  /** a gated building def opened for placement (defId + display name in detail) */
+  | "unlock"
   /** the Rover Bay finished fabricating a rover (it rolls out by the bay door) */
   | "rover_ready"
   /** the Robotics Bay finished a mining robot (it rolls out by the bay door) */

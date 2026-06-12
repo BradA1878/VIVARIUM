@@ -45,6 +45,8 @@ function controlled(seed: number): { c: Colony; s: ColonyState } {
   s.nextArrival = 1e9;
   s.nextBirth = 1e9;
   s.nextResupply = 1e9; // resupply trickles into every pool — keep flows exact
+  // the expansion gates are unlocks.test.ts's subject — open the defs under test
+  s.unlocked.push("windturbine", "geothermal", "reactor", "printer");
   return { c, s };
 }
 
@@ -199,6 +201,7 @@ describe("geothermal tap — the first terrain-restricted building", () => {
   it("canPlace refuses off-vent, accepts on a vent; predict mirrors via snap.vents", () => {
     const c = new Colony(7);
     const s = stateOf(c);
+    s.unlocked.push("geothermal"); // the gate is unlocks.test.ts's subject — open it here
     const v = s.vents[0];
     // a free cell that is on no vent
     let off: { x: number; y: number } | null = null;

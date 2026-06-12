@@ -28,21 +28,21 @@ describe("decide pacing", () => {
   it("holds fire until the colony has settled, then throws", () => {
     const d = new Director();
     expect(d.decide(snap((s) => { s.t = 10; }), () => 0)).toBeNull();   // too early
-    const strike = d.decide(snap((s) => { s.t = 200; }), () => 0);      // armed + past gap
+    const strike = d.decide(snap((s) => { s.t = 400; }), () => 0);      // armed + past gap
     expect(strike).not.toBeNull();
     expect(strike!.intensity).toBeGreaterThan(0);
   });
 
   it("never stacks onto an active hazard or a lethal crisis", () => {
     const d = new Director();
-    d.decide(snap((s) => { s.t = 200; }), () => 0); // arm + fire once
+    d.decide(snap((s) => { s.t = 400; }), () => 0); // arm + fire once
     expect(d.decide(snap((s) => { s.t = 400; s.hazards = [{ kind: "dust", phase: "active", intensity: 1, remaining: 5 }]; }), () => 0)).toBeNull();
     expect(d.decide(snap((s) => { s.t = 400; s.timers = { oxygen: 10, water: null, food: null }; }), () => 0)).toBeNull();
   });
 
   it("escalates intensity with the sols", () => {
-    const d1 = new Director(); const early = d1.decide(snap((s) => { s.t = 200; s.sol = 1; }), () => 0);
-    const d2 = new Director(); const late = d2.decide(snap((s) => { s.t = 200; s.sol = 9; }), () => 0);
+    const d1 = new Director(); const early = d1.decide(snap((s) => { s.t = 400; s.sol = 1; }), () => 0);
+    const d2 = new Director(); const late = d2.decide(snap((s) => { s.t = 400; s.sol = 9; }), () => 0);
     expect(late!.intensity).toBeGreaterThan(early!.intensity);
   });
 
@@ -67,11 +67,11 @@ describe("decide pacing", () => {
 
     // never two hazards inside the floor gap
     for (let i = 1; i < strikes.length; i++) {
-      expect(strikes[i].t - strikes[i - 1].t).toBeGreaterThanOrEqual(100);
+      expect(strikes[i].t - strikes[i - 1].t).toBeGreaterThanOrEqual(196);
     }
     // anti-repetition + jitter keep it from being all one kind
     expect(new Set(strikes.map((x) => x.kind)).size).toBeGreaterThanOrEqual(2);
     // a 22-sol run isn't a barrage
-    expect(strikes.length).toBeLessThanOrEqual(34);
+    expect(strikes.length).toBeLessThanOrEqual(20);
   });
 });

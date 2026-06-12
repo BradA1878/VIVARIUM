@@ -38,8 +38,8 @@ export const HAZARD_META: Record<HazardKind, KindMeta> = {
   quake:    { warn: 4, activeMin: 8,  activeSpan: 6,  intMin: 0.4, intSpan: 0.5, cadence: 1.6, weight: 1 },
 };
 
-export const SCHED_FIRST = 95;
-const SCHED_GAP_MIN = 70, SCHED_GAP_SPAN = 70;
+export const SCHED_FIRST = 180;
+const SCHED_GAP_MIN = 150, SCHED_GAP_SPAN = 130;
 
 // damage / effect tuning
 const METEOR_DMG = 0.55;

@@ -69,6 +69,7 @@ function makeSnap(over: Partial<Snapshot> = {}): Snapshot {
     stormT: 0,
     solarMul: 1,
     windLevel: 0,
+    unlocks: {},
     hazards: [],
     directorControlled: false,
     nextResupply: 100,
