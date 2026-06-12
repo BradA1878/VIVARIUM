@@ -105,8 +105,11 @@ online + functional + staffed, and `ROBOT_MAT_COST 40` materials are drawn
 **at completion** — the timer holds at zero until the colony can afford the
 body. `ROBOT_CAP 3`; emits `robot_ready`. The brain is the **same
 `stepGatherer`** as rung 1 with robot parameters (`ROBOT_SPEED 1.6`,
-`ROBOT_CARRY 30`, single-kind), and claims unify **across colonists + robots
-in actor-id order** — one claim table, no species priority. What robots buy:
+`ROBOT_CARRY 30`, single-kind), and claims unify over **one shared claim set**
+across colonists + robots: the colonists' pass resolves its fresh claims first
+(in colonist-id order), then the robots' pass resolves over the same set (in
+robot-id order) — so within a tick a colonist out-claims a robot contesting
+the same node, and the species never thrash. What robots buy:
 they work **day and night**, never shelter, draw no life support, and count
 toward neither population nor labor. The counterplay keeps hazards relevant in
 the automated endgame: a **flare faults every robot** for `ROBOT_FLARE_FAULT
@@ -350,3 +353,61 @@ rises 40→120 with a `logOpen` ref; `KitEnv` gains optional
 Reactor meltdown mechanic, multi-rover fleets, robot possession or repair
 bays, rover dust-kick particles, terrain geology beyond vents, scripted-line
 localization, narrator model changes (stays `claude-opus-4-8`).
+
+## Amendments (as shipped)
+
+Three additions landed mid-flight, after the plan above was written; recorded
+here so the spec matches the branch.
+
+**9b. The commander + reaction bubbles.** Possession grew a stable target: the
+**commander** is the lowest *living* colonist id — a pure derivation of the
+snapshot (`ui/lead.ts`), no engine state, no storage, with automatic
+succession when the leader dies or is taken. **F became a chain**: unpossessed
+→ possess the commander → (piloting the commander beside a functional rover
+within `MOUNT_RADIUS 1.8`) board the rover → release. The pilot bar shows a
+**CMDR** tag and the contextual "F: board rover" prompt; the astronaut kit's
+`setLeader` swaps the cyan accents to an amber-gold rank treatment (visor,
+antenna, trim, chest chevron) — rank and possession stay different signals
+(the possession ring is still cyan). This supersedes `bridge.possessNearest`
+in production: the store's `possessToggle` now resolves `leaderId()` directly,
+and `possessNearest` survives only as a dev/Playwright affordance. Alongside
+it, **reaction bubbles** (`render/three/bubbles.ts`): pooled CanvasTexture
+sprite chips over colonists' heads, fired on *state change only* ("!"
+sheltering, "+" to triage, a gear to work, "z" home at night) plus event words
+routed by the renderer ("storm!" on `hazard_warn`, "ouch" on
+`colonist_injured`, "taken!" on `abducted`). Noise rules: max 4 concurrent, a
+6 s per-colonist cooldown, and the possessed colonist never bubbles.
+
+**9c. The adaptive perf governor.** The LOW/HIGH switch became a ladder.
+`render/perf.ts` (`PerfGovernor`) is a pure policy module fed the measured
+**frame-body** cost each frame: an EMA with a 3 s calibration window,
+demote/spike/promote thresholds requiring contiguous sustained evidence, and a
+cooldown, walking a 5-step `LADDER` of `{fps, ratio, bloom, shadows}` levers
+(60 fps at the top — above the old HIGH — down to the old LOW at the bottom).
+Settings `graphics.quality` became `"auto" | "low" | "high"` with the
+**default flipped high → auto**; HIGH/LOW pin the governor to the legacy
+steps (`STEP_HIGH`/`STEP_LOW`). The sim is untouched — only render levers
+move. Covered by `render/perf.test.ts` in plain Node.
+
+**9d. Need-aware gathering + the cache reweight + queued schematic toasts.**
+Unattended-run telemetry moved three knobs. (1) Fresh gather claims became
+**need-aware**: `kindsByNeed` ranks deposit kinds by ascending fill fraction
+of their destination pool (ties survival-first: cache, ice, ore), so empty
+hands serve the scarcest pool before stockpiling — still zero RNG draws.
+Known, accepted limit: the ranking applies to **fresh claims only**; sticky
+claims hold mid-chain, so a gatherer on a long-lived ice node keeps working it
+while food drains and only re-ranks at its next claim (typically dawn). A
+hunger-threshold re-rank is a candidate follow-up, not shipped. (2) The
+deposit kind weights moved **ore/ice/cache 46/33/21 → 40/32/28** (`deposits.ts
+pickKind`) — caches underran food demand by ~sol 4 untouched; still exactly
+one draw, so the env stream's draw count is unchanged. (3) `unlock_*` hint
+toasts: because unlock events fire once per run, a schematic blocked by an
+occupied toast slot now waits in a small session-local **FIFO** (`ui/hints.ts`)
+instead of dropping. One caveat stands: while the FirstHint welcome card is
+still unseen, *suppressed* unlock toasts drop rather than queue — so a
+first-run player typically misses the ROVER BAY toast (its gate latches on
+tick 1 at 90 starting materials ≥ the 80 gate). The chime, the narrator line,
+and the palette tile still announce it, and the toast resurfaces on a later
+run (seen marks only at show time); letting suppressed unlock candidates join
+the FIFO is the noted improvement if the one-shot promise of §3/§5 should hold
+for first-run players too.

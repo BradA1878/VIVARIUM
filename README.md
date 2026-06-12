@@ -62,10 +62,14 @@ shared/          the neutral vocabulary spoken across the wall (types.ts)
   shortfall/grace/casualty → resupply → campaign. Pools (batteries, cisterns, tanks)
   are buffers that decouple the passes. The whole tech tree is **data** in
   `engine/defs.ts`; balancing is editing numbers, never engine logic.
-- **An embodied crew.** Colonists are real entities. Press **F** to possess the
-  nearest one and **WASD** to drive it; it auto-mines surface deposits
-  (ice → water, ore → materials, cache → food) and unloads at the hub. **Materials**
-  is the build currency, so going out to gather funds your expansion.
+- **An embodied crew.** Colonists are real entities. Press **F** to take the
+  **commander** (amber accents, automatic succession) and **WASD** to drive;
+  **P** mines surface deposits (ice → water, ore → materials, cache → food) and
+  drops the load at the depot. **Materials** is the build currency, so going out
+  to gather funds your expansion — and as the colony matures, an **automation
+  ladder** takes the haul off your hands: idle colonists gather on their own, a
+  drivable **rover** (F boards it) hauls in bulk, and **mining robots** work the
+  field sol and night.
 - **Pressure, corridors, and doors.** The seal flood-fills from a Pressure Hub
   through corridors; pressurized buildings have a rotatable door, and the Corridor
   tile is a 2-click door-to-door auto-router.

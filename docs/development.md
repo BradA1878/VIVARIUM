@@ -27,7 +27,8 @@ src/
   engine/        pure deterministic sim (no DOM / three / async) — runs in the worker
   worker/        sim.worker.ts hosts the engine; bridge.ts is the main-thread client
   render/        three.js renderer — iso camera, Mars terrain, procedural building kit,
-                 postfx (bloom/ACES behind the quality switch), storm/UFO FX
+                 postfx (bloom/ACES), storm/UFO FX, reaction bubbles, and the
+                 PerfGovernor (perf.ts — the adaptive quality ladder behind AUTO)
   ui/            Vue 3 HUD overlay reading a single reactive store (stores/colony.ts);
                  stores/settings + stores/history (persisted prefs + run telemetry),
                  audio/ (procedural Web Audio — zero assets), hints.ts (one-shot toasts)
@@ -68,7 +69,7 @@ reaches the live model.
 
 ## Testing & determinism
 
-There are 25 test suites (266 tests), weighted toward the guarantees that matter:
+There are 31 test files (384 tests), weighted toward the guarantees that matter:
 
 - `engine/engine.test.ts` — same seed + dt sequence → same future.
 - `engine/campaign.test.ts`, `hazards.test.ts`, `predict.test.ts`,
@@ -77,15 +78,29 @@ There are 25 test suites (266 tests), weighted toward the guarantees that matter
 - `engine/roster.test.ts`, `morale.test.ts`, `injury.test.ts` — the colonist
   layer: id-hash names/roles and the two-pass assignment, the morale drivers /
   latches / production-only effect, strike wounds and the Med-Bay heal rates.
+- `engine/gather.test.ts`, `rover.test.ts`, `robots.test.ts` — the automation
+  ladder: the shared gather brain (sticky claims, the need-aware ranking, the
+  shared claim set across species), rover fabrication / cargo / strike
+  dents / self-repair, robot fabrication fees and the flare/strike counterplay.
+- `engine/generation.test.ts`, `unlocks.test.ts` — the wind curve and pass-2
+  generation, the printer's `producesMat`, vent placement and the legacy
+  backfill, and the unlock gates' latch-once semantics.
 - `engine/difficulty.test.ts` — the profile rules: **`Colony(seed)` ≡
   `Colony(seed, "normal")` byte-for-byte after 600 s**, and the
   multipliers-apply-after-the-draw invariant (identical RNG draw counts across
   difficulties).
 - `persistence/save.test.ts` — save → load round-trips bit-identically (including
-  mid-injury), and old saves load with graceful field defaults.
+  mid-injury and mid-fabrication), and old saves load with graceful field
+  defaults.
 - `worker/host.test.ts` — the command/snapshot loop.
+- `render/perf.test.ts` — the PerfGovernor. The governor is the model citizen
+  for testing renderer policy: `render/perf.ts` imports no DOM or three, so
+  the ladder walk (calibration, demote/spike/promote evidence, cooldowns,
+  pinning) is asserted in plain Node by feeding synthetic frame costs and
+  timestamps.
 - `agent/**` — council arbitration (incl. `council/banter.test.ts`: the quiet
-  predicate, round-robin, and that banter never touches the real cooldowns),
+  predicate, round-robin, and that banter never touches the real cooldowns;
+  and the dry-register guard: every scripted line ≤140 chars, single-line),
   world model diagnosis, Sentinel, Director.
 - `ui/**` — the node-safe pure halves of the UI: `stores/settings.test.ts`,
   `stores/history.test.ts`, `hints.test.ts`, and `audio/map.test.ts` (the
@@ -95,6 +110,12 @@ Rare or scheduled events are tested by **state injection**, never by waiting:
 set the timer/sol so the event is due *now* (the `ufo.test.ts` pattern, reused
 for injuries and difficulty — build a minimal state, call the pass directly).
 UI stores take **injectable storage**, so they run in plain Node.
+
+One standing rule when extending `Snapshot`: two tests carry **complete
+`Snapshot` literals** as fixtures — `makeSnap` in `agent/council/banter.test.ts`
+and in `ui/audio/map.test.ts` — and they fail to compile the moment the type
+grows. **Patch both fixtures in the same commit** that extends the type; that
+churn is by design (it proves every consumer saw the new field).
 
 ## Driving the real app (Playwright)
 
@@ -110,7 +131,10 @@ So you can `bridge.place(...) / route(...) / rotate(...) / reset(difficulty?)`,
 read `bridge.latest` for the current snapshot, and screenshot the canvas. The
 newer handles cover the rest of the surface:
 
-- `renderer.setQuality("low" | "high")` — flip the graphics tier live;
+- `renderer.setQuality("auto" | "low" | "high")` — drive the graphics tier live
+  (AUTO hands it to the PerfGovernor; `renderer.perfInfo()` reads the
+  governor's step/EMA/pinned state — note the 3 s calibration window anchors
+  at the first frame, so it has usually elapsed by the time `__viv` appears);
   `renderer.debugFx("ufo" | "abduct" | "devil" | "pop")` makes the rare FX
   screenshotable on demand (the scripted saucer self-expires on a TTL).
 - `audio.engineState()` (unlock/context state) and `audio.lastPlayed()` (the last

@@ -9,7 +9,7 @@ issues typed `Command`s back. It never reaches into the tick, and the engine nev
 Four cooperating pieces live here:
 
 ```
-ColonyEvent stream ─▶ gate ─▶ Council (4 voices) ─▶ scripted line  ──▶ terminal
+ColonyEvent stream ─▶ gate ─▶ Council (4 voices) ─▶ scripted line  ──▶ ticker + log
                                      │
                                      └─▶ live MXF (client → /api/narrate) ─┘
 world model (causal graph)  ─── feeds ──▶ the Watcher
@@ -22,23 +22,45 @@ Director (antagonist) ─── issues triggerHazard Commands ──▶ the engi
 `src/agent/council/` is the narrator: four voices, each a stateless
 `Voice.consider(ctx)` that may or may not offer a line for the current beat.
 `Council` (`index.ts`) arbitrates by **severity and per-voice cooldowns** so only
-one speaks per beat, each in its own register in the terminal:
+one speaks per beat — onto the bottom-edge **ticker** (`NarratorTicker.vue`),
+with the full history in the pull-up **log** (`LogOverlay.vue`, the `L` key);
+the old terminal window is gone. The winning `Utterance` carries its
+**severity** across, so the ticker can flash a critical line (severity ≥ 4)
+without re-deriving anything.
 
-- **VIVARIUM** — the keeper. Speaks to most events; serif italic.
-- **The Watcher** — a Sentinel-class anomaly intelligence. It reads the causal
-  **world model** to name *why* a pool is failing, and its "eyes" are the
+The register is **"dry telemetry with fingerprints"**: every line is one line,
+≤140 characters, built on concrete rounded numbers — no metaphor, no poetry,
+no feelings. What survives the dryness is a thin per-voice signature:
+
+- **VIVARIUM** — the keeper. First-person *system status*: what changed, the
+  key number, what it is doing about it ("I am shedding load") — allowed at
+  most one dry aside per line.
+- **The Watcher** — a Sentinel-class diagnostics intelligence. It reads the
+  causal **world model** to name the failure chain **root cause first**, with
+  the number that proves it; it diagnoses, never consoles. Its "eyes" are the
   TensorFlow.js Sentinel below.
-- **The Strategist** — reads bottlenecks and recommends the next build.
-- **The Chronicler** — the long memory: milestone sols, the dead, the campaign's
-  last entry.
+- **The Strategist** — one imperative recommendation with the number that
+  justifies it. One verb, one object, never a list.
+- **The Chronicler** — the ledger: counts and milestones ("Sol 15. 9 living,
+  2 lost. Logged."), the campaign's last entry.
 
 The scripted banks (`agent/lines.ts`) cover every engine beat, including the
 newer ones: morale crossing its low/recovered thresholds, colonists wounded and
-healed, and **strike casualties** — a death by meteor carries no resource key, so
+healed, **strike casualties** — a death by meteor carries no resource key, so
 the `casualty` bank routes its `"strike"` detail to its own variants instead of
-falling silent. The boot greeting bends to the run's difficulty: easy and hard
-runs get their own `bootLines(difficulty)` send-offs ("This site kills colonies.
-… Prove the records wrong."), and the line re-fires in the new register on reset.
+falling silent — and the homeostasis events: `unlock` (severity 2, carrying the
+schematic's display name through `{detail}`), `rover_ready` (2), `robot_ready`
+(2), and `robot_destroyed` (3 — the Watcher's diagnosis). The boot greeting
+bends to the run's difficulty: easy and hard runs get their own
+`bootLines(difficulty)` send-offs, and the line re-fires in the new register on
+reset.
+
+A practice worth knowing before touching any line: the council tests
+**substring-match the prose** (and a register guard asserts every scripted
+line fits 140 characters after placeholder stripping, with no newlines), so a
+bank rewrite is done with the tests open — every pinned phrase moves with its
+line in the same commit. That coupling is deliberate: it makes the register
+itself a tested invariant.
 
 ### Idle banter — the quiet channel
 
@@ -85,7 +107,13 @@ the wall. It watches the colony and, on its own pacing, picks the hazard that wo
 press the weakest seam — escalating gap and intensity over the sols, biased by
 cross-run **memory** of how this player tends to die and by the Sentinel's comfort
 signal (it presses harder when you've grown comfortable). It never stacks hazards
-and backs off while a pool is already going lethal.
+and backs off while a pool is already going lethal. The pacing was calmed ~2×
+for the homeostasis update so the colony gets visible stretches of hum: the
+first strike waits until **220 s**, the base gap is **340 s** shrinking
+**6 s per sol** toward a **200 s floor** (never faster than ~3.3 minutes
+apart), nudged shorter by comfort. The engine's own scheduler — what you get
+with the Director off — stretched in step (first hazard at 180 s, then
+150–280 s gaps).
 
 Because it's the non-deterministic antagonist and *not* the engine, the Director is
 allowed to use `Math.random`. It proposes by firing a `triggerHazard` **Command**;
@@ -123,7 +151,15 @@ opted in, those same beats can be generated live:
 1. The **gate** (`agent/gate.ts`) short-circuits on event type / severity /
    cooldown **before** any model call — most beats never reach the network.
 2. `agent/client.ts` calls the Hono backend `/api/narrate` with a **per-persona**
-   prompt (`server/mxf/prompt.ts`), so each voice keeps its register.
+   prompt (`server/mxf/prompt.ts`), so each voice keeps its register. The
+   prompts are built as a persona paragraph (VIVARIUM's first-person status,
+   the Watcher's causal chain, the Strategist's single imperative, the
+   Chronicler's ledger phrasing) over one **shared form block** that pins the
+   dry register for the model exactly as the tests pin it for the banks:
+   exactly one line, ≤140 characters, concrete numbers from the snapshot,
+   no metaphor/poetry/feelings, never break character — with a register
+   exemplar baked in. The endpoint keeps a `slice(0, 200)` seatbelt on the
+   model's reply regardless (`server/mxf/claude.ts`).
 3. The endpoint is **rate-limited** and **caches by event signature**, and the
    provider key lives **server-side only** (Vite proxies `/api` → the Hono server).
 4. A **circuit breaker** and a scripted fallback mean any failure, timeout, or
