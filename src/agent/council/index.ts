@@ -19,6 +19,8 @@ export interface Utterance {
   speaker: string;
   line: string;
   persona: Register;
+  /** the winning candidate's severity (0 = idle/boot) — the ticker's crit-flash cue */
+  severity: number;
 }
 
 const GLOBAL_COOLDOWN = 5.5; // seconds between any two lines (any voice)
@@ -71,7 +73,7 @@ export class Council {
     for (const c of candidates) {
       if (this.passes(c, event, now)) {
         this.mark(c, event, now);
-        return { register: c.register, speaker: c.speaker, line: c.line, persona: c.persona };
+        return { register: c.register, speaker: c.speaker, line: c.line, persona: c.persona, severity: c.severity };
       }
     }
     return null;
@@ -89,7 +91,7 @@ export class Council {
 
   /** scripted line for a chosen candidate (the live-build fallback) */
   lineFor(candidate: Candidate): Utterance {
-    return { register: candidate.register, speaker: candidate.speaker, line: candidate.line, persona: candidate.persona };
+    return { register: candidate.register, speaker: candidate.speaker, line: candidate.line, persona: candidate.persona, severity: candidate.severity };
   }
 
   /** commit cooldowns after a candidate spoke (live OR scripted) */
@@ -122,7 +124,7 @@ export class Council {
       const c = v.considerIdle?.(ctx);
       if (!c) continue;
       this.markIdle(c, simNow);
-      return { register: c.register, speaker: c.speaker, line: c.line, persona: c.persona };
+      return { register: c.register, speaker: c.speaker, line: c.line, persona: c.persona, severity: c.severity };
     }
     return null;
   }
@@ -140,7 +142,7 @@ export class Council {
 
   bootLine(difficulty?: Difficulty): Utterance {
     const banks = bootLines(difficulty);
-    return { register: "vivarium", speaker: "VIVARIUM", line: banks[0], persona: "vivarium" };
+    return { register: "vivarium", speaker: "VIVARIUM", line: banks[0], persona: "vivarium", severity: 0 };
   }
 
   reset(): void {

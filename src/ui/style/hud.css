@@ -129,20 +129,15 @@
 .alert.sev1 .alert-txt { color: var(--cyan); }
 .alert.sev1 .alert-bar { background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
 
-/* ---------- VIVARIUM terminal ---------- */
-.bottom-left { position: absolute; left: 16px; bottom: 16px; width: 380px; }
-.term { background: var(--panel); backdrop-filter: blur(9px); border: 1px solid var(--hair); border-radius: 3px; display: flex; flex-direction: column; max-height: 212px; }
-.term-head { display: flex; align-items: center; gap: 9px; padding: 9px 12px; border-bottom: 1px solid var(--hair2); }
-.term-eye { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 9px var(--cyan); animation: pulse 2.6s ease-in-out infinite; }
-.term-id { font-family: var(--serif); font-style: italic; font-size: 14px; letter-spacing: 0.05em; color: #e6eef1; flex: 1; }
-.term-status { font-size: 9px; letter-spacing: 0.24em; color: var(--dim); }
-.term-body { padding: 10px 12px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; }
+/* ---------- the council's words: ticker + log ----------
+   The narrator's single live line is a full-width bar on the screen's bottom
+   edge (NarratorTicker.vue); the full history is a pull-up panel above it
+   (LogOverlay.vue). Both speak the same .term-line row vocabulary and the
+   .voice-* registers below. */
 .term-line { font-size: 12.5px; line-height: 1.42; }
 .term-ts { font-family: var(--mono); font-size: 10px; color: var(--faint); margin-right: 7px; letter-spacing: 0.02em; }
 .term-txt { font-family: var(--serif); font-style: italic; color: #cdd9dd; font-size: 14px; letter-spacing: 0.005em; }
 .term-caret { color: var(--cyan); font-style: normal; font-family: var(--mono); font-size: 11px; animation: blink 0.9s steps(1) infinite; }
-.term-body::-webkit-scrollbar { width: 5px; }
-.term-body::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 3px; }
 
 /* who is speaking — each council voice reads in its own register (doc §3.3) */
 .term-speaker {
@@ -173,8 +168,51 @@
 }
 .voice-chronicler .term-txt { color: #b6c2c6; opacity: 0.92; }
 
+/* the ticker bar — mirrors the topbar's chrome on the opposite edge */
+.ticker {
+  position: absolute; left: 0; right: 0; bottom: 0; height: var(--ticker-h);
+  display: flex; align-items: center; padding: 0 18px;
+  border-top: 1px solid var(--hair);
+  background: linear-gradient(0deg, rgba(7, 9, 11, 0.92), rgba(7, 9, 11, 0.35));
+  backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+  cursor: pointer;
+}
+/* the ticker reads one step up — base serif 14→15, the mono voices 12→13.
+   ONE scoped bump; the .voice-* rules themselves stay untouched. */
+.ticker .term-txt { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; font-size: 15px; }
+.ticker.voice-watcher .term-txt, .ticker.voice-strategist .term-txt { font-size: 13px; }
+.ticker-quiet { flex: 1; }
+.ticker-chip {
+  flex: 0 0 auto; margin-left: 12px; padding: 3px 7px;
+  font-size: 9px; letter-spacing: 0.18em; color: var(--dim);
+  border: 1px solid var(--hair); border-radius: 2px; transition: 0.15s;
+}
+.ticker:hover .ticker-chip { color: var(--ink); border-color: rgba(127, 212, 232, 0.4); }
+/* severity ≥ 4 announces itself — a finite 3-beat rust flash on the bar */
+.ticker.crit { animation: tickerflash 0.5s steps(2, end) 3; }
+@keyframes tickerflash {
+  50% { background-color: rgba(200, 121, 79, 0.28); border-top-color: rgba(232, 120, 79, 0.55); }
+}
+
+/* the pull-up log — full history, instant text; above the palette tooltip
+   (z-50), below the settings/hint layer (z-60) */
+.log-panel {
+  position: absolute; left: 16px; bottom: calc(var(--ticker-h) + 10px);
+  width: 460px; max-height: 56vh; z-index: 55;
+  display: flex; flex-direction: column;
+  background: var(--panel); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+  border: 1px solid var(--hair); border-radius: 3px;
+}
+.log-head { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 9px 12px; border-bottom: 1px solid var(--hair2); }
+.log-title { font-family: var(--serif); font-style: italic; font-size: 14px; letter-spacing: 0.05em; color: #e6eef1; }
+.log-x { font-size: 11px; color: var(--dim); padding: 2px 6px; transition: 0.15s; }
+.log-x:hover { color: var(--ink); }
+.log-body { padding: 10px 12px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; }
+.log-body::-webkit-scrollbar { width: 5px; }
+.log-body::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 3px; }
+
 /* ---------- inspector + palette ---------- */
-.bottom-center { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bottom-center { position: absolute; left: 50%; bottom: calc(var(--ticker-h) + 12px); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .inspect { display: flex; align-items: center; gap: 10px; background: var(--panel); backdrop-filter: blur(9px); border: 1px solid rgba(127, 212, 232, 0.3); border-radius: 3px; padding: 6px 12px; font-size: 11px; letter-spacing: 0.08em; }
 .inspect.demo { border-color: rgba(232, 120, 79, 0.4); color: var(--rust); }
 .ins-glyph { color: var(--cyan); font-weight: 600; }
@@ -211,6 +249,9 @@
 
 @media (max-width: 880px) {
   .left-col { width: 260px; }
-  .bottom-left { width: 300px; }
   .pal-btn { width: 54px; height: 52px; }
+  /* the ticker tightens — the timestamp goes, the line ellipsizes; the full
+     text always lives in the log */
+  .ticker .term-ts { display: none; }
+  .ticker .term-txt { text-overflow: ellipsis; }
 }

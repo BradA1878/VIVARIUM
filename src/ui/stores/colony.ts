@@ -41,6 +41,8 @@ export interface TerminalLine {
   clock: string;
   speaker: string;
   register: Register;
+  /** the spoken candidate's severity (0 = idle/boot) — drives the ticker's crit flash */
+  sev: number;
 }
 
 // ---- module-singleton reactive state ----------------------------------------
@@ -52,6 +54,11 @@ const hover: Ref<HoverInfo | null> = ref(null);
 const selected: Ref<SelectInfo | null> = ref(null);
 /** the contextual teaching toast currently on screen (HintToast.vue renders it) */
 const hintToast: Ref<Hint | null> = ref(null);
+/** whether the pull-up council log (LogOverlay.vue) is open */
+export const logOpen = ref(false);
+function toggleLog(): void {
+  logOpen.value = !logOpen.value;
+}
 
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
@@ -125,14 +132,15 @@ export function pushLine(
   tod?: number,
   speaker = "VIVARIUM",
   register: Register = "vivarium",
+  sev = 0,
 ): void {
   const s = snapshot.value;
   const atSol = sol ?? (s ? s.sol : 1);
   const atTod = tod ?? (s ? s.tod : 0);
   messages.value = [
     ...messages.value,
-    { id: msgId++, text, sol: atSol, clock: clockOf(atTod), speaker, register },
-  ].slice(-40);
+    { id: msgId++, text, sol: atSol, clock: clockOf(atTod), speaker, register, sev },
+  ].slice(-120);
 }
 
 /** route one event (engine OR agent-originated) through the council. The gate
@@ -153,14 +161,14 @@ function routeEvent(e: ColonyEvent): void {
   }
   if (!(LIVE_ENABLED && settings.value.narratorLive)) {
     const u = council.observe(e, snapshot.value, e.t);
-    if (u) pushLine(u.line, e.sol, e.tod, u.speaker, u.register);
+    if (u) pushLine(u.line, e.sol, e.tod, u.speaker, u.register, u.severity);
     return;
   }
   const cand = council.shouldSpeak(e, snapshot.value, e.t);
   if (!cand) return;
   void narrateLive(e, snapshot.value, cand.persona).then((live) => {
     council!.commit(cand, e, e.t);
-    pushLine(live ?? cand.line, e.sol, e.tod, cand.speaker, cand.register);
+    pushLine(live ?? cand.line, e.sol, e.tod, cand.speaker, cand.register, cand.severity);
   });
 }
 
@@ -225,7 +233,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     // line and shares nothing with shouldSpeak/narrateLive, so this path is
     // structurally incapable of reaching the live model.
     const idle = council?.observeIdle(s, s.t, lastRealEventT);
-    if (idle) pushLine(idle.line, s.sol, s.tod, idle.speaker, idle.register);
+    if (idle) pushLine(idle.line, s.sol, s.tod, idle.speaker, idle.register, idle.severity);
     // snapshot-derived teaching toasts (stranded pressure building, first possession)
     if (!s.outcome && hints) showHint(hints.onSnapshot(s));
   });
@@ -297,7 +305,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
         bootTimer = null;
         if (!council) return;
         const u = council.bootLine(resumedDiff ?? snapshot.value?.difficulty);
-        pushLine(u.line, undefined, undefined, u.speaker, u.register);
+        pushLine(u.line, undefined, undefined, u.speaker, u.register, u.severity);
       }, Math.max(0, BOOT_LINE_MS - (Date.now() - bootT0)));
     };
     if (snapshot.value) greet();
@@ -404,7 +412,7 @@ const controls = {
     setTimeout(() => {
       if (council) {
         const u = council.bootLine(settings.value.nextDifficulty);
-        pushLine(u.line, undefined, undefined, u.speaker, u.register);
+        pushLine(u.line, undefined, undefined, u.speaker, u.register, u.severity);
       }
     }, 600);
   },
@@ -485,8 +493,8 @@ function directorDossier(): DirectorDossier {
 
 export function useColony() {
   return {
-    snapshot, messages, tool, demolish, hover, selected, hintToast,
-    pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint,
+    snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen,
+    pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
     runHistory, runEpitaph, directorDossier, controls,
   };
 }

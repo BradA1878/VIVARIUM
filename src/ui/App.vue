@@ -14,7 +14,8 @@ import Crew from "./components/Crew.vue";
 import Objective from "./components/Objective.vue";
 import Alerts from "./components/Alerts.vue";
 import EndScreen from "./components/EndScreen.vue";
-import Terminal from "./components/Terminal.vue";
+import NarratorTicker from "./components/NarratorTicker.vue";
+import LogOverlay from "./components/LogOverlay.vue";
 import Inspector from "./components/Inspector.vue";
 import Palette from "./components/Palette.vue";
 import TradePrompt from "./components/TradePrompt.vue";
@@ -35,7 +36,7 @@ const bridge = shallowRef<SimBridge | null>(null);
 const ready = ref(false);
 let renderer: ThreeRenderer | null = null;
 
-const { snapshot, clearTool, rotate, removeSelected, controls } = useColony();
+const { snapshot, clearTool, rotate, removeSelected, controls, logOpen, toggleLog } = useColony();
 const { settings, settingsOpen, updateSettings } = useSettings();
 const storming = computed(() => snapshot.value?.weather === "dust");
 const flaring = computed(() => snapshot.value?.hazards.some((h) => h.kind === "flare" && h.phase === "active") ?? false);
@@ -60,8 +61,9 @@ const piloting = computed(() => snapshot.value?.possessed != null);
 function onKey(e: KeyboardEvent): void {
   const k = e.key.toLowerCase();
   if (e.key === "Escape") {
-    // the settings modal swallows Esc first; only a second Esc clears the tool
+    // the settings modal swallows Esc first, then the council log, then the tool
     if (settingsOpen.value) { settingsOpen.value = false; return; }
+    if (logOpen.value) { logOpen.value = false; return; }
     clearTool();
   }
   if (e.key === "f" || e.key === "F") { e.preventDefault(); controls.possessToggle(); held.clear(); return; }
@@ -73,6 +75,7 @@ function onKey(e: KeyboardEvent): void {
   }
   if (e.key === " ") { e.preventDefault(); controls.togglePause(); }
   if (e.key === "r" || e.key === "R") rotate();
+  if (k === "l") toggleLog(); // the council log — deliberately outside the held-keys movement path
   if (e.key === "Delete" || e.key === "Backspace") removeSelected();
 }
 function onKeyUp(e: KeyboardEvent): void {
@@ -132,9 +135,8 @@ onUnmounted(() => {
         <TradePrompt />
       </div>
 
-      <div class="bottom-left">
-        <Terminal />
-      </div>
+      <NarratorTicker />
+      <LogOverlay />
 
       <div class="bottom-center">
         <PilotBar />

@@ -18,6 +18,7 @@
   --hair2: rgba(127, 212, 232, 0.06);
   --mono: "IBM Plex Mono", ui-monospace, monospace;
   --serif: "Newsreader", Georgia, serif;
+  --ticker-h: 40px;
 }
 
 * {
@@ -124,7 +125,8 @@ button {
 .ctl,
 .pal-btn,
 .alert,
-.term,
+.ticker,
+.log-panel,
 .inspect {
   pointer-events: auto;
 }
