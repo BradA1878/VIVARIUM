@@ -27,7 +27,7 @@ export const START_AMOUNT: Record<Resource, number> = {
   food: 45,
 };
 
-export const GRID_N = 15; // buildable area (15×15 = 225 cells; was 11×11 = 121)
+export const GRID_N = 25; // buildable area (25×25 = 625 cells; was 15×15 = 225, 11×11 = 121)
 
 /** seconds per sol (compressed) */
 export const SOL_LENGTH = 150;
@@ -110,6 +110,14 @@ export const DEPOT_RADIUS = 1.5;   // cells: how close to the depot to drop a lo
  *  chatter would drown the narrator. */
 export const AUTO_CARRY = 12;     // units an auto-gatherer hauls per trip
 export const GATHER_DWELL = 1.2;  // seconds spent mining at the node per pickup
+
+/** staffed workers man their stations until a gatherable pool (food/water/the
+ *  materials bank) falls below this fill fraction — then the WHOLE colony pitches
+ *  in on resource runs, drifting back once supplies recover. Staffing is a
+ *  headcount in the tick (engine/tick.ts), so a worker out on a haul never
+ *  unstaffs its building; only the role-match efficiency bonus pauses. Pure
+ *  derivation of pool state — zero RNG — so pitch-in stays deterministic. */
+export const GATHER_NEED_FRAC = 0.85;
 
 /** the rover — rung 2 of the automation ladder. One drivable bulk hauler,
  *  fabricated by the Rover Bay on a colony countdown that PAUSES while the bay

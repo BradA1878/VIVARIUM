@@ -15,6 +15,9 @@ function step(c: Colony, seconds: number, dt = 0.2): ColonyEvent[] {
   return evs;
 }
 
+/** reach the engine's private state (the suite's seam for injecting) */
+const stateOf = (c: Colony): ColonyState => (c as unknown as { s: ColonyState }).s;
+
 describe("hazard lifecycle", () => {
   it("telegraphs, goes active (weather=dust), then ends", () => {
     const c = new Colony(1);
@@ -55,8 +58,12 @@ describe("damage & functionality", () => {
   it("a meteor strike damages a densely-packed colony", () => {
     const c = new Colony(4);
     c.setDirector(true);
-    // pack a block with tanks so strikes land
-    for (let x = 0; x < 7; x++) for (let y = 0; y < 7; y++) c.place("o2tank", x, y);
+    // pack the whole buildable grid with tanks (float the materials budget so the
+    // block actually fills) — a meteor strike lands on a random cell, so a fully
+    // packed grid guarantees a hit no matter how large the grid is
+    const s = stateOf(c);
+    s.materials.amount = 1e9;
+    for (let x = 0; x < s.N; x++) for (let y = 0; y < s.N; y++) c.place("o2tank", x, y);
     c.triggerHazard("meteor", 1);
     const evs = step(c, 30);
     expect(evs.some((e) => e.type === "building_damaged" && e.detail === "meteor")).toBe(true);

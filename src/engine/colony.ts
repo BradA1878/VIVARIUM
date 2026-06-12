@@ -13,7 +13,7 @@ import {
   TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
 import { RNG } from "./rng";
-import { canPlace, cellsFor, idx, inBounds } from "./grid";
+import { canPlace, cellsFor, idx, inBounds, migrateGrid } from "./grid";
 import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
 import { recomputeCaps } from "./caps";
@@ -386,6 +386,9 @@ export class Colony {
     // keep resuming byte-identically — so every load of the same save gets the
     // same terrain and the same future.
     if (!st.vents) seedVents(c.s, new RNG((data.seed ^ VENT_BACKFILL_SALT) >>> 0));
+    // an older save on a smaller build grid: re-center the colony into today's
+    // larger grid rather than stranding the base in a corner. Pure, grows only.
+    if (c.s.N < GRID_N) migrateGrid(c.s, GRID_N);
     c.events = [];
     return c;
   }

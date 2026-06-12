@@ -262,6 +262,11 @@ describe("autonomy — the field never sleeps", () => {
 
   it("shares ONE claim set with the colonists — it skips their nodes instead of thrashing", () => {
     const { c, s } = controlled(23);
+    // keep the pools comfortable so staffed workers stay at their stations — only
+    // the two free colonists + the robot should compete for these nodes
+    s.pools.water.amount = s.pools.water.capacity;
+    s.pools.food.amount = s.pools.food.capacity;
+    s.materials.amount = s.materials.capacity;
     // three nodes, three gatherers: two free colonists claim the near pair first;
     // the robot stands a single cell from both, yet must take the far third
     s.deposits = [

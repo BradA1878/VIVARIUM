@@ -257,13 +257,13 @@ describe("alien trade", () => {
       if (haveTake < tr.take.amount) continue; // unaffordable on this seed — try next
       const giveBefore = amountOf(before, tr.give.res);
 
-      c.respondTrade(true);
+      c.respondTrade(true); // the swap (and trade_done) resolve synchronously
       const events = [...c.drainEvents()];
-      c.tick(0.2);
-      events.push(...c.drainEvents());
 
+      // measure before any tick — the swap is synchronous, so this keeps gather
+      // and life-support income out of the ledger (auto-gatherers bank into pools)
       const after = c.snapshot();
-      // the `take` resource is debited by ~take.amount (allow a tick of drift)
+      // the `take` resource is debited by exactly take.amount
       expect(amountOf(after, tr.take.res)).toBeLessThanOrEqual(haveTake - tr.take.amount + 1);
       // the `give` resource is credited (clamped to capacity)
       expect(amountOf(after, tr.give.res)).toBeGreaterThanOrEqual(giveBefore);
@@ -285,14 +285,13 @@ describe("alien trade", () => {
       // We capture the give pool BEFORE responding, then prove no jump occurred.
       const giveBefore = tr.give.res === "tech" ? null : amountOf(c.snapshot(), tr.give.res);
 
-      c.respondTrade(false);
+      c.respondTrade(false); // declining swaps nothing; resolves synchronously
       const events = [...c.drainEvents()];
-      c.tick(0.2);
-      events.push(...c.drainEvents());
 
+      // measure before any tick (auto-gatherers bank into pools each tick, which
+      // would otherwise masquerade as a swap)
       const after = c.snapshot();
-      // no swap occurred: the give pool did NOT jump up by the offered amount
-      // (it can only have drifted down or held roughly flat over a single tick).
+      // no swap occurred: the give pool did NOT jump up by the offered amount.
       if (giveBefore != null && tr.give.res !== "tech") {
         expect(amountOf(after, tr.give.res)).toBeLessThan(giveBefore + tr.give.amount / 2);
       }

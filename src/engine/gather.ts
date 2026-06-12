@@ -15,7 +15,7 @@
    ============================================================================ */
 import type { DepositKind, Resource } from "@shared/types";
 import { DEPOSIT_YIELD } from "@shared/types";
-import { ARRIVE_EPS, DEPOT_RADIUS, PICKUP_RADIUS } from "./tuning";
+import { ARRIVE_EPS, DEPOT_RADIUS, GATHER_NEED_FRAC, PICKUP_RADIUS } from "./tuning";
 import type { ColonyState, DepositInstance } from "./state";
 import { findPath } from "./pathfind";
 
@@ -181,6 +181,20 @@ export function kindsByNeed(s: ColonyState): DepositKind[] {
     return p.capacity > 0 ? p.amount / p.capacity : 1;
   };
   return [...NEED_TIE_ORDER].sort((a, b) => fill(a) - fill(b));
+}
+
+/** does the colony need hands on resource runs right now? True when any
+ *  gatherable kind's destination pool sits below GATHER_NEED_FRAC. While true,
+ *  staffed workers pitch in on gathering (stepColonists); when supplies recover
+ *  they drift back to their stations. Pure — a derivation of pool state, zero
+ *  RNG — so the pitch-in decision replays identically. */
+export function colonyNeedsGather(s: ColonyState): boolean {
+  for (const k of NEED_TIE_ORDER) {
+    const p = poolFor(s, k);
+    const fill = p.capacity > 0 ? p.amount / p.capacity : 1;
+    if (fill < GATHER_NEED_FRAC) return true;
+  }
+  return false;
 }
 
 /** the nearest live node OF ONE KIND by distance-squared (tie → lowest id),

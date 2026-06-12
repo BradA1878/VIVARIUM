@@ -9,8 +9,9 @@ import { describe, it, expect } from "vitest";
 import { Colony } from "./index";
 import type { ColonyEvent } from "@shared/types";
 import type { ColonistInstance, ColonyState } from "./state";
+import { DEFS } from "./defs";
 import { kindsByNeed } from "./gather";
-import { AUTO_CARRY, DAY_START, DAY_END } from "./tuning";
+import { AUTO_CARRY, DAY_START, DAY_END, GATHER_NEED_FRAC } from "./tuning";
 
 /** reach the engine's private state (the suite's seam for injecting/inspecting) */
 const stateOf = (c: Colony): ColonyState => (c as unknown as { s: ColonyState }).s;
@@ -27,8 +28,10 @@ const GATHER_STATES = ["gathering", "mining", "hauling"] as const;
 
 /** a colony with a controlled surface: the seeded scatter cleared (tests inject
  *  their own nodes) and every scheduled visitor pushed past the horizon so the
- *  materials ledger has exactly one writer — the gatherers under test */
-function controlled(seed: number): { c: Colony; s: ColonyState } {
+ *  materials ledger has exactly one writer — the gatherers under test. KEEPS the
+ *  seed's staffing buildings, so assign() binds workers to stations (the seam for
+ *  staffed-worker behavior). */
+function staffed(seed: number): { c: Colony; s: ColonyState } {
   const c = new Colony(seed);
   const s = stateOf(c);
   s.deposits = [];          // a clean field; tests place their own nodes
@@ -38,6 +41,19 @@ function controlled(seed: number): { c: Colony; s: ColonyState } {
   s.nextHazard = 1e9;       // the hazard override has its own test
   s.nextArrival = 1e9;      // keep the roster fixed
   s.nextBirth = 1e9;
+  return { c, s };
+}
+
+/** the gather brain belongs to free colonists and robots; staffed workers only
+ *  pitch in when a pool runs low. To test the brain in isolation, drop the seed's
+ *  staffing buildings so assign() leaves EVERY colonist in the gather pool, and
+ *  top up life support so the now-producerless colony can't starve mid-test. */
+function controlled(seed: number): { c: Colony; s: ColonyState } {
+  const { c, s } = staffed(seed);
+  s.buildings = s.buildings.filter((b) => (DEFS[b.defId]?.staffing ?? 0) === 0);
+  s.pools.water.amount = s.pools.water.capacity;
+  s.pools.oxygen.amount = s.pools.oxygen.capacity;
+  s.pools.food.amount = s.pools.food.capacity;
   return { c, s };
 }
 
@@ -68,12 +84,20 @@ describe("idle colonists work the deposit field", () => {
     for (const st of GATHER_STATES) expect(seen.has(st)).toBe(true);
   });
 
-  it("a staffed colonist never enters gather states during work hours", () => {
-    const { c, s } = controlled(7);
+  it("a staffed colonist mans its station while the colony's pools are comfortable", () => {
+    const { c, s } = staffed(7);
+    // every gatherable pool topped past the pitch-in mark → no reason to leave
+    const topUp = (): void => {
+      s.pools.water.amount = s.pools.water.capacity;
+      s.pools.food.amount = s.pools.food.capacity;
+      s.materials.amount = s.materials.capacity;
+    };
+    topUp();
     s.deposits = [{ id: 501, gx: 9, gy: 5, kind: "ore", amount: 140, max: 140 }];
 
     let staffedTicks = 0;
     for (let i = 0; i < 250; i++) { // 50 s, entirely inside the day window
+      topUp(); // hold the premise against life-support drain
       c.tick(0.2); c.drainEvents();
       if (!(s.tod > DAY_START && s.tod < DAY_END)) continue;
       for (const k of s.colonists) {
@@ -83,6 +107,25 @@ describe("idle colonists work the deposit field", () => {
       }
     }
     expect(staffedTicks).toBeGreaterThan(0); // the assertion actually ran
+  });
+
+  it("the whole colony pitches in on gathering when a pool runs low", () => {
+    const { c, s } = staffed(11);
+    // water starving, an ice node in reach — even staffed workers should join the run
+    s.deposits = [{ id: 501, gx: 9, gy: 5, kind: "ice", amount: 140, max: 140 }];
+
+    const staffedGatherStates = new Set<string>();
+    for (let i = 0; i < 200; i++) { // 40 s inside the day window
+      s.pools.water.amount = Math.min(s.pools.water.amount, s.pools.water.capacity * 0.1); // hold it scarce
+      c.tick(0.2); c.drainEvents();
+      if (!(s.tod > DAY_START && s.tod < DAY_END)) continue;
+      for (const k of s.colonists) {
+        if (k.workUid == null || k.id === s.possessed) continue; // staffed workers only
+        if ((GATHER_STATES as readonly string[]).includes(k.state)) staffedGatherStates.add(k.state);
+      }
+    }
+    expect(GATHER_NEED_FRAC).toBeGreaterThan(0.1);       // the premise: 0.1 fill counts as "low"
+    expect(staffedGatherStates.size).toBeGreaterThan(0); // a staffed worker left to gather
   });
 
   it("night sends empty-handed gatherers home, but a dusk carrier banks its load first", () => {

@@ -275,13 +275,13 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   });
 
   // load-on-boot: resume the saved colony if one exists (doc §5). The worker
-  // already came up on a fresh seed; a save just replaces it. But don't resume
-  // into an already-finished run, or a save from a DIFFERENT grid size (e.g. an
-  // old 11×11 colony after the map grew to 15×15) — that would strand the colony
-  // and its people in a sub-region of the new world. A fresh seed beats both.
+  // already came up on a fresh seed; a save just replaces it. Don't resume into
+  // an already-finished run, nor a save from a LARGER grid than today's (we can't
+  // safely shrink — buildings could fall outside the new bounds). A save from a
+  // SMALLER grid is fine: Colony.load re-centers it into the current grid.
   const bootT0 = Date.now();
   void loadBest().then((save) => {
-    const usable = save && !save.state.outcome && save.state.N === GRID_N;
+    const usable = save && !save.state.outcome && save.state.N <= GRID_N;
     if (usable) {
       b.load(save);
       // the save carries its own directorControlled flag — re-assert this

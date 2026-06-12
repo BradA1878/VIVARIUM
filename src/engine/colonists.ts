@@ -26,7 +26,7 @@ import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
 import { BUILDING_ROLE, nameOf, roleOf } from "./roster";
 import {
-  cargoTotal, depotCenter, dropCargoAtDepot, dropCarryAtDepot,
+  cargoTotal, colonyNeedsGather, depotCenter, dropCargoAtDepot, dropCarryAtDepot,
   nearestDepositInReach, pickupFromDeposit, pickupIntoCargo,
   stepGatherer, stepToward, type Pt,
 } from "./gather";
@@ -273,17 +273,20 @@ export function stepColonists(s: ColonyState, dt: number): Set<number> {
       goal = nearestMedbay(s, c)
         ?? (home ? accessCell(s, home) : freeCellNear(s, baseCenter(s)));
       arriveState = "recovering";
-    } else if (day && c.workUid != null) {
-      const w = buildingByUid(s, c.workUid);
-      goal = w ? accessCell(s, w) : baseCenter(s); arriveState = "working";
     } else if (
-      // gathering is the day-idle default; a dusk carrier still finishes its
-      // depot run before sleeping. stepGatherer returns false when there is
-      // no gather work at all → fall through to home/idle.
-      (day || c.carryAmt > 0) &&
+      // gather when carrying a load home, or by day when there's a reason to: an
+      // unassigned colonist gathers as its idle default, and an ASSIGNED one
+      // pitches in whenever a pool runs low (colonyNeedsGather) — staffing is a
+      // headcount in the tick, so a worker out on a haul never unstaffs its
+      // building. stepGatherer returns false when there is no gather work at all
+      // → fall through to work/home.
+      (c.carryAmt > 0 || (day && (c.workUid == null || colonyNeedsGather(s)))) &&
       stepGatherer(s, c, dt, claimed, { speed: WALK_SPEED, carryCap: AUTO_CARRY, dwell: GATHER_DWELL })
     ) {
       continue; // the gather brain owned movement + state this tick
+    } else if (day && c.workUid != null) {
+      const w = buildingByUid(s, c.workUid);
+      goal = w ? accessCell(s, w) : baseCenter(s); arriveState = "working";
     } else {
       const home = buildingByUid(s, c.homeUid);
       goal = home ? accessCell(s, home) : freeCellNear(s, baseCenter(s)); arriveState = "idle";
