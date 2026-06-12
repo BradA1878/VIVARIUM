@@ -20,6 +20,10 @@ import { StormFx } from "./three/stormfx";
 import { HazardFx } from "./three/hazardfx";
 import { buildAstronaut, type AstronautMesh } from "./three/kit/astronaut";
 import { buildDeposit, type DepositMesh } from "./three/kit/deposit";
+import { buildVent, type VentMesh } from "./three/kit/vent";
+import { buildRover, type RoverMesh } from "./three/kit/rover";
+import { buildRobot, type RobotMesh } from "./three/kit/robot";
+import { ROVER_CARGO_CAP } from "@/engine/tuning";
 import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
 import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
@@ -49,6 +53,27 @@ interface ColonistRec {
 /** colonist states that should show the walk cycle ("mining" is a stationary
  *  dwell at the node, so it idles like any other standstill) */
 const MOVING_STATES = new Set(["toWork", "toHome", "toMedbay", "gathering", "hauling", "piloted"]);
+
+/** a rover's render record — the colonist template, with rolling wheels: the
+ *  smoothed-speed estimate integrates a wheelPhase so the wheels turn with
+ *  travel and stop with it */
+interface RoverRec {
+  mesh: RoverMesh;
+  pos: THREE.Vector3;
+  facing: number;
+  wheelPhase: number;
+  prevPos: THREE.Vector3;
+}
+
+/** a robot's render record — same template; the speed estimate drives the
+ *  hull's track-vibration shudder instead of a walk cycle */
+interface RobotRec {
+  mesh: RobotMesh;
+  pos: THREE.Vector3;
+  facing: number;
+  shudderPhase: number;
+  prevPos: THREE.Vector3;
+}
 
 /** the established signature cyan, for transient FX (placed / possession rings) */
 const FX_CYAN = 0x7fd4e8;
@@ -110,11 +135,17 @@ export class ThreeRenderer {
   private static readonly FPS_ACTIVE = 30;
   private static readonly FPS_PAUSED = 12;
 
-  // embodied colony: astronauts, deposits, the trader saucer
+  // embodied colony: astronauts, deposits, vents, machines, the trader saucer
   private colonists = new Map<number, ColonistRec>();
   private colonistsGroup = new THREE.Group();
   private deposits = new Map<number, DepositMesh>();
   private depositsGroup = new THREE.Group();
+  private vents = new Map<number, VentMesh>();
+  private ventsGroup = new THREE.Group();
+  private rovers = new Map<number, RoverRec>();
+  private roversGroup = new THREE.Group();
+  private robots = new Map<number, RobotRec>();
+  private robotsGroup = new THREE.Group();
   private alienShip: AlienShipMesh | null = null;
   private ufo: UfoMesh | null = null;
   private depot: DepotMesh | null = null;
@@ -151,7 +182,10 @@ export class ThreeRenderer {
     this.scene.scene.add(this.terrain.group);
     this.scene.scene.add(this.buildingsGroup);
     this.scene.scene.add(this.depositsGroup);
+    this.scene.scene.add(this.ventsGroup);
     this.scene.scene.add(this.colonistsGroup);
+    this.scene.scene.add(this.roversGroup);
+    this.scene.scene.add(this.robotsGroup);
     this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
     this.scene.scene.add(this.placement.group);
     this.atmosphere = new Atmosphere(this.grid);
@@ -266,8 +300,11 @@ export class ThreeRenderer {
     }
     this.scene.update(snap.tod, snap.weather === "dust");
     // one night level per frame drives every kit's status/window ramp plus the
-    // shared door + airlock glows (ramped once here instead of per door)
+    // shared door + airlock glows (ramped once here instead of per door); the
+    // wind level + dt ride along so the turbine can rate-integrate its rotor
     this.env.night = nightLevel(snap.tod, snap.weather === "dust");
+    this.env.wind = snap.windLevel;
+    this.env.dt = dt;
     this.doorGlowMat.emissiveIntensity = 0.5 + 0.7 * this.env.night;
     this.doorSillMat.emissiveIntensity = 0.7 + 0.9 * this.env.night;
     this.airlockMat.emissiveIntensity = 0.7 + 0.9 * this.env.night;
@@ -282,7 +319,11 @@ export class ThreeRenderer {
     this.scene.postfx.update(dt);
     this.reconcile(snap);
     this.reconcileColonists(snap, dt, now);
+    this.reconcileRovers(snap, dt, now);
+    this.reconcileRobots(snap, dt, now);
+    this.updatePossessionFx(snap);
     this.reconcileDeposits(snap, now);
+    this.reconcileVents(snap, now);
     this.reconcileTrade(snap, dt, now);
     this.reconcileUfo(snap, dt, now);
     this.updateDebugUfo(dt, now);
@@ -477,23 +518,117 @@ export class ThreeRenderer {
       rec.mesh.setState(c.id === snap.possessed, c.carryKind, pulse, this.env);
     }
 
-    // possession transitions ring the colonist: bright on engage, dim on release
-    if (this.lastPossessed === undefined) {
-      this.lastPossessed = snap.possessed; // first snapshot: adopt, don't ping
-    } else if (snap.possessed !== this.lastPossessed) {
-      const engage = snap.possessed != null;
-      const id = engage ? snap.possessed : this.lastPossessed;
-      const rec = id != null ? this.colonists.get(id) : undefined;
-      if (rec) this.hazardFx.ringPulse(rec.pos, engage ? FX_CYAN : FX_CYAN_DIM, engage ? 2.0 : 1.2);
-      this.lastPossessed = snap.possessed;
-    }
-
     for (const [id, rec] of this.colonists) {
       if (!seen.has(id)) {
         this.colonistsGroup.remove(rec.mesh.object);
         rec.mesh.dispose();
         this.colonists.delete(id);
       }
+    }
+  }
+
+  /** rovers: the colonist reconcile template with rolling wheels — the smoothed
+   *  speed integrates a wheelPhase (speed / wheel-radius) so the wheels turn
+   *  exactly as fast as the ground moves under them */
+  private reconcileRovers(snap: Snapshot, dt: number, now: number): void {
+    const seen = new Set<number>();
+    const posLerp = 1 - Math.exp(-12 * dt);
+    const pulse = 0.5 + 0.5 * Math.sin(now / 400);
+
+    for (const r of snap.rovers) {
+      seen.add(r.id);
+      let rec = this.rovers.get(r.id);
+      const target = this.grid.cellPoint(r.x, r.y);
+      if (!rec) {
+        const mesh = buildRover();
+        this.roversGroup.add(mesh.object);
+        rec = { mesh, pos: target.clone(), facing: r.facing, wheelPhase: 0, prevPos: target.clone() };
+        this.rovers.set(r.id, rec);
+      }
+      rec.pos.lerp(target, posLerp);
+      rec.mesh.object.position.copy(rec.pos);
+
+      let d = r.facing - rec.facing;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      rec.facing += d * posLerp;
+      rec.mesh.object.rotation.y = rec.facing;
+
+      const speed = dt > 0 ? rec.prevPos.distanceTo(rec.pos) / dt : 0;
+      rec.prevPos.copy(rec.pos);
+      rec.wheelPhase += (speed / 0.18) * dt;
+      rec.mesh.setMotion(rec.wheelPhase);
+
+      rec.mesh.setState(r.id === snap.possessed, r.cargoTotal / ROVER_CARGO_CAP, pulse, this.env);
+    }
+
+    for (const [id, rec] of this.rovers) {
+      if (!seen.has(id)) {
+        this.roversGroup.remove(rec.mesh.object);
+        rec.mesh.dispose();
+        this.rovers.delete(id);
+      }
+    }
+  }
+
+  /** robots: same template — the speed estimate drives a track-vibration
+   *  shudder instead of a walk cycle, and the eye dims while flare-stunned */
+  private reconcileRobots(snap: Snapshot, dt: number, now: number): void {
+    const seen = new Set<number>();
+    const posLerp = 1 - Math.exp(-12 * dt);
+    const pulse = 0.5 + 0.5 * Math.sin(now / 400);
+
+    for (const r of snap.robots) {
+      seen.add(r.id);
+      let rec = this.robots.get(r.id);
+      const target = this.grid.cellPoint(r.x, r.y);
+      if (!rec) {
+        const mesh = buildRobot();
+        this.robotsGroup.add(mesh.object);
+        // phase seeded by id so the fleet's shudders don't sync
+        rec = { mesh, pos: target.clone(), facing: r.facing, shudderPhase: r.id, prevPos: target.clone() };
+        this.robots.set(r.id, rec);
+      }
+      rec.pos.lerp(target, posLerp);
+      rec.mesh.object.position.copy(rec.pos);
+
+      let d = r.facing - rec.facing;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      rec.facing += d * posLerp;
+      rec.mesh.object.rotation.y = rec.facing;
+
+      const speed = dt > 0 ? rec.prevPos.distanceTo(rec.pos) / dt : 0;
+      rec.prevPos.copy(rec.pos);
+      rec.shudderPhase += (8 + 6 * Math.min(1, speed / 1.6)) * dt;
+      rec.mesh.setMotion(rec.shudderPhase, Math.min(1, speed / 1.6));
+
+      rec.mesh.setState(r.carryKind, r.faulted > 0, pulse, this.env);
+    }
+
+    for (const [id, rec] of this.robots) {
+      if (!seen.has(id)) {
+        this.robotsGroup.remove(rec.mesh.object);
+        rec.mesh.dispose();
+        this.robots.delete(id);
+      }
+    }
+  }
+
+  /** possession transitions ring the actor: bright on engage, dim on release.
+   *  Hoisted out of reconcileColonists so it covers colonists AND rovers (they
+   *  share one possessable id space). */
+  private updatePossessionFx(snap: Snapshot): void {
+    const posOf = (id: number): THREE.Vector3 | undefined =>
+      this.colonists.get(id)?.pos ?? this.rovers.get(id)?.pos;
+    if (this.lastPossessed === undefined) {
+      this.lastPossessed = snap.possessed; // first snapshot: adopt, don't ping
+    } else if (snap.possessed !== this.lastPossessed) {
+      const engage = snap.possessed != null;
+      const id = engage ? snap.possessed : this.lastPossessed;
+      const at = id != null ? posOf(id) : undefined;
+      if (at) this.hazardFx.ringPulse(at, engage ? FX_CYAN : FX_CYAN_DIM, engage ? 2.0 : 1.2);
+      this.lastPossessed = snap.possessed;
     }
   }
 
@@ -519,6 +654,32 @@ export class ThreeRenderer {
         this.depositsGroup.remove(mesh.object);
         mesh.dispose();
         this.deposits.delete(id);
+      }
+    }
+  }
+
+  /** geothermal vents: static fumaroles (they never move or deplete) with a
+   *  per-frame ember/heat-shimmer pulse — the deposit template minus setAmount */
+  private reconcileVents(snap: Snapshot, now: number): void {
+    const seen = new Set<number>();
+    const pulse = 0.5 + 0.5 * Math.sin(now / 900); // slower breath than deposits
+    for (const v of snap.vents) {
+      seen.add(v.id);
+      let mesh = this.vents.get(v.id);
+      if (!mesh) {
+        mesh = buildVent(v.id * 2654435761);
+        const c = this.grid.cellCenter(v.gx, v.gy);
+        mesh.object.position.copy(c);
+        this.ventsGroup.add(mesh.object);
+        this.vents.set(v.id, mesh);
+      }
+      mesh.setPulse(pulse);
+    }
+    for (const [id, mesh] of this.vents) {
+      if (!seen.has(id)) {
+        this.ventsGroup.remove(mesh.object);
+        mesh.dispose();
+        this.vents.delete(id);
       }
     }
   }
@@ -636,15 +797,17 @@ export class ThreeRenderer {
     }
   }
 
-  /** follow-cam: lerp focus + ortho extent toward the possessed colonist (zoomed
-   *  in) or back to the overview (origin, wide) when nothing is piloted. */
+  /** follow-cam: lerp focus + ortho extent toward the possessed actor — a
+   *  colonist (close) or a rover (a step wider, it's a faster machine) — or
+   *  back to the overview (colony centroid, wide) when nothing is piloted. */
   private updateCamera(snap: Snapshot, dt: number): void {
     let targetFocus: THREE.Vector3;
     let targetView: number;
-    const rec = snap.possessed != null ? this.colonists.get(snap.possessed) : undefined;
+    const col = snap.possessed != null ? this.colonists.get(snap.possessed) : undefined;
+    const rec = col ?? (snap.possessed != null ? this.rovers.get(snap.possessed) : undefined);
     if (rec) {
       targetFocus = rec.pos.clone();
-      targetView = 5.5;
+      targetView = col ? 5.5 : 6.5;
     } else {
       // overview: frame the colony (centroid of its buildings) so it stays
       // centered wherever it sits on the larger grid, wide enough to see the
@@ -698,8 +861,14 @@ export class ThreeRenderer {
     this.placed.clear();
     for (const rec of this.colonists.values()) rec.mesh.dispose();
     this.colonists.clear();
+    for (const rec of this.rovers.values()) rec.mesh.dispose();
+    this.rovers.clear();
+    for (const rec of this.robots.values()) rec.mesh.dispose();
+    this.robots.clear();
     for (const mesh of this.deposits.values()) mesh.dispose();
     this.deposits.clear();
+    for (const mesh of this.vents.values()) mesh.dispose();
+    this.vents.clear();
     if (this.alienShip) { this.alienShip.dispose(); this.alienShip = null; }
     if (this.ufo) { this.ufo.dispose(); this.ufo = null; }
     this.clearDebugUfo();

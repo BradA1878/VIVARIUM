@@ -47,6 +47,10 @@ function specFor(id: string): TankSpec {
     case "o2tank":
       // teal metal, tall, with an antenna on top.
       return { heightMul: 1.5, metal: "#6c96a2", topper: "antenna" };
+    case "geothermal":
+      // squat, heat-stained bronze, venting steam through its stack — it sits
+      // ON the fumarole, so the silhouette stays low and wellhead-like.
+      return { heightMul: 0.8, metal: "#8a6a4a", topper: "vent" };
     default:
       return { heightMul: 1.2, metal: "#7a828c", topper: "none" };
   }

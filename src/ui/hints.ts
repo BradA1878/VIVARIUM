@@ -15,7 +15,12 @@
 import type { ColonyEvent, Snapshot } from "@shared/types";
 import { DEFS } from "@/engine/defs";
 
-export type HintId = "corridor" | "brownout" | "trade" | "deflector" | "mining";
+export type HintId =
+  | "corridor" | "brownout" | "trade" | "deflector" | "mining"
+  // schematic toasts — one per gated def, keyed "unlock_" + defId so the
+  // unlock event maps mechanically (and stays one-shot via the seen-set)
+  | "unlock_windturbine" | "unlock_geothermal" | "unlock_reactor"
+  | "unlock_printer" | "unlock_roverbay" | "unlock_roboticsbay";
 
 export interface Hint {
   id: HintId;
@@ -50,6 +55,36 @@ export const HINTS: Record<HintId, Hint> = {
     title: "YOU ARE THE COLONIST",
     body: "Walk with the Arrow keys or WASD. Press P on a glowing deposit to mine it, carry the load to the depot hopper, and press F to step back out.",
   },
+  unlock_windturbine: {
+    id: "unlock_windturbine",
+    title: "NEW SCHEMATIC: WIND TURBINE",
+    body: "Power from moving air — strongest at night and through dust, exactly when the panels go dark.",
+  },
+  unlock_geothermal: {
+    id: "unlock_geothermal",
+    title: "NEW SCHEMATIC: GEOTHERMAL TAP",
+    body: "Flat power, sol and night — but it only seats on a vent. Pick the tool and the fumaroles light up.",
+  },
+  unlock_reactor: {
+    id: "unlock_reactor",
+    title: "NEW SCHEMATIC: FISSION REACTOR",
+    body: "Big, steady power that sips water and wants an engineer on the rods. The grid stops being a worry.",
+  },
+  unlock_printer: {
+    id: "unlock_printer",
+    title: "NEW SCHEMATIC: MATERIALS PRINTER",
+    body: "Regolith in, materials out — a slow trickle of build currency that frees your people from the ore field.",
+  },
+  unlock_roverbay: {
+    id: "unlock_roverbay",
+    title: "NEW SCHEMATIC: ROVER BAY",
+    body: "The garage fabricates a drivable bulk hauler. When it rolls out, press F to take the wheel.",
+  },
+  unlock_roboticsbay: {
+    id: "unlock_roboticsbay",
+    title: "NEW SCHEMATIC: ROBOTICS BAY",
+    body: "Prints autonomous mining robots that work the deposit field sol and night, no air required.",
+  },
 };
 
 export type HintStorage = Pick<Storage, "getItem" | "setItem">;
@@ -70,6 +105,11 @@ export function hintForEvent(e: ColonyEvent): HintId | null {
     case "brownout": return "brownout";
     case "traders_inbound": return "trade";
     case "ufo_inbound": return "deflector";
+    case "unlock": {
+      // one schematic toast per gated def; unknown defs (future gates) stay quiet
+      const id = `unlock_${e.defId ?? ""}`;
+      return id in HINTS ? (id as HintId) : null;
+    }
     default: return null;
   }
 }

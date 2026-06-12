@@ -37,6 +37,10 @@ export interface KitContext {
 export interface KitEnv {
   /** 0 = full day → 1 = deep night (scene.ts nightLevel) */
   night: number;
+  /** current wind level (snap.windLevel, WIND_MIN..1) — the turbine's fuel */
+  wind?: number;
+  /** seconds since the last frame — for kits that integrate motion (rotor spin) */
+  dt?: number;
 }
 
 export interface KitMesh {

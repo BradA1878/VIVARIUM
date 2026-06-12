@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import type {
   BuildingState, ColonistView, ColonyEvent, EventType, HazardKind, HazardPhase,
-  HazardView, Pool, Snapshot, UfoPhase,
+  HazardView, Pool, RoverView, Snapshot, UfoPhase,
 } from "@shared/types";
 import {
   CUE_IDS, CUE_MIN_GAP_MS, EVENT_CUES, cellKey, deriveState, diffSnapshot, miniOf,
@@ -39,6 +39,10 @@ function colonist(id: number, x: number, y: number, carryAmt = 0, possessed = fa
     id, name: "Unit", role: "miner", x, y, facing: 0, state: "idle", injury: 0,
     carryKind: carryAmt > 0 ? "ore" : null, carryAmt, possessed,
   };
+}
+
+function rover(id: number, possessed = false): RoverView {
+  return { id, x: 5, y: 5, facing: 0, cargo: {}, cargoTotal: 0, integrity: 1, possessed };
 }
 
 function makeSnap(over: Partial<Snapshot> = {}): Snapshot {
@@ -124,6 +128,10 @@ describe("EVENT_CUES", () => {
     ["morale_recovered", "moraleUp"],
     ["colonist_injured", "injured"],
     ["colonist_recovered", "recovered"],
+    ["unlock", "unlockChime"],
+    ["rover_ready", "roverReady"],
+    ["robot_ready", "robotReady"],
+    ["robot_destroyed", "robotLost"],
   ];
 
   it.each(CASES)("%s → %s", (type, cue) => {
@@ -185,6 +193,33 @@ describe("deriveState — wind/storm", () => {
   });
 });
 
+describe("deriveState — engine windLevel lifts the bed", () => {
+  it("windLevel 0 reproduces every pinned base value (regression)", () => {
+    expect(deriveState(makeSnap({ tod: 0.5, windLevel: 0 })).wind).toBeCloseTo(0.18, 5);
+    expect(deriveState(makeSnap({ tod: 0.9, windLevel: 0 })).wind).toBeCloseTo(0.26, 5);
+    expect(deriveState(makeSnap({ windLevel: 0, hazards: [hz("dust", "telegraph", 0.8)] })).wind).toBeCloseTo(0.45, 5);
+    expect(deriveState(makeSnap({ windLevel: 0, weather: "dust", hazards: [hz("dust", "active", 0.5)] })).wind).toBeCloseTo(0.85, 5);
+    expect(deriveState(makeSnap({ windLevel: 0, weather: "dust", hazards: [hz("dust", "active", 1)] })).wind).toBeCloseTo(1.0, 5);
+  });
+
+  it("a full-wind clear sol howls (≥ 0.85) without claiming to be a storm", () => {
+    const a = deriveState(makeSnap({ tod: 0.5, windLevel: 1 }));
+    expect(a.wind).toBeGreaterThanOrEqual(0.85);
+    expect(a.wind).toBeLessThanOrEqual(1.0);
+    expect(a.stormy).toBe(false);
+  });
+
+  it("scales linearly between (0.18 + 0.72·level) on a clear day", () => {
+    expect(deriveState(makeSnap({ tod: 0.5, windLevel: 0.5 })).wind).toBeCloseTo(0.54, 5);
+  });
+
+  it("an active storm still wins over a full-wind sol", () => {
+    const a = deriveState(makeSnap({ windLevel: 1, weather: "dust", hazards: [hz("dust", "active", 1)] }));
+    expect(a.wind).toBeCloseTo(1.0, 5);
+    expect(a.stormy).toBe(true);
+  });
+});
+
 describe("deriveState — rumble/hum/dread", () => {
   it("meteor/quake telegraphs rumble at the 0.15 level, active at 0.5", () => {
     expect(deriveState(makeSnap()).rumble).toBe(0);
@@ -211,6 +246,25 @@ describe("deriveState — rumble/hum/dread", () => {
     expect(deriveState(ufoSnap("inbound")).dread).toBe(0.5);
     expect(deriveState(ufoSnap("hovering")).dread).toBe(1);
     expect(deriveState(ufoSnap("leaving")).dread).toBe(0);
+  });
+
+  it("drives only while the possessed id matches a rover — the full truth table", () => {
+    // nobody possessed → neither loop
+    const idle = deriveState(makeSnap({ rovers: [rover(9)] }));
+    expect(idle.drive).toBe(false);
+    expect(idle.hum).toBe(false);
+    // a possessed colonist hums, never drives
+    const suit = deriveState(makeSnap({ possessed: 7, colonists: [colonist(7, 3, 3, 0, true)], rovers: [rover(9)] }));
+    expect(suit.drive).toBe(false);
+    expect(suit.hum).toBe(true);
+    // a possessed rover drives, never hums
+    const wheel = deriveState(makeSnap({ possessed: 9, colonists: [colonist(7, 3, 3)], rovers: [rover(9, true)] }));
+    expect(wheel.drive).toBe(true);
+    expect(wheel.hum).toBe(false);
+    // a possession id matching nothing (abducted mid-frame) → neither
+    const ghost = deriveState(makeSnap({ possessed: 99, colonists: [colonist(7, 3, 3)], rovers: [rover(9)] }));
+    expect(ghost.drive).toBe(false);
+    expect(ghost.hum).toBe(false);
   });
 });
 
@@ -327,5 +381,9 @@ describe("CUE_MIN_GAP_MS", () => {
     expect(CUE_MIN_GAP_MS.moraleUp).toBe(4000);
     expect(CUE_MIN_GAP_MS.injured).toBe(1500);
     expect(CUE_MIN_GAP_MS.recovered).toBe(2000);
+    expect(CUE_MIN_GAP_MS.unlockChime).toBe(1500);
+    expect(CUE_MIN_GAP_MS.roverReady).toBe(3000);
+    expect(CUE_MIN_GAP_MS.robotReady).toBe(2000);
+    expect(CUE_MIN_GAP_MS.robotLost).toBe(1500);
   });
 });

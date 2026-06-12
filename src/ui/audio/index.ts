@@ -195,6 +195,7 @@ class AudioEngine {
     if (!a || !this.ctx) return;
     this.bed.setWind(a.wind, a.stormy);
     this.bed.setHum(a.hum);
+    this.bed.setDrive(a.drive);
     this.bed.setDread(a.dread);
     this.bed.setRumble(a.rumble);
   }
@@ -344,6 +345,24 @@ class AudioEngine {
       case "recovered": // back on their feet — two gentle rising notes
         tone(ctx, sfx, { type: "triangle", f0: 523.25, dur: 0.12, gain: 0.08 }); // C5
         tone(ctx, sfx, { type: "triangle", f0: 659.25, dur: 0.2, gain: 0.08, delay: 0.12 }); // E5
+        break;
+      case "unlockChime": // a schematic decrypts — two rising fifths + a sparkle
+        tone(ctx, sfx, { type: "triangle", f0: 523.25, f1: 783.99, dur: 0.16, gain: 0.1 }); // C5→G5
+        tone(ctx, sfx, { type: "triangle", f0: 523.25, f1: 783.99, dur: 0.2, gain: 0.09, delay: 0.14 });
+        tone(ctx, sfx, { type: "sine", f0: 2093, dur: 0.06, gain: 0.05, delay: 0.32 }); // C7 tick
+        break;
+      case "roverReady": // the garage door lifts — an engine rev + a proud third
+        tone(ctx, sfx, { type: "sawtooth", f0: 90, f1: 180, dur: 0.5, gain: 0.12, filter: { type: "lowpass", freq: 700 } });
+        tone(ctx, sfx, { type: "triangle", f0: 523.25, dur: 0.2, gain: 0.07, delay: 0.34 }); // C5
+        tone(ctx, sfx, { type: "triangle", f0: 659.25, dur: 0.26, gain: 0.07, delay: 0.42 }); // E5 — the third
+        break;
+      case "robotReady": // a drone boots — two fast square chirps
+        tone(ctx, sfx, { type: "square", f0: 880, dur: 0.06, gain: 0.07, filter: { type: "lowpass", freq: 2600 } });
+        tone(ctx, sfx, { type: "square", f0: 1320, dur: 0.07, gain: 0.07, delay: 0.09, filter: { type: "lowpass", freq: 2600 } });
+        break;
+      case "robotLost": // a drone scrapped — the destroyed cue's smaller cousin (~0.6×)
+        noiseHit(ctx, sfx, { dur: 0.3, gain: 0.19, filter: { type: "bandpass", freq: 300, q: 1.1 } });
+        tone(ctx, sfx, { type: "sawtooth", f0: 140, f1: 55, dur: 0.35, gain: 0.1 });
         break;
       case "victoryTheme":
         this.victory(ctx);

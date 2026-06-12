@@ -54,6 +54,8 @@ export class PlacementController {
   private tiles: THREE.Mesh[] = [];
   private tileGeo: THREE.PlaneGeometry;
   private tileMat: THREE.MeshBasicMaterial;
+  /** dim marker for vent cells while a needsVent tool is up (discoverability) */
+  private ventMat: THREE.MeshBasicMaterial;
   private outline: THREE.LineSegments;
   private arrow: THREE.Mesh;
 
@@ -70,6 +72,9 @@ export class PlacementController {
     this.tileGeo = new THREE.PlaneGeometry(CELL * 0.92, CELL * 0.92).rotateX(-Math.PI / 2);
     this.tileMat = new THREE.MeshBasicMaterial({
       color: CYAN, transparent: true, opacity: 0.22, depthWrite: false,
+    });
+    this.ventMat = new THREE.MeshBasicMaterial({
+      color: CYAN, transparent: true, opacity: 0.12, depthWrite: false,
     });
     const og = new THREE.BufferGeometry();
     this.outline = new THREE.LineSegments(
@@ -193,7 +198,7 @@ export class PlacementController {
     }
     this.group.visible = true;
 
-    if (this.tool.kind === "place") this.hover ? this.drawPlaceGhost() : this.hideTiles();
+    if (this.tool.kind === "place") this.hover ? this.drawPlaceGhost() : this.drawVentMarkersOnly();
     else if (this.tool.kind === "demolish") this.hover ? this.drawDemolishGhost() : this.hideTiles();
     else this.drawRouteGhost();
   }
@@ -222,7 +227,9 @@ export class PlacementController {
   }
 
   // ---- tile pool ------------------------------------------------------------
-  /** ensure `n` tiles exist and return them; hide the rest */
+  /** ensure `n` tiles exist and return them; hide the rest. Every served tile
+   *  is reset to the shared ghost material — a caller that dims some of them
+   *  (the vent markers) re-assigns after, so the pool never leaks a material */
   private useTiles(n: number, color: THREE.Color): THREE.Mesh[] {
     while (this.tiles.length < n) {
       const m = new THREE.Mesh(this.tileGeo, this.tileMat);
@@ -230,7 +237,10 @@ export class PlacementController {
       this.group.add(m);
     }
     this.tileMat.color.copy(color);
-    for (let i = 0; i < this.tiles.length; i++) this.tiles[i].visible = i < n;
+    for (let i = 0; i < this.tiles.length; i++) {
+      this.tiles[i].visible = i < n;
+      this.tiles[i].material = this.tileMat;
+    }
     return this.tiles;
   }
   private hideTiles(): void { for (const t of this.tiles) t.visible = false; this.hideOutline(); }
@@ -241,7 +251,11 @@ export class PlacementController {
     const def = DEFS[(this.tool as { defId: string }).defId];
     const ok = this.bridge.canPlace(def.id, this.hover!.gx, this.hover!.gy);
     const col = ok ? CYAN : RUST;
-    const tiles = this.useTiles(def.foot[0] * def.foot[1], col);
+    // a needsVent tool (the geothermal tap) also marks every vent cell with a
+    // dim tile behind the footprint ghost — the terrain answers "place WHERE?"
+    const vents = def.needsVent ? this.bridge.latest?.vents ?? [] : [];
+    const footN = def.foot[0] * def.foot[1];
+    const tiles = this.useTiles(footN + vents.length, col);
     (this.outline.material as THREE.LineBasicMaterial).color.copy(col);
 
     let i = 0;
@@ -250,11 +264,33 @@ export class PlacementController {
         const c = this.grid.cellCenter(this.hover!.gx + dx, this.hover!.gy + dy);
         tiles[i++].position.set(c.x, 0.03, c.z);
       }
+    for (const v of vents) {
+      const t = tiles[i++];
+      t.material = this.ventMat; // dimmer than the ghost, never recolored by it
+      const c = this.grid.cellCenter(v.gx, v.gy);
+      t.position.set(c.x, 0.02, c.z); // a hair under the footprint tiles
+    }
     this.setOutlineBox(def.foot[0], def.foot[1], this.hover!.gx, this.hover!.gy, 0.6);
 
     // door arrow: show where the (rotated) door will face
     const d = doorCells(def, this.hover!.gx, this.hover!.gy, this.ghostRot);
     if (d) this.showArrow(d.exit[0], d.exit[1], d.side, col);
+  }
+
+  /** no cursor over the canvas: a needsVent tool still marks every vent cell,
+   *  so picking the geothermal tile immediately shows where it can even go */
+  private drawVentMarkersOnly(): void {
+    const def = DEFS[(this.tool as { defId: string }).defId];
+    const vents = def.needsVent ? this.bridge.latest?.vents ?? [] : [];
+    if (vents.length === 0) { this.hideTiles(); return; }
+    this.hideOutline();
+    const tiles = this.useTiles(vents.length, CYAN);
+    for (let i = 0; i < vents.length; i++) {
+      const t = tiles[i];
+      t.material = this.ventMat;
+      const c = this.grid.cellCenter(vents[i].gx, vents[i].gy);
+      t.position.set(c.x, 0.02, c.z);
+    }
   }
 
   // ---- select / move ---------------------------------------------------------
@@ -368,6 +404,7 @@ export class PlacementController {
     this.canvas.removeEventListener("contextmenu", this.onContext);
     this.tileGeo.dispose();
     this.tileMat.dispose();
+    this.ventMat.dispose();
     this.outline.geometry.dispose();
     (this.outline.material as THREE.Material).dispose();
     this.arrow.geometry.dispose();

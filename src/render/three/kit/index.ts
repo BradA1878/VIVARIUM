@@ -12,12 +12,20 @@ import { buildTank } from "./tank";
 import { buildSolar } from "./solar";
 import { buildCorridor } from "./corridor";
 import { buildDrum } from "./drum";
+import { buildWind } from "./wind";
+import { buildReactor } from "./reactor";
+import { buildFacility } from "./facility";
 
 function builderFor(def: BuildingDef): KitBuilder {
   if (def.solar) return buildSolar;
   if (def.conduit) return buildCorridor;
   if (def.id === "battery") return buildDrum;
-  if (def.id === "extractor" || def.id === "electrolysis" || def.id === "cistern" || def.id === "o2tank") {
+  if (def.id === "windturbine") return buildWind;
+  if (def.id === "reactor") return buildReactor;
+  if (def.id === "printer" || def.id === "roverbay" || def.id === "roboticsbay") {
+    return buildFacility;
+  }
+  if (def.id === "extractor" || def.id === "electrolysis" || def.id === "cistern" || def.id === "o2tank" || def.id === "geothermal") {
     return buildTank;
   }
   return buildDome; // hub, hab, greenhouse

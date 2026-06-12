@@ -25,6 +25,7 @@ export const CUE_IDS = [
   "resupplyHorn", "victoryTheme", "defeatTheme",
   "pickup", "drop",
   "moraleLow", "moraleUp", "injured", "recovered",
+  "unlockChime", "roverReady", "robotReady", "robotLost",
 ] as const;
 
 export type CueId = (typeof CUE_IDS)[number];
@@ -59,6 +60,10 @@ export const CUE_MIN_GAP_MS: Record<CueId, number> = {
   moraleUp: 4000,
   injured: 1500,
   recovered: 2000,
+  unlockChime: 1500,
+  roverReady: 3000,
+  robotReady: 2000,
+  robotLost: 1500,
 };
 
 // ---- event → cue ------------------------------------------------------------------
@@ -91,18 +96,25 @@ export const EVENT_CUES: Partial<Record<EventType, (e: ColonyEvent) => CueId | n
   morale_recovered: () => "moraleUp",
   colonist_injured: () => "injured",
   colonist_recovered: () => "recovered",
+  unlock: () => "unlockChime",
+  rover_ready: () => "roverReady",
+  robot_ready: () => "robotReady",
+  robot_destroyed: () => "robotLost",
 };
 
 // ---- snapshot → ambient bed targets -----------------------------------------------
 
 export interface AmbientState {
   /** wind-bed intensity 0..1 — clear 0.18 (0.26 at night), storm telegraph
-   *  0.45, dust weather 0.7 rising to 1.0 with active-storm intensity */
+   *  0.45, dust weather 0.7 rising to 1.0 with active-storm intensity; the
+   *  engine's windLevel lifts the floor (0.18 + 0.72·level) but a storm wins */
   wind: number;
   /** an active dust storm — opens the wind filter (400→1400Hz) */
   stormy: boolean;
   /** the possession hum (the player is inside a suit) */
   hum: boolean;
+  /** the drive loop (the player is at a rover's wheel, not in a suit) */
+  drive: boolean;
   /** UFO menace: 0.5 while inbound, 1 while hovering with the beam down */
   dread: 0 | 0.5 | 1;
   /** seismic bed gain: 0.15 while a meteor/quake telegraphs, 0.5 while active */
@@ -117,11 +129,16 @@ export function deriveState(s: Snapshot): AmbientState {
   const dustActive = s.hazards.find((h) => h.kind === "dust" && h.phase === "active");
   const dustComing = s.hazards.some((h) => h.kind === "dust" && h.phase === "telegraph");
   const night = s.tod < DAY_START || s.tod >= DAY_END;
-  const wind = dustActive
+  const base = dustActive
     ? 0.7 + 0.3 * clamp01(dustActive.intensity) // dust weather 0.7 → full storm 1.0
     : dustComing
       ? 0.45 // the wind picks up before the wall arrives
       : night ? 0.26 : 0.18;
+  // the engine's wind level (the turbines' fuel) lifts the bed too, so a windy
+  // clear sol HOWLS a little — but a storm's own curve always out-shouts it.
+  // windLevel 0 contributes exactly the 0.18 floor, so every base value above
+  // is reproduced unchanged (the regression the tests pin).
+  const wind = clamp01(Math.max(base, 0.18 + 0.72 * s.windLevel));
 
   let rumble = 0;
   for (const h of s.hazards) {
@@ -133,8 +150,10 @@ export function deriveState(s: Snapshot): AmbientState {
     s.ufo?.phase === "hovering" ? 1 : s.ufo?.phase === "inbound" ? 0.5 : 0;
 
   const hum = s.possessed != null && s.colonists.some((c) => c.id === s.possessed);
+  // at a rover's wheel instead of in a suit — the bed swaps hum for drive
+  const drive = s.possessed != null && s.rovers.some((r) => r.id === s.possessed);
 
-  return { wind, stormy: s.weather === "dust" || !!dustActive, hum, dread, rumble };
+  return { wind, stormy: s.weather === "dust" || !!dustActive, hum, drive, dread, rumble };
 }
 
 // ---- snapshot diff → cues ----------------------------------------------------------

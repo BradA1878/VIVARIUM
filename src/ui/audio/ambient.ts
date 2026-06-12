@@ -5,6 +5,7 @@
      WIND   noise → lowpass 400 → lowpass 800 → gain        (always audible)
      RUMBLE noise → lowpass 90 → gain                       (meteor/quake bed)
      HUM    70Hz + 70.7Hz sines (a slow beat) → lowpass 300 (possession)
+     DRIVE  48Hz + 48.6Hz saws (an engine beat) → lowpass 220 (rover piloting)
      DREAD  55Hz saw, pulsed at 4Hz → lowpass 200           (the UFO overhead)
 
    Everything moves by setTargetAtTime — no clicks, and a missed snapshot just
@@ -29,6 +30,7 @@ export class AmbientBed {
   private windLp1: BiquadFilterNode | null = null;
   private rumbleGain: GainNode | null = null;
   private humGain: GainNode | null = null;
+  private driveGain: GainNode | null = null;
   private dreadGain: GainNode | null = null;
 
   /** build + start every loop at its resting level. Idempotent per bed. */
@@ -93,6 +95,16 @@ export class AmbientBed {
     hum2.connect(humLp);
     humLp.connect(this.humGain).connect(dest);
 
+    // ROVER DRIVE — the hum's mechanical cousin: two saws 0.6Hz apart growl
+    // like a drivetrain under load, kept dark by the lowpass
+    const drive1 = osc("sawtooth", 48);
+    const drive2 = osc("sawtooth", 48.6);
+    const driveLp = lowpass(220);
+    this.driveGain = gain(0);
+    drive1.connect(driveLp);
+    drive2.connect(driveLp);
+    driveLp.connect(this.driveGain).connect(dest);
+
     // UFO DREAD — a low saw whose gain pulses at 4Hz; dreadGain meters how close
     const dread = osc("sawtooth", 55);
     const dreadLp = lowpass(200);
@@ -121,6 +133,11 @@ export class AmbientBed {
     this.humGain.gain.setTargetAtTime(on ? 0.07 : 0, this.ctx.currentTime, 0.4);
   }
 
+  setDrive(on: boolean): void {
+    if (!this.ctx || !this.driveGain) return;
+    this.driveGain.gain.setTargetAtTime(on ? 0.06 : 0, this.ctx.currentTime, 0.4);
+  }
+
   setDread(level: 0 | 0.5 | 1): void {
     if (!this.ctx || !this.dreadGain) return;
     this.dreadGain.gain.setTargetAtTime(level * 0.12, this.ctx.currentTime, 1.0);
@@ -142,7 +159,7 @@ export class AmbientBed {
     this.srcs = [];
     this.nodes = [];
     this.ctx = null;
-    this.windGain = this.rumbleGain = this.humGain = this.dreadGain = null;
+    this.windGain = this.rumbleGain = this.humGain = this.driveGain = this.dreadGain = null;
     this.windLp1 = null;
   }
 }

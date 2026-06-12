@@ -109,6 +109,20 @@ describe("hintForEvent", () => {
     expect(hintForEvent(ev("casualty"))).toBeNull();
     expect(hintForEvent(ev("hazard_start", { kind: "meteor" }))).toBeNull();
   });
+
+  it("maps an unlock event to its schematic toast via the defId", () => {
+    expect(hintForEvent(ev("unlock", { defId: "windturbine" }))).toBe("unlock_windturbine");
+    expect(hintForEvent(ev("unlock", { defId: "geothermal" }))).toBe("unlock_geothermal");
+    expect(hintForEvent(ev("unlock", { defId: "reactor" }))).toBe("unlock_reactor");
+    expect(hintForEvent(ev("unlock", { defId: "printer" }))).toBe("unlock_printer");
+    expect(hintForEvent(ev("unlock", { defId: "roverbay" }))).toBe("unlock_roverbay");
+    expect(hintForEvent(ev("unlock", { defId: "roboticsbay" }))).toBe("unlock_roboticsbay");
+  });
+
+  it("stays quiet for unlocks it has no card for (future gates, missing defId)", () => {
+    expect(hintForEvent(ev("unlock", { defId: "fusiontorch" }))).toBeNull();
+    expect(hintForEvent(ev("unlock"))).toBeNull();
+  });
 });
 
 describe("hintForSnapshot — corridor debounce", () => {
@@ -164,6 +178,21 @@ describe("Hints queue", () => {
     const fresh = new Hints(st); // a new session over the same storage still remembers
     expect(fresh.onEvent(ev("brownout"))).toBeNull();
     expect(fresh.onEvent(ev("traders_inbound"))?.id).toBe("trade"); // others unaffected
+  });
+
+  it("shows a schematic toast once per unlock — one-shot via the same seen-set", () => {
+    const st = unlockedStorage();
+    const hints = new Hints(st);
+
+    const shown = hints.onEvent(ev("unlock", { defId: "windturbine", detail: "Wind Turbine" }));
+    expect(shown?.id).toBe("unlock_windturbine");
+    expect(shown?.title).toBe("NEW SCHEMATIC: WIND TURBINE");
+    expect(st.map.get(HINTS_SEEN_KEY)).toContain("unlock_windturbine");
+
+    hints.dismiss();
+    expect(hints.onEvent(ev("unlock", { defId: "windturbine" }))).toBeNull(); // one-shot
+    // a different schematic still gets its own card
+    expect(hints.onEvent(ev("unlock", { defId: "roverbay" }))?.id).toBe("unlock_roverbay");
   });
 
   it("shows one toast at a time — a blocked hint is NOT burned and can show later", () => {
