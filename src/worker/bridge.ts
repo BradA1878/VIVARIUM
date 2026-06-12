@@ -83,9 +83,12 @@ export class SimBridge {
   interact(): void { this.send({ type: "interact" }); }
   /** accept/decline the landed alien trade offer */
   respondTrade(accept: boolean): void { this.send({ type: "respondTrade", accept }); }
-  /** possess the actor nearest a grid point (e.g. the camera target) — scans
-   *  colonists AND rovers (skipping rovers too dented to drive); strictly the
-   *  nearest wins, ties to the lower id. Returns the possessed id. */
+  /** DEV-only affordance (the window.__viv / Playwright surface) — production
+   *  possession goes through the commander chain (store possessToggle →
+   *  ui/lead.ts leaderId), not this. Possess the actor nearest a grid point:
+   *  scans colonists AND rovers (skipping rovers too dented to drive);
+   *  strictly the nearest wins, ties to the lower id. Returns the possessed
+   *  id. */
   possessNearest(gx: number, gy: number): number | null {
     if (!this.latest) return null;
     const cands: { id: number; x: number; y: number }[] = [

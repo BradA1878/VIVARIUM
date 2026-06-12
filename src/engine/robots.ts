@@ -6,10 +6,12 @@
    support, and never count in population/labor; unlike the rover they are NOT
    possessable (Colony.possess resolves colonists + rovers only).
 
-   Ids draw from s.colonistCounter — the shared actor counter — so the unified
-   deposit-claim set (built in stepColonists, threaded through stepRobots)
-   resolves in one global id order and a robot and a colonist never thrash
-   over a node. Zero RNG anywhere: fabrication is a countdown whose completion
+   Ids draw from s.colonistCounter — the shared actor counter — and the
+   deposit-claim set is unified: built in stepColonists (fresh claims in
+   colonist-id order), then threaded through stepRobots (robot-id order), so a
+   robot and a colonist never thrash over a node — a colonist out-claims a
+   robot contesting the same node within a tick, by pass order.
+   Zero RNG anywhere: fabrication is a countdown whose completion
    fee is charged when the chassis finishes (holding at zero until the stock
    covers it), and the counterplay is deterministic — a flare's activation
    stuns the whole fleet (faultRobots), a meteor/quake strike inside
@@ -60,10 +62,11 @@ export function updateRobotFab(s: ColonyState, dt: number, emit: Emit): void {
 
 /** the robots' tick: every non-faulted robot runs the shared gather brain —
  *  sol and night, hazards or calm, it works the field. `claimed` is the SAME
- *  set the colonists' pass built and added to, so claims resolve once, in
- *  actor-id order, across both species. A faulted robot stands exactly where
- *  the flare front caught it while the stun decrements (its claim survives —
- *  sticky, like a dusk carrier's). */
+ *  set the colonists' pass built and added to, so each node is claimed once
+ *  per tick across both species — colonists first (id order), then robots
+ *  (id order). A faulted robot stands exactly where the flare front caught it
+ *  while the stun decrements (its claim survives — sticky, like a dusk
+ *  carrier's). */
 export function stepRobots(s: ColonyState, dt: number, claimed: Set<number>): void {
   for (const r of s.robots ?? []) {
     if (r.faulted > 0) {

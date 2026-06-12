@@ -59,8 +59,9 @@ export interface RoverInstance {
 }
 
 /** an autonomous mining robot (the renderer sees RobotView) — NOT possessable.
- *  Its id draws from colonistCounter, the shared actor counter, so the unified
- *  deposit-claim set resolves in one global id order across species. It runs
+ *  Its id draws from colonistCounter, the shared actor counter; deposit claims
+ *  resolve over ONE shared set per tick — the colonists' pass first (id
+ *  order), then the robots' (id order) — so the species never thrash. It runs
  *  the shared gather brain (engine/gather.ts); `faulted` is the flare stun. */
 export interface RobotInstance {
   id: number;

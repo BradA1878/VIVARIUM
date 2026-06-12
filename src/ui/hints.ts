@@ -12,6 +12,10 @@
    schematic blocked by an occupied slot waits in a small session-local FIFO
    and shows on the first pump after the slot frees (the store frees it only
    after its inter-toast gap, so the gap is honored for queued cards too).
+   Caveat: SUPPRESSED unlock candidates (welcome card unseen) still drop before
+   reaching the FIFO — on a first run the chime / narrator line / palette tile
+   carry the announcement, and the toast resurfaces on a later run since seen
+   only marks at show time.
 
    Storage is injectable with try/catch around every access (the settings /
    memory.ts loadModel pattern); nothing touches window at import time.

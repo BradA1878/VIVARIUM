@@ -73,7 +73,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 30,
     staffing: 2, consumes: { power: 6, water: 3 }, produces: { food: 5, oxygen: 2 },
     requiresPressure: true, priority: 30, door: 2,
-    desc: "Food, plus a little oxygen. Needs two workers. Shed first in a brownout.",
+    desc: "Food, plus a little oxygen. Needs two workers. Shed early in a brownout.",
   },
   medbay: {
     id: "medbay", name: "Med-Bay", glyph: "MED",
