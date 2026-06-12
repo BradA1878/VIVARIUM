@@ -19,6 +19,9 @@ const onHand = computed(() => snapshot.value?.materials.amount ?? 0);
 const costOf = (d: BuildingDef): number => d.matCost ?? 0;
 const affordable = (d: BuildingDef): boolean => onHand.value >= costOf(d);
 
+/** piloting locks construction — every tile disables while possessing */
+const piloting = computed(() => snapshot.value?.possessed != null);
+
 const hovered = ref<BuildingDef | null>(null);
 const tipPos = ref<{ left: number; bottom: number }>({ left: 0, bottom: 0 });
 
@@ -49,12 +52,13 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
 <template>
   <div class="palette">
     <div class="pal-title">CONSTRUCT</div>
-    <div class="pal-grid">
+    <div v-if="piloting" class="pal-lock">&#10178; PILOTING — construction locked · F to release</div>
+    <div :class="['pal-grid', { locked: piloting }]">
       <button
         v-for="d in defs"
         :key="d.id"
         :class="['pal-btn', { sel: tool === d.id && !demolish, poor: !affordable(d) }]"
-        :disabled="!affordable(d)"
+        :disabled="piloting || !affordable(d)"
         @click="pick(d.id)"
         @mouseenter="showTip($event, d)"
         @mouseleave="hideTip"
@@ -65,6 +69,7 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
       </button>
       <button
         :class="['pal-btn', 'demo', { sel: demolish }]"
+        :disabled="piloting"
         @click="toggleDemolish()"
       >
         <span class="pal-glyph">&#10005;</span>
@@ -96,6 +101,20 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
 </template>
 
 <style scoped>
+/* piloting: the whole palette locks — a hint row, and the grid dims out */
+.pal-lock {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--rust);
+  text-align: center;
+  margin-bottom: 7px;
+}
+.pal-grid.locked {
+  opacity: 0.35;
+  filter: grayscale(1);
+}
+.pal-grid.locked .pal-btn { cursor: not-allowed; }
 .pal-cost {
   font-size: 8px;
   letter-spacing: 0.04em;

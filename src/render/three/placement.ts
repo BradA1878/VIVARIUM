@@ -137,6 +137,7 @@ export class PlacementController {
   private onLeave(): void { this.hasPointer = false; this.hover = null; }
 
   private onClick(): void {
+    if (this.bridge.latest?.possessed != null) return; // piloting locks construction (place/demolish/route/select/move)
     if (!this.hover) return;
     const { gx, gy } = this.hover;
     if (!this.tool) { this.onSelectClick(gx, gy); return; }

@@ -342,6 +342,7 @@ export function disposeColony(): void {
 
 // ---- tool selection (mirrors prototype app.jsx) ------------------------------
 function pick(defId: string): void {
+  if (snapshot.value?.possessed != null) return; // piloting locks construction
   audio.uiTick();
   if (tool.value === defId && !demolish.value) { clearTool(); return; }
   tool.value = defId;
@@ -357,6 +358,7 @@ function rotate(): void { audio.uiTick(); renderer?.rotate(); }
 /** Del — remove the currently-selected building */
 function removeSelected(): void { renderer?.removeSelected(); }
 function toggleDemolish(): void {
+  if (snapshot.value?.possessed != null) return; // piloting locks construction
   audio.uiTick();
   const v = !demolish.value;
   demolish.value = v;

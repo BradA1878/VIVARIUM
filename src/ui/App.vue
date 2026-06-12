@@ -66,7 +66,7 @@ function onKey(e: KeyboardEvent): void {
     if (logOpen.value) { logOpen.value = false; return; }
     clearTool();
   }
-  if (e.key === "f" || e.key === "F") { e.preventDefault(); controls.possessToggle(); held.clear(); return; }
+  if (e.key === "f" || e.key === "F") { e.preventDefault(); clearTool(); controls.possessToggle(); held.clear(); return; }
   if (piloting.value && (k === "p" || k === "e")) { e.preventDefault(); controls.interact(); return; } // pick up / drop
   if (piloting.value && MOVE_KEYS[k]) {
     e.preventDefault();
@@ -74,9 +74,9 @@ function onKey(e: KeyboardEvent): void {
     return;
   }
   if (e.key === " ") { e.preventDefault(); controls.togglePause(); }
-  if (e.key === "r" || e.key === "R") rotate();
+  if (!piloting.value && (e.key === "r" || e.key === "R")) rotate(); // piloting locks construction
   if (k === "l") toggleLog(); // the council log — deliberately outside the held-keys movement path
-  if (e.key === "Delete" || e.key === "Backspace") removeSelected();
+  if (!piloting.value && (e.key === "Delete" || e.key === "Backspace")) removeSelected();
 }
 function onKeyUp(e: KeyboardEvent): void {
   const k = e.key.toLowerCase();
