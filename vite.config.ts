@@ -6,6 +6,11 @@ import { fileURLToPath, URL } from "node:url";
 // trigger (see index.html / src/main.ts) so the heavy bundle stays off the
 // main page — doc §1.
 export default defineConfig({
+  // Base public path. Unset → "/" (standalone dev/build, byte-identical to the
+  // previous behavior). The parent site embeds the game under /vivarium/, so
+  // `npm run build:egg` sets VIV_BASE=/vivarium/ and every emitted asset URL
+  // (index.html assets, the sim-worker chunk, lazy renderer chunks) is rebased.
+  base: process.env.VIV_BASE || "/",
   plugins: [vue()],
   resolve: {
     alias: {
