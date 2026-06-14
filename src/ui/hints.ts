@@ -28,7 +28,8 @@ export type HintId =
   // schematic toasts — one per gated def, keyed "unlock_" + defId so the
   // unlock event maps mechanically (and stays one-shot via the seen-set)
   | "unlock_windturbine" | "unlock_geothermal" | "unlock_reactor"
-  | "unlock_printer" | "unlock_roverbay" | "unlock_roboticsbay";
+  | "unlock_printer" | "unlock_roverbay" | "unlock_roboticsbay"
+  | "unlock_awg" | "unlock_aquifer" | "unlock_reclaimer";
 
 export interface Hint {
   id: HintId;
@@ -92,6 +93,21 @@ export const HINTS: Record<HintId, Hint> = {
     id: "unlock_roboticsbay",
     title: "NEW SCHEMATIC: ROBOTICS BAY",
     body: "Prints autonomous mining robots that work the deposit field sol and night, no air required.",
+  },
+  unlock_awg: {
+    id: "unlock_awg",
+    title: "NEW SCHEMATIC: ATMOSPHERIC WATER GENERATOR",
+    body: "Wrings water from the thin air — power-hungry, but build as many as your grid can feed when the ice runs low.",
+  },
+  unlock_aquifer: {
+    id: "unlock_aquifer",
+    title: "NEW SCHEMATIC: AQUIFER WELL",
+    body: "Huge water for almost no power — but it only seats on an aquifer site. Pick the tool and the brine sinks light up.",
+  },
+  unlock_reclaimer: {
+    id: "unlock_reclaimer",
+    title: "NEW SCHEMATIC: WATER RECLAIMER",
+    body: "Recycles greywater, returning a slice of every drop the colony draws. It can't start from empty, but it stretches every source you have.",
   },
 };
 

@@ -32,6 +32,9 @@ export function canPlace(s: ColonyState, def: BuildingDef, gx: number, gy: numbe
   // terrain-restricted: the geothermal tap must cover a vent cell
   if (def.needsVent && !cellsFor(def, gx, gy).some(([x, y]) =>
     s.vents.some((v) => v.gx === x && v.gy === y))) return false;
+  // terrain-restricted: the aquifer well must cover an aquifer site
+  if (def.needsAquifer && !cellsFor(def, gx, gy).some(([x, y]) =>
+    s.aquifers.some((a) => a.gx === x && a.gy === y))) return false;
   return true;
 }
 
@@ -47,6 +50,7 @@ export function migrateGrid(s: ColonyState, newN: number): ColonyState {
   for (const b of s.buildings) { b.gx += off; b.gy += off; }
   for (const d of s.deposits) { d.gx += off; d.gy += off; }
   for (const v of s.vents) { v.gx += off; v.gy += off; }
+  for (const a of s.aquifers ?? []) { a.gx += off; a.gy += off; }
   for (const k of s.colonists) { k.x += off; k.y += off; }
   for (const r of s.rovers ?? []) { r.x += off; r.y += off; }
   for (const r of s.robots ?? []) { r.x += off; r.y += off; }

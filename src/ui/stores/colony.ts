@@ -5,7 +5,7 @@
    touches the tick.
    ============================================================================ */
 import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
-import type { ColonyEvent, Snapshot } from "@shared/types";
+import type { ColonyEvent, Resource, Snapshot } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo, SelectInfo } from "@/render/three/placement";
@@ -20,14 +20,14 @@ import {
 } from "@/agent/director/memory";
 import { loadBest, persist, clearLocal } from "@/persistence";
 import type { HazardKind } from "@shared/types";
-import { clockOf } from "../format";
+import { clockOf, fmt } from "../format";
 import { useSettings } from "./settings";
 import { audio, initAudio } from "../audio";
 import {
   emptyHistory, loadHistory, recordEvent, recordSnapshot, resetHistory, saveHistory,
   type RunHistory,
 } from "./history";
-import { Hints, type Hint } from "../hints";
+import { Hints, type Hint, type HintId } from "../hints";
 import { leaderId, boardableRover } from "../lead";
 
 // player preferences (persisted) — gate the director, the live narrator, render
@@ -104,6 +104,35 @@ function showHint(h: Hint | null): void {
   audio.uiTick();
   if (hintTimer) clearTimeout(hintTimer);
   hintTimer = setTimeout(dismissHint, HINT_TOAST_MS);
+}
+
+/** surface a closed resupply window's banked totals as a toast — reusing the
+ *  HintToast surface (the id is the Vue :key only, never the one-shot seen-set,
+ *  so this recurring event card stays independent of the teaching hints). The
+ *  event carries post-clamp amounts; any pool sitting at capacity when it lands
+ *  is where the basket vented, which we note softly. */
+function showResupplyToast(e: ColonyEvent): void {
+  const amounts = e.amounts;
+  if (!amounts) return;
+  // never stomp a one-shot teaching hint the player is mid-read (those don't replay).
+  // This recurring resupply card yields if any non-resupply hint holds the slot — the
+  // window already announced itself via the inbound banner.
+  if (hintToast.value && (hintToast.value.id as string) !== "resupply_done") return;
+  const order: Resource[] = ["water", "food", "oxygen", "power"]; // water-first, the tier's subject
+  const parts = order
+    .filter((k) => (amounts[k] ?? 0) >= 0.5) // sub-unit dribbles aren't worth a line
+    .map((k) => `+${fmt(amounts[k])} ${k}`);
+  // vented overflow: a pool already at capacity when the drop landed couldn't fit
+  const pools = snapshot.value?.pools;
+  const full = pools
+    ? (["water", "food", "oxygen", "power"] as Resource[]).filter(
+        (k) => pools[k].capacity > 0 && pools[k].amount >= pools[k].capacity - 0.5,
+      )
+    : [];
+  const body = parts.length
+    ? `Resupply landed: ${parts.join(", ")}.${full.length ? ` ${full.map((k) => `${k} tank full`).join(", ")} — overflow vented.` : ""}`
+    : `Resupply window closed.${full.length ? ` Every pool was full — the drop vented.` : " Nothing banked."}`;
+  showHint({ id: "resupply_done" as HintId, title: "RESUPPLY LANDED", body });
 }
 
 /** close the toast (✕, auto-dismiss, or reset) and let the next hint through —
@@ -243,6 +272,9 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   b.onEvent((e) => {
     recordEvent(history, e); // the run report's tallies count from here
     if (!snapshot.value?.outcome && hints) showHint(hints.onEvent(e)); // event-driven teaching toasts
+    // a resupply window closing surfaces what actually banked (the toast reads
+    // the event's amounts; the inbound RESUPPLY alert in Alerts.vue is unchanged)
+    if (e.type === "resupply_done" && !snapshot.value?.outcome) showResupplyToast(e);
     if (e.type === "crit_start" && e.res) lastCritRes = e.res as Axis;
     else if (e.type === "hazard_start" && e.kind) lastHazard = e.kind;
     else if (e.type === "victory" || e.type === "defeat") {

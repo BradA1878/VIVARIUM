@@ -25,6 +25,14 @@ export const GATES: Record<string, (s: ColonyState) => boolean> = {
   roboticsbay: (s) =>
     s.buildings.some((b) => b.defId === "reactor") ||
     (s.population >= 10 && s.materials.amount >= 200),
+  awg: (s) => s.sol >= 5 || s.population >= 6,
+  aquifer: (s) => s.sol >= 8,
+  // a mid-game efficiency unlock: once the colony has grown, OR you've built the
+  // Hydroponics whose greywater it recycles. (Electrolysis is a FOUNDING building, so
+  // gating on it would open the reclaimer at sol 0 — defeating the "stretch what you
+  // have" intent; the population/greenhouse gate keeps it a real progression step.)
+  reclaimer: (s) =>
+    s.population >= 6 || s.buildings.some((b) => b.defId === "greenhouse"),
 };
 
 /** is this def still behind its gate? Founding defs are never locked.

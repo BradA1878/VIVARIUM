@@ -15,6 +15,7 @@ import type { Difficulty, EventType } from "@shared/types";
 export const SEV: Record<EventType, number> = {
   casualty: 5, crit_start: 4, storm_in: 3, brownout: 3, hub_online: 3,
   crit_clear: 2, power_back: 2, arrival: 2, storm_clear: 2, resupply: 2,
+  resupply_done: 1, // the window closed — a quiet confirmation of what landed
   dusk: 1, dawn: 1, new_sol: 1, build: 0, boot: 0,
   anomaly: 3, // agent-originated (Sentinel); only the Watcher has a bank for it
   victory: 6, defeat: 6, // campaign end — the Chronicler speaks, through anything

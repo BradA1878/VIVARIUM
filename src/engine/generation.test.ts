@@ -18,6 +18,7 @@ import type { ColonyState } from "./state";
 import { emptyColonist } from "./state";
 import {
   VENT_CLEAR, VENT_COUNT, VENT_EDGE, VENT_SPACING, WIND_DUST_BOOST, WIND_MIN,
+  AQUIFER_CLEAR, AQUIFER_COUNT, AQUIFER_EDGE, AQUIFER_SPACING,
 } from "./tuning";
 
 /** advance a colony, collecting events */
@@ -192,6 +193,139 @@ describe("geothermal vents — world-gen terrain", () => {
     run(d, 300);
     run(e, 300);
     expect(e.snapshot()).toEqual(d.snapshot());
+  });
+});
+
+// ---- aquifer sites (world-gen terrain) -------------------------------------------
+
+/** every seeded aquifer honors edge margin, base clearance, pairwise spacing,
+ *  and sits on no building cell or vent (mirrors expectValidVents) */
+function expectValidAquifers(s: ColonyState): void {
+  expect(s.aquifers.length).toBe(AQUIFER_COUNT);
+  const base = baseCenter(s);
+  for (const a of s.aquifers) {
+    expect(a.gx).toBeGreaterThanOrEqual(AQUIFER_EDGE);
+    expect(a.gx).toBeLessThanOrEqual(s.N - 1 - AQUIFER_EDGE);
+    expect(a.gy).toBeGreaterThanOrEqual(AQUIFER_EDGE);
+    expect(a.gy).toBeLessThanOrEqual(s.N - 1 - AQUIFER_EDGE);
+    expect(Math.hypot(a.gx - base.x, a.gy - base.y)).toBeGreaterThanOrEqual(AQUIFER_CLEAR);
+    expect(s.vents.some((v) => v.gx === a.gx && v.gy === a.gy)).toBe(false); // off vents
+  }
+  for (let i = 0; i < s.aquifers.length; i++) {
+    for (let j = i + 1; j < s.aquifers.length; j++) {
+      const a = s.aquifers[i], b = s.aquifers[j];
+      expect(Math.hypot(a.gx - b.gx, a.gy - b.gy)).toBeGreaterThanOrEqual(AQUIFER_SPACING);
+    }
+  }
+}
+
+describe("aquifer sites — world-gen terrain (mirrors the vent system)", () => {
+  it("seeds 2 sites honoring edge, base clearance, and spacing; deposits avoid them", () => {
+    for (const seed of [7, 777, 12345]) {
+      const s = stateOf(new Colony(seed));
+      expectValidAquifers(s);
+      for (const a of s.aquifers) {
+        expect(s.grid[a.gy * s.N + a.gx]).toBe(0); // not under a starter building
+        expect(s.deposits.some((d) => d.gx === a.gx && d.gy === a.gy)).toBe(false);
+      }
+    }
+  });
+
+  it("aquifers are static over 300 s and survive a save round-trip", () => {
+    const c = new Colony(777);
+    const initial = stateOf(c).aquifers.map((a) => ({ ...a }));
+    run(c, 300);
+    expect(stateOf(c).aquifers).toEqual(initial);
+    const d = Colony.load(c.serialize());
+    expect(stateOf(d).aquifers).toEqual(initial);
+    run(c, 60);
+    run(d, 60);
+    expect(d.snapshot()).toEqual(c.snapshot());
+  });
+
+  it("the snapshot surfaces aquifers as pure values, decoupled from the engine", () => {
+    const c = new Colony(9);
+    run(c, 1);
+    const snap = c.snapshot();
+    expect(snap.aquifers).toEqual(stateOf(c).aquifers);
+    snap.aquifers[0].gx = -99; // mutating the snapshot never touches the engine
+    expect(stateOf(c).aquifers[0].gx).not.toBe(-99);
+  });
+
+  it("a legacy save with no aquifers backfills deterministically — same sites, same future", () => {
+    const c = new Colony(53);
+    run(c, 30);
+    const save = c.serialize();
+    expect(save.version).toBe(1); // no version bump for the new field
+    // a pre-generation-economy save carries neither terrain kind; vents backfill
+    // first, then aquifers (off them) — both from DERIVED rngs, never the live env
+    delete (save.state as Partial<ColonyState>).vents;
+    delete (save.state as Partial<ColonyState>).aquifers;
+
+    const d = Colony.load(save);
+    const e = Colony.load(save);
+    expectValidAquifers(stateOf(d)); // backfilled, honoring the same rules
+    expect(stateOf(e).aquifers).toEqual(stateOf(d).aquifers); // derived rng → identical loads
+    run(d, 300);
+    run(e, 300);
+    expect(e.snapshot()).toEqual(d.snapshot());
+  });
+
+  it("a save that already carries aquifers loads them verbatim (no re-seed)", () => {
+    const c = new Colony(424242);
+    run(c, 20);
+    const initial = stateOf(c).aquifers.map((a) => ({ ...a }));
+    const d = Colony.load(c.serialize());
+    expect(stateOf(d).aquifers).toEqual(initial); // round-tripped, not re-derived
+  });
+});
+
+// ---- the aquifer well (terrain-restricted placement) -----------------------------
+
+describe("aquifer well — a terrain-restricted building (mirrors the geothermal tap)", () => {
+  it("canPlace refuses off-site, accepts on a site; predict mirrors via snap.aquifers", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.unlocked.push("aquifer"); // the gate is unlocks.test.ts's subject — open it here
+    s.materials.amount = 300;    // afford the well
+    const a = s.aquifers[0];
+    // a free cell that is on no aquifer site
+    let off: { x: number; y: number } | null = null;
+    for (let x = 0; x < s.N && !off; x++) {
+      for (let y = 0; y < s.N && !off; y++) {
+        if (s.grid[y * s.N + x] !== 0) continue;
+        if (s.aquifers.some((aa) => aa.gx === x && aa.gy === y)) continue;
+        off = { x, y };
+      }
+    }
+    expect(off).not.toBeNull();
+    expect(c.canPlace("aquifer", off!.x, off!.y)).toBe(false);
+    expect(c.canPlace("aquifer", a.gx, a.gy)).toBe(true);
+    const snap = c.snapshot();
+    expect(canPlacePredict(snap, "aquifer", off!.x, off!.y)).toBe(false);
+    expect(canPlacePredict(snap, "aquifer", a.gx, a.gy)).toBe(true);
+  });
+
+  it("a well on a site adds its full water yield to flow (the jackpot)", () => {
+    // isolate the well's contribution as a with/without delta (like the reactor
+    // test), since flow.water nets the crew's life-support draw against it
+    const mk = (withWell: boolean) => {
+      const { c, s } = controlled(19);
+      s.unlocked.push("aquifer");
+      const a = s.aquifers[0];
+      s.buildings = [];
+      s.grid.fill(0);
+      if (withWell) expect(c.place("aquifer", a.gx, a.gy)).toBe(true);
+      s.tod = 0.5; // daytime so solar covers the small power draw
+      s.pools.water.amount = 0; // headroom so the produced water lands in flow
+      c.tick(0.2); c.drainEvents();
+      return s;
+    };
+    const a = mk(false);
+    const b = mk(true);
+    const well = b.buildings.find((bb) => bb.defId === "aquifer")!;
+    expect(well.online).toBe(true);
+    expect(b.flow.water - a.flow.water).toBeCloseTo(DEFS.aquifer.produces.water!, 6);
   });
 });
 

@@ -34,6 +34,9 @@ export function canPlacePredict(
   // terrain-restricted (mirrors grid.ts): geothermal must cover a vent cell
   if (def.needsVent && !cellsFor(def, gx, gy).some(([x, y]) =>
     snap.vents.some((v) => v.gx === x && v.gy === y))) return false;
+  // terrain-restricted (mirrors grid.ts): the aquifer well must cover a site
+  if (def.needsAquifer && !cellsFor(def, gx, gy).some(([x, y]) =>
+    snap.aquifers.some((a) => a.gx === x && a.gy === y))) return false;
   return true;
 }
 

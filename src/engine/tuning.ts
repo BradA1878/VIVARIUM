@@ -69,6 +69,13 @@ export const RESUPPLY_WINDOW = 22;
 export const RESUPPLY_AMOUNT: Record<Resource, number> = {
   power: 40, water: 60, oxygen: 30, food: 45,
 };
+/** how hard a window's basket leans toward the colony's most-depleted pools at
+ *  open (engine/tick.ts adaptResupplyBasket). Each resource's flat share is scaled
+ *  by (1 + RESUPPLY_BIAS × emptiness), then the basket is renormalized to the same
+ *  total mass — so it's REDISTRIBUTED toward the empty pools, never inflated, and
+ *  stays a basket (a full pool still gets its flat share × 1, an empty one at most
+ *  ×(1+BIAS)). Pure arithmetic, zero rng. */
+export const RESUPPLY_BIAS = 1;
 
 /** Campaign arc — the launch-window deadline (doc §2.5). Reach self-sufficiency
  *  before Earth's window closes, or the colony is stranded. */
@@ -185,6 +192,16 @@ export const VENT_CLEAR = 4;   // min cells from the colony center
 export const VENT_SPACING = 2; // min cells between vents
 export const VENT_EDGE = 1;    // keep vents off the border
 export const VENT_BACKFILL_SALT = 0x47656f54; // "GeoT" — fixed, never the live envRng
+
+/** subsurface aquifer sites — world-gen terrain, seeded like the vents (envRng on
+ *  a fresh colony, before the deposit field; legacy saves backfill from a DERIVED
+ *  RNG(seed ^ AQUIFER_BACKFILL_SALT) so the live env stream resumes byte-identically).
+ *  Rarer than vents — the well is a jackpot. Aquifers never deplete. */
+export const AQUIFER_COUNT = 2;
+export const AQUIFER_CLEAR = 4;   // min cells from the colony center
+export const AQUIFER_SPACING = 2; // min cells between aquifer sites
+export const AQUIFER_EDGE = 1;    // keep aquifer sites off the border
+export const AQUIFER_BACKFILL_SALT = 0x41717557; // "AquW" — fixed, never the live envRng
 
 /** alien traders — a window like resupply, but you accept/decline a swap */
 export const TRADE_FIRST = 70;     // seconds to the first traders

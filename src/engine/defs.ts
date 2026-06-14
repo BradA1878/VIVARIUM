@@ -57,7 +57,31 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 18,
     staffing: 1, consumes: { power: 5 }, produces: { water: 4 },
     requiresPressure: false, priority: 45,
-    desc: "Sublimes subsurface ice. Power in, water out.",
+    desc: "Cheap starter water. Runs on power alone — no ice deposit needed.",
+  },
+  awg: {
+    id: "awg", name: "Atmospheric Water Generator", glyph: "AWG",
+    foot: [1, 1], h: 22, color: "#2c4048",
+    cost: { power: 0 }, matCost: 45,
+    staffing: 1, consumes: { power: 12 }, produces: { water: 8 },
+    requiresPressure: false, priority: 44,
+    desc: "Condenses water vapor from the thin Martian air. Power in, water out.",
+  },
+  aquifer: {
+    id: "aquifer", name: "Aquifer Well", glyph: "AQF",
+    foot: [1, 1], h: 18, color: "#27485a",
+    cost: { power: 0 }, matCost: 60,
+    staffing: 1, consumes: { power: 3 }, produces: { water: 14 }, needsAquifer: true,
+    requiresPressure: false, priority: 46,
+    desc: "Pumps a subsurface brine aquifer. Huge water for little power — only seats on an aquifer site.",
+  },
+  reclaimer: {
+    id: "reclaimer", name: "Water Reclaimer", glyph: "RCL",
+    foot: [1, 1], h: 18, color: "#34464a",
+    cost: { power: 0 }, matCost: 40,
+    staffing: 1, consumes: { power: 6 }, produces: {}, reclaim: { frac: 0.45, max: 2.5 },
+    requiresPressure: true, priority: 40, door: 2,
+    desc: "Recycles greywater. Returns a slice of every drop the colony draws.",
   },
   electrolysis: {
     id: "electrolysis", name: "Electrolysis Unit", glyph: "O2",
@@ -160,6 +184,7 @@ export const DEFS: Record<string, BuildingDef> = {
 /** Palette display order (doc §4.4 table order). */
 export const ORDER: string[] = [
   "hub", "corridor", "hab", "solar", "battery",
-  "extractor", "electrolysis", "greenhouse", "medbay", "cistern", "o2tank", "deflector",
+  "extractor", "awg", "aquifer", "reclaimer",
+  "electrolysis", "greenhouse", "medbay", "cistern", "o2tank", "deflector",
   "windturbine", "geothermal", "reactor", "printer", "roverbay", "roboticsbay",
 ];
