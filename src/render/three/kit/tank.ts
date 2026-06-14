@@ -51,6 +51,14 @@ function specFor(id: string): TankSpec {
       // squat, heat-stained bronze, venting steam through its stack — it sits
       // ON the fumarole, so the silhouette stays low and wellhead-like.
       return { heightMul: 0.8, metal: "#8a6a4a", topper: "vent" };
+    case "awg":
+      // a tall, cool blue-grey condenser column that wrings vapor from the air,
+      // venting it through a stack on top — distinct from the cistern's plain cap.
+      return { heightMul: 1.6, metal: "#5a6e78", topper: "vent" };
+    case "aquifer":
+      // low brine wellhead seated on its site — a stout pumpjack derrick over a
+      // squat body, mirroring the geothermal tap's "sits ON the terrain" read.
+      return { heightMul: 0.85, metal: "#3f6072", topper: "derrick" };
     default:
       return { heightMul: 1.2, metal: "#7a828c", topper: "none" };
   }

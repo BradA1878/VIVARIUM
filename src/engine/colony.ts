@@ -23,14 +23,15 @@ import type { ColonyState, SaveData } from "./state";
 import { emptyBuilding } from "./state";
 import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed } from "./colonists";
 import { computeUnlocks } from "./unlocks";
-import { seedDeposits, seedVents } from "./deposits";
+import { seedDeposits, seedVents, seedAquifers } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
 import { ufoView } from "./ufo";
 import { roverViews } from "./rover";
 import { robotViews } from "./robots";
 import {
   START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
-  MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT, ROVER_BUILD_TIME, ROBOT_BUILD_TIME,
+  MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT, AQUIFER_BACKFILL_SALT, RESUPPLY_AMOUNT,
+  ROVER_BUILD_TIME, ROBOT_BUILD_TIME,
 } from "./tuning";
 
 export class Colony {
@@ -232,6 +233,7 @@ export class Colony {
     if (hubB) this.s.depot = { gx: hubB.gx + (DEFS[hubB.defId].foot[0] ?? 2), gy: hubB.gy + 1 };
     reconcileColonists(this.s); // four astronauts, at the hub
     seedVents(this.s, this.envRng); // geothermal terrain first — deposits avoid it
+    seedAquifers(this.s, this.envRng); // aquifer sites next (off vents) — deposits avoid them too
     seedDeposits(this.s, this.envRng); // scatter the resource field
     this.recomputeCaps();
     // seeding emits build events; the colony isn't "speaking" yet, so clear them
@@ -255,6 +257,7 @@ export class Colony {
       colonists: colonistViews(s),
       deposits: depositViews(s),
       vents: s.vents.map((v) => ({ ...v })),
+      aquifers: s.aquifers.map((a) => ({ ...a })),
       rovers: roverViews(s),
       robots: robotViews(s),
       depot: { ...s.depot },
@@ -315,12 +318,15 @@ export class Colony {
           food: { ...this.s.pools.food },
         },
         flow: { ...this.s.flow },
+        resupplyBasket: { ...this.s.resupplyBasket },
+        resupplyBanked: { ...this.s.resupplyBanked },
         materials: { ...this.s.materials },
         colonists: this.s.colonists.map((c) => ({ ...c })),
         rovers: this.s.rovers.map((r) => ({ ...r, cargo: { ...r.cargo } })),
         robots: this.s.robots.map((r) => ({ ...r })),
         deposits: this.s.deposits.map((d) => ({ ...d })),
         vents: this.s.vents.map((v) => ({ ...v })),
+        aquifers: this.s.aquifers.map((a) => ({ ...a })),
         depot: { ...this.s.depot },
         moveIntent: { ...this.s.moveIntent },
         trade: this.s.trade ? { ...this.s.trade, give: { ...this.s.trade.give }, take: { ...this.s.trade.take } } : null,
@@ -349,6 +355,18 @@ export class Colony {
         food: { ...st.pools.food },
       },
       flow: { ...st.flow },
+      // legacy saves predate the adaptive basket. Between windows the resting state is
+      // all-zeros; but a pre-feature save caught MID-window (resupplyT > 0) carries no
+      // basket, and zeros would silently deliver nothing for the rest of that window —
+      // fall back to the original flat basket so the remaining window still lands.
+      resupplyBasket: st.resupplyBasket
+        ? { ...st.resupplyBasket }
+        : st.resupplyT > 0
+          ? { ...RESUPPLY_AMOUNT }
+          : { power: 0, water: 0, oxygen: 0, food: 0 },
+      resupplyBanked: st.resupplyBanked
+        ? { ...st.resupplyBanked }
+        : { power: 0, water: 0, oxygen: 0, food: 0 },
       materials: st.materials ? { ...st.materials } : { amount: START_MATERIALS, capacity: MATERIALS_CAP },
       colonists: (st.colonists ?? []).map((c2) => ({
         ...c2,
@@ -358,6 +376,7 @@ export class Colony {
       })),
       deposits: (st.deposits ?? []).map((d) => ({ ...d })),
       vents: (st.vents ?? []).map((v) => ({ ...v })),
+      aquifers: (st.aquifers ?? []).map((a) => ({ ...a })),
       // legacy saves carry no machines: an empty fleet and a fresh countdown
       rovers: (st.rovers ?? []).map((r) => ({ ...r, cargo: { ...r.cargo } })),
       roverFab: st.roverFab ?? ROVER_BUILD_TIME,
@@ -386,6 +405,9 @@ export class Colony {
     // keep resuming byte-identically — so every load of the same save gets the
     // same terrain and the same future.
     if (!st.vents) seedVents(c.s, new RNG((data.seed ^ VENT_BACKFILL_SALT) >>> 0));
+    // same legacy backfill for aquifer sites — a separate DERIVED rng salt so the
+    // live envRng is untouched and the two terrain kinds re-seed independently.
+    if (!st.aquifers) seedAquifers(c.s, new RNG((data.seed ^ AQUIFER_BACKFILL_SALT) >>> 0));
     // an older save on a smaller build grid: re-center the colony into today's
     // larger grid rather than stranding the base in a corner. Pure, grows only.
     if (c.s.N < GRID_N) migrateGrid(c.s, GRID_N);
@@ -421,6 +443,7 @@ function freshState(difficulty: Difficulty): ColonyState {
     robotFab: ROBOT_BUILD_TIME,
     deposits: [],
     vents: [],
+    aquifers: [],
     depot: { gx: 6, gy: 5 }, // a clear collection point beside the hub (set in seedColony)
     possessed: null,
     moveIntent: { dx: 0, dy: 0 },
@@ -462,6 +485,8 @@ function freshState(difficulty: Difficulty): ColonyState {
     nextArrival: ARRIVAL_FIRST,
     nextResupply: RESUPPLY_FIRST,
     resupplyT: 0,
+    resupplyBasket: { power: 0, water: 0, oxygen: 0, food: 0 },
+    resupplyBanked: { power: 0, water: 0, oxygen: 0, food: 0 },
     paused: false,
     speed: 1,
     t: 0,

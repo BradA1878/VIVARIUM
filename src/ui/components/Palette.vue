@@ -33,6 +33,9 @@ const UNLOCK_HINTS: Record<string, string> = {
   printer: "population 6",
   roverbay: "sol 3, or stockpile 80 materials",
   roboticsbay: "build a reactor, or population 10 + 200 materials",
+  awg: "sol 5, or population 6",
+  aquifer: "sol 8 — must sit on an aquifer site",
+  reclaimer: "population 6, or build a Hydroponics Unit",
 };
 
 /** piloting locks construction — every tile disables while possessing */

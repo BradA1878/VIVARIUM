@@ -22,10 +22,13 @@ function builderFor(def: BuildingDef): KitBuilder {
   if (def.id === "battery") return buildDrum;
   if (def.id === "windturbine") return buildWind;
   if (def.id === "reactor") return buildReactor;
-  if (def.id === "printer" || def.id === "roverbay" || def.id === "roboticsbay") {
+  if (def.id === "printer" || def.id === "roverbay" || def.id === "roboticsbay" || def.id === "reclaimer") {
     return buildFacility;
   }
-  if (def.id === "extractor" || def.id === "electrolysis" || def.id === "cistern" || def.id === "o2tank" || def.id === "geothermal") {
+  if (
+    def.id === "extractor" || def.id === "electrolysis" || def.id === "cistern" ||
+    def.id === "o2tank" || def.id === "geothermal" || def.id === "awg" || def.id === "aquifer"
+  ) {
     return buildTank;
   }
   return buildDome; // hub, hab, greenhouse

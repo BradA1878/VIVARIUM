@@ -12,7 +12,7 @@ import {
   PERSON, DAY_START, DAY_END,
   ARRIVAL_BATCH, ARRIVAL_GAP_MIN, ARRIVAL_GAP_SPAN, ARRIVAL_RETRY,
   BROWNOUT_DEFICIT, BROWNOUT_LOW, BROWNOUT_RECOVER_FRAC,
-  RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT,
+  RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT, RESUPPLY_BIAS,
   BIRTH_MIN_POP, BIRTH_GAP_MIN, BIRTH_GAP_SPAN, BIRTH_RETRY,
   ROLE_BONUS, MORALE_BUMP,
 } from "./tuning";
@@ -38,9 +38,14 @@ import type { RNG } from "./rng";
 /** event emitter — the colony stamps t/sol/tod before recording */
 export type Emit = (e: Omit<ColonyEvent, "t" | "sol" | "tod">) => void;
 
-function addPool(s: ColonyState, k: Resource, amt: number): void {
+/** add to a pool, clamped to capacity; returns the amount that actually landed
+ *  (post-clamp delta) so callers can bank honest totals (resupply) and credit
+ *  net flow for exactly what fit. */
+function addPool(s: ColonyState, k: Resource, amt: number): number {
   const p = s.pools[k];
+  const before = p.amount;
   p.amount = Math.min(p.capacity, p.amount + amt);
+  return p.amount - before;
 }
 function takePool(s: ColonyState, k: Resource, amt: number): void {
   const p = s.pools[k];
@@ -87,17 +92,30 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   s.windLevel = windLevel(s); // pure derivation — peaks exactly when solar dies
 
   // Earth resupply windows (doc §2.5) — a window opens on a schedule and trickles
-  // a batch of resources into the buffers while open. External delivery, so it is
-  // deliberately NOT counted in net flow.
+  // an ADAPTIVE basket of resources into the buffers while open: at open the basket
+  // is weighted toward the colony's most-depleted pools (pure arithmetic, zero rng),
+  // so it always does something useful instead of pouring water into a full tank.
+  // External delivery, so it is deliberately NOT counted in net flow. The actual
+  // amount banked (post-clamp) is accumulated and reported at close.
   if (isFinite(s.nextResupply)) {
     if (s.resupplyT > 0) {
-      for (const k of RESOURCES) addPool(s, k, (RESUPPLY_AMOUNT[k] / RESUPPLY_WINDOW) * dt);
+      for (const k of RESOURCES) {
+        const banked = addPool(s, k, (s.resupplyBasket[k] / RESUPPLY_WINDOW) * dt);
+        s.resupplyBanked[k] += banked; // honest, post-clamp; vented overflow excluded
+      }
       s.resupplyT = Math.max(0, s.resupplyT - dt);
+      if (s.resupplyT <= 0) {
+        // the window just closed — report what actually landed, then reset
+        emit({ type: "resupply_done", amounts: { ...s.resupplyBanked } });
+        for (const k of RESOURCES) { s.resupplyBasket[k] = 0; s.resupplyBanked[k] = 0; }
+      }
     }
     s.nextResupply -= dt;
     if (s.nextResupply <= 0) {
       s.resupplyT = RESUPPLY_WINDOW;
       s.nextResupply = RESUPPLY_GAP;
+      adaptResupplyBasket(s); // steer this window's basket toward the empty pools
+      for (const k of RESOURCES) s.resupplyBanked[k] = 0; // fresh banked accumulator
       emit({ type: "resupply" });
     }
   }
@@ -109,6 +127,9 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   s.laborUsed = 0;
 
   const net: Record<Resource, number> = { power: 0, water: 0, oxygen: 0, food: 0 };
+  // gross water sunk this tick (building recipes + crew demand), the input to the
+  // Water Reclaimer pass below. Accumulated as dt-scaled amounts (water-this-tick).
+  let waterSunk = 0;
 
   // 2. Generation into the power buffer ----------------------------------------
   let gen = 0;
@@ -172,6 +193,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
       const rate = r === "power" ? powerNeed(b, mods) : d.consumes[r]!;
       takePool(s, r, rate * dt);
       net[r] -= rate;
+      if (r === "water") waterSunk += rate * dt; // feeds the reclaimer pass
     }
     // role-matched staffing + colony mood work the recipe harder — eff scales
     // produces only, never consumes
@@ -201,8 +223,29 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   if (s.population > 0) {
     for (const k of ["oxygen", "water", "food"] as const) {
       const demand = PERSON[k] * techDemandMult(s, k) * s.population; // alien bioscrubber, etc.
+      const before = s.pools[k].amount;
       takePool(s, k, demand * dt);
       net[k] -= demand;
+      // the reclaimer may only recycle water ACTUALLY drawn. takePool clamps at 0, so a
+      // near-dry pool sinks less than demand; banking the requested demand here would let
+      // a reclaimer fabricate water from an empty pool and pin it just above the shortfall
+      // threshold forever (the grace timer would never start — no water casualties).
+      if (k === "water") waterSunk += before - s.pools.water.amount;
+    }
+  }
+
+  // 5b. Water Reclaimer — a greywater loop. Each ONLINE reclaimer hands back a
+  // fraction of the water the colony sank THIS tick (recipes + crew demand),
+  // capped per unit; the captured slice is split across all of them. Pure
+  // arithmetic over waterSunk (zero rng). No sinks → nothing to recover → adds 0.
+  if (waterSunk > 0) {
+    const reclaimers = s.buildings.filter((b) => b.online && DEFS[b.defId].reclaim);
+    const n = reclaimers.length;
+    for (const b of reclaimers) {
+      const rc = DEFS[b.defId].reclaim!;
+      const back = Math.min(rc.max * dt, (rc.frac * waterSunk) / n); // water-this-tick
+      const banked = addPool(s, "water", back); // clamp to capacity
+      net.water += banked / dt; // credit only what actually fit, as a per-second rate
     }
   }
 
@@ -329,6 +372,27 @@ export function maybeBirth(s: ColonyState, net: Record<Resource, number>, dt: nu
   } else {
     s.nextBirth = BIRTH_RETRY;
   }
+}
+
+/** steer a fresh resupply window's basket toward the colony's most-depleted pools.
+ *  Each resource's flat share (RESUPPLY_AMOUNT) is scaled by (1 + BIAS × emptiness),
+ *  where emptiness = 1 − fill fraction, then the basket is renormalized to the SAME
+ *  total mass — a redistribution, never an inflation, so resupply always helps the
+ *  pools that need it without becoming a single-resource dump. Pure arithmetic,
+ *  zero rng draws (the determinism wall). */
+function adaptResupplyBasket(s: ColonyState): void {
+  let raw = 0, flat = 0;
+  const weight: Record<Resource, number> = { power: 0, water: 0, oxygen: 0, food: 0 };
+  for (const k of RESOURCES) {
+    const p = s.pools[k];
+    const fill = p.capacity > 0 ? p.amount / p.capacity : 1;
+    const emptiness = Math.min(1, Math.max(0, 1 - fill));
+    weight[k] = RESUPPLY_AMOUNT[k] * (1 + RESUPPLY_BIAS * emptiness);
+    raw += weight[k];
+    flat += RESUPPLY_AMOUNT[k];
+  }
+  const norm = raw > 0 ? flat / raw : 1; // conserve total mass, just redistributed
+  for (const k of RESOURCES) s.resupplyBasket[k] = weight[k] * norm;
 }
 
 function detectBrownout(s: ColonyState, net: Record<Resource, number>, emit: Emit): void {

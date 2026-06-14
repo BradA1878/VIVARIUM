@@ -47,6 +47,7 @@ function makeSnap(over: Partial<Snapshot> = {}): Snapshot {
     colonists: [],
     deposits: [],
     vents: [],
+    aquifers: [],
     rovers: [],
     robots: [],
     depot: { gx: 8, gy: 6 },

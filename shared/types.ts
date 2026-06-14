@@ -46,6 +46,11 @@ export interface BuildingDef {
   producesMat?: number;
   /** placement requires a footprint cell on a geothermal vent */
   needsVent?: true;
+  /** placement requires a footprint cell on a subsurface aquifer (parallel to needsVent) */
+  needsAquifer?: true;
+  /** greywater loop — returns `frac` of the colony's per-tick water draw, capped
+   *  at `max` water/s per building (pure tick arithmetic, no flat `produces`) */
+  reclaim?: { frac: number; max: number };
   /** materials it costs to place (the gather-to-build economy). 0/undefined = free. */
   matCost?: number;
   /** capacity this building adds to a pool (batteries, tanks, cisterns) */
@@ -135,6 +140,14 @@ export interface DepositView {
 /** a geothermal vent — static world-gen terrain, never depletes. The geothermal
  *  tap must sit on one (BuildingDef.needsVent). */
 export interface VentView {
+  id: number;
+  gx: number;
+  gy: number;
+}
+
+/** a subsurface aquifer site — static world-gen terrain, never depletes. The
+ *  aquifer well must sit on one (BuildingDef.needsAquifer). Mirrors VentView. */
+export interface AquiferView {
   id: number;
   gx: number;
   gy: number;
@@ -271,6 +284,8 @@ export interface Snapshot {
   deposits: DepositView[];
   /** geothermal vents — static terrain the geothermal tap must sit on */
   vents: VentView[];
+  /** subsurface aquifer sites — static terrain the aquifer well must sit on */
+  aquifers: AquiferView[];
   /** drivable rovers — bulk haulers fabricated at the Rover Bay */
   rovers: RoverView[];
   /** autonomous mining robots — fabricated at the Robotics Bay, never possessable */
@@ -370,6 +385,8 @@ export type EventType =
   | "morale_recovered"
   | "arrival"
   | "resupply"
+  /** a resupply window closed — carries the actual banked per-resource totals */
+  | "resupply_done"
   /** alien traders (doc: first contact) */
   | "traders_inbound"
   | "trade_done"
@@ -412,6 +429,8 @@ export interface ColonyEvent {
   name?: string;
   res?: "oxygen" | "water" | "food";
   secs?: number;
+  /** per-resource totals (e.g. resupply_done: what actually banked, post-clamp) */
+  amounts?: Partial<Record<Resource, number>>;
   n?: number;
   pop?: number;
   /** colonist id for colonist_injured / colonist_recovered */

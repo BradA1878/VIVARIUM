@@ -23,12 +23,14 @@ import { HazardFx } from "./three/hazardfx";
 import { buildAstronaut, type AstronautMesh } from "./three/kit/astronaut";
 import { buildDeposit, type DepositMesh } from "./three/kit/deposit";
 import { buildVent, type VentMesh } from "./three/kit/vent";
+import { buildAquifer, type AquiferMesh } from "./three/kit/aquifer";
 import { buildRover, type RoverMesh } from "./three/kit/rover";
 import { buildRobot, type RobotMesh } from "./three/kit/robot";
 import { ROVER_CARGO_CAP } from "@/engine/tuning";
 import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
 import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
+import { buildSupplyPod, type SupplyPodMesh } from "./three/supplypod";
 import { BubbleSystem, reactionFor } from "./three/bubbles";
 
 interface Placed {
@@ -158,6 +160,8 @@ export class ThreeRenderer {
   private depositsGroup = new THREE.Group();
   private vents = new Map<number, VentMesh>();
   private ventsGroup = new THREE.Group();
+  private aquifers = new Map<number, AquiferMesh>();
+  private aquifersGroup = new THREE.Group();
   private rovers = new Map<number, RoverRec>();
   private roversGroup = new THREE.Group();
   private robots = new Map<number, RobotRec>();
@@ -167,6 +171,12 @@ export class ThreeRenderer {
   private alienShip: AlienShipMesh | null = null;
   private ufo: UfoMesh | null = null;
   private depot: DepotMesh | null = null;
+  // Earth resupply lander — render-only, driven off snap.resupplyT (never the
+  // bridge). Created when a window opens, disposed when it closes. supplyPodAge
+  // tracks seconds since touchdown began so the descent plays before it settles.
+  private supplyPod: SupplyPodMesh | null = null;
+  private supplyPodAge = 0;
+  private static readonly SUPPLY_POD_DESCENT = 2.6; // descent seconds before "landed"
   // DEV-only: a scripted saucer for screenshotting rare FX (debugFx("ufo")).
   // Not snapshot-driven, so nothing retires it for us: it self-expires on a
   // TTL (hover, then the leave ascent, then dispose) and reconcileUfo clears
@@ -201,6 +211,7 @@ export class ThreeRenderer {
     this.scene.scene.add(this.buildingsGroup);
     this.scene.scene.add(this.depositsGroup);
     this.scene.scene.add(this.ventsGroup);
+    this.scene.scene.add(this.aquifersGroup);
     this.scene.scene.add(this.colonistsGroup);
     this.scene.scene.add(this.roversGroup);
     this.scene.scene.add(this.robotsGroup);
@@ -420,10 +431,12 @@ export class ThreeRenderer {
     this.updatePossessionFx(snap);
     this.reconcileDeposits(snap, now);
     this.reconcileVents(snap, now);
+    this.reconcileAquifers(snap, now);
     this.reconcileTrade(snap, dt, now);
     this.reconcileUfo(snap, dt, now);
     this.updateDebugUfo(dt, now);
     this.reconcileDepot(snap, now);
+    this.reconcileSupplyPod(snap, dt, now);
     this.bubbles.update(dt);
     this.updateTransients(dt, now);
     this.updateCamera(snap, dt);
@@ -791,6 +804,33 @@ export class ThreeRenderer {
     }
   }
 
+  /** aquifer sites: static brine sinks (they never move or deplete) with a
+   *  per-frame cool pool/vapor pulse — the vent template, cooled. The phase is
+   *  offset from the vents so the two terrain markers don't breathe in lockstep */
+  private reconcileAquifers(snap: Snapshot, now: number): void {
+    const seen = new Set<number>();
+    const pulse = 0.5 + 0.5 * Math.sin(now / 900 + Math.PI); // counter-phase to vents
+    for (const a of snap.aquifers) {
+      seen.add(a.id);
+      let mesh = this.aquifers.get(a.id);
+      if (!mesh) {
+        mesh = buildAquifer(a.id * 2654435761);
+        const c = this.grid.cellCenter(a.gx, a.gy);
+        mesh.object.position.copy(c);
+        this.aquifersGroup.add(mesh.object);
+        this.aquifers.set(a.id, mesh);
+      }
+      mesh.setPulse(pulse);
+    }
+    for (const [id, mesh] of this.aquifers) {
+      if (!seen.has(id)) {
+        this.aquifersGroup.remove(mesh.object);
+        mesh.dispose();
+        this.aquifers.delete(id);
+      }
+    }
+  }
+
   /** the trader saucer: create on first trade, animate by phase, dispose on null */
   private reconcileTrade(snap: Snapshot, dt: number, now: number): void {
     const trade = snap.trade;
@@ -876,6 +916,37 @@ export class ThreeRenderer {
     const me = snap.possessed != null ? snap.colonists.find((cc) => cc.id === snap.possessed) : undefined;
     if (me && me.carryAmt > 0 && Math.hypot(snap.depot.gx - me.x, snap.depot.gy - me.y) <= 1.5) active = 1;
     this.depot.setGlow(active, 0.5 + 0.5 * Math.sin(now / 360));
+  }
+
+  /** the Earth resupply lander: while a window is open (snap.resupplyT > 0) a
+   *  supply pod descends near the depot, settles for the window, and is disposed
+   *  when the window closes. Render-only — keyed purely off the snapshot, it
+   *  never touches the bridge (the alien-ship lifecycle, on a resupply signal). */
+  private reconcileSupplyPod(snap: Snapshot, dt: number, now: number): void {
+    if (snap.resupplyT <= 0) {
+      if (this.supplyPod) {
+        this.scene.scene.remove(this.supplyPod.object);
+        this.supplyPod.dispose();
+        this.supplyPod = null;
+      }
+      return;
+    }
+    if (!this.supplyPod) {
+      this.supplyPod = buildSupplyPod();
+      this.scene.scene.add(this.supplyPod.object);
+      this.supplyPodAge = 0;
+      // park it a couple cells off the depot so it doesn't sit on the hopper,
+      // clamped inside the grid so it never lands off the terrain
+      const N = this.grid.N;
+      const px = Math.min(N - 1, Math.max(0, snap.depot.gx + 2));
+      const py = Math.min(N - 1, Math.max(0, snap.depot.gy + 2));
+      const c = this.grid.cellCenter(px, py);
+      this.supplyPod.object.position.x = c.x;
+      this.supplyPod.object.position.z = c.z;
+    }
+    this.supplyPodAge += dt;
+    const phase = this.supplyPodAge >= ThreeRenderer.SUPPLY_POD_DESCENT ? "landed" : "inbound";
+    this.supplyPod.update(phase, dt, now);
   }
 
   /** advance the short-lived juice: the placed-pop scale-in and the expiry of
@@ -977,10 +1048,13 @@ export class ThreeRenderer {
     this.deposits.clear();
     for (const mesh of this.vents.values()) mesh.dispose();
     this.vents.clear();
+    for (const mesh of this.aquifers.values()) mesh.dispose();
+    this.aquifers.clear();
     if (this.alienShip) { this.alienShip.dispose(); this.alienShip = null; }
     if (this.ufo) { this.ufo.dispose(); this.ufo = null; }
     this.clearDebugUfo();
     if (this.depot) { this.depot.dispose(); this.depot = null; }
+    if (this.supplyPod) { this.supplyPod.dispose(); this.supplyPod = null; }
     this.terrain.dispose();
     this.scene.dispose();
   }

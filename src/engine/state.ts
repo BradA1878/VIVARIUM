@@ -97,6 +97,15 @@ export interface VentInstance {
   gy: number;
 }
 
+/** a subsurface aquifer site — static world-gen terrain (the HUD sees
+ *  AquiferView). Mirrors VentInstance: seeded once off the env-rng, never
+ *  depletes, never moves; the aquifer well must sit on one. */
+export interface AquiferInstance {
+  id: number;
+  gx: number;
+  gy: number;
+}
+
 /** a live alien trade offer */
 export interface TradeInstance {
   id: number;
@@ -149,6 +158,8 @@ export interface ColonyState {
   deposits: DepositInstance[];
   /** geothermal vents — static world-gen terrain the geothermal tap sits on */
   vents: VentInstance[];
+  /** subsurface aquifer sites — static world-gen terrain the aquifer well sits on */
+  aquifers: AquiferInstance[];
   /** the collection depot cell — where the possessed colonist drops materials */
   depot: { gx: number; gy: number };
   /** id of the possessed colonist, or null */
@@ -218,6 +229,15 @@ export interface ColonyState {
   /** Earth resupply windows — implemented in Phase 6 (doc §2.5). */
   nextResupply: number;
   resupplyT: number;
+  /** the per-resource amounts the OPEN window will deliver over its duration —
+   *  an adaptive basket weighted toward the most-depleted pools at open (pure
+   *  arithmetic, zero rng). Empty between windows; round-trips for a mid-window
+   *  save. */
+  resupplyBasket: Record<Resource, number>;
+  /** the ACTUAL per-resource amount banked so far this window (post-clamp delta,
+   *  so a full pool's vented overflow isn't counted). Accumulates while open,
+   *  reported in resupply_done at close, then cleared. Round-trips with the save. */
+  resupplyBanked: Record<Resource, number>;
 
   paused: boolean;
   speed: number;

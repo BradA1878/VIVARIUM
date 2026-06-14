@@ -105,18 +105,19 @@ describe("GATES — the truth table, by state injection", () => {
 
 describe("updateUnlocks — latch once, announce once", () => {
   it("emits `unlock` with defId AND the display name, exactly once per def", () => {
-    const s = gateState({ sol: 6, materials: mat(90) }); // roverbay + windturbine + geothermal
+    const s = gateState({ sol: 6, materials: mat(90) }); // roverbay + windturbine + geothermal + awg (sol ≥ 5)
     const { events, emit } = collector();
     updateUnlocks(s, emit);
     const unlocks = events.filter((e) => e.type === "unlock");
     expect(unlocks.map((e) => e.defId).sort())
-      .toEqual(["geothermal", "roverbay", "windturbine"]);
+      .toEqual(["awg", "geothermal", "roverbay", "windturbine"]);
     expect(unlocks.find((e) => e.defId === "geothermal")!.detail).toBe("Geothermal Tap");
     expect(unlocks.find((e) => e.defId === "roverbay")!.detail).toBe("Rover Bay");
-    expect(s.unlocked.sort()).toEqual(["geothermal", "roverbay", "windturbine"]);
+    expect(unlocks.find((e) => e.defId === "awg")!.detail).toBe("Atmospheric Water Generator");
+    expect(s.unlocked.sort()).toEqual(["awg", "geothermal", "roverbay", "windturbine"]);
 
     updateUnlocks(s, emit); // already latched — silence
-    expect(events.filter((e) => e.type === "unlock")).toHaveLength(3);
+    expect(events.filter((e) => e.type === "unlock")).toHaveLength(4);
   });
 
   it("the latch survives condition regression — an unlock never revokes", () => {
@@ -160,9 +161,13 @@ describe("the tick latches gates and the engine refuses locked placements", () =
     expect(c.snapshot().unlocks.roverbay).toBe(false); // not latched until the tick runs
     c.tick(0.2);
     const unlocks = c.drainEvents().filter((e) => e.type === "unlock");
+    // only roverbay (materials ≥ 80) latches on the first tick. The reclaimer is gated on
+    // population 6 / a built Hydroponics — neither of which a founding colony has — so it
+    // stays locked (electrolysis is a founding building and must NOT open it at sol 0).
     expect(unlocks.map((e) => e.defId)).toEqual(["roverbay"]);
     expect(unlocks[0].detail).toBe("Rover Bay");
     expect(c.snapshot().unlocks.roverbay).toBe(true);
+    expect(c.snapshot().unlocks.reclaimer).toBe(false); // still behind its mid-game gate
   });
 
   it("canPlace is blocked while locked, allowed after unlock; predict mirrors", () => {
@@ -210,7 +215,8 @@ describe("persistence — the latch rides the save", () => {
     expect(stateOf(d).unlocked).toEqual([]); // the graceful default
     const evsD = run(d, 1);
     const evsE = run(e, 1);
-    // at t≈30: sol 1, pop 4, materials ≥ 80 → exactly roverbay re-derives, once
+    // at t≈30: sol 1, pop 4, materials ≥ 80 → only roverbay re-derives, once (the
+    // reclaimer's population/greenhouse gate isn't met yet), in GATES insertion order
     expect(evsD.filter((x) => x.type === "unlock").map((x) => x.defId)).toEqual(["roverbay"]);
     expect(stateOf(d).unlocked).toEqual(["roverbay"]);
     expect(evsE).toEqual(evsD);

@@ -66,7 +66,7 @@ A greywater loop: it recovers a fraction of the water the colony *consumes* each
 - **Def field (`shared/types.ts`):** add `reclaim?: { frac: number; max: number }` to `BuildingDef`. `frac` = fraction of colony water draw captured; `max` = ceiling in water/s per building.
 - **Def (`src/engine/defs.ts`):** `reclaimer` entry with `consumes: { power: 6 }`, `reclaim: { frac: 0.45, max: 2.5 }`, `matCost: 40`, `staffing: 1`, `priority: 40`, `requiresPressure: true`, a door side. Append to `ORDER`.
 - **Tick pass (`src/engine/tick.ts`):** accumulate gross **water sunk this tick** (`waterSunk`) across building consumption (pass 4) and colonist demand (the pass at ~200-207). After demand, for each **online** reclaimer add back `min(def.reclaim.max * dt, def.reclaim.frac * waterSunk / nReclaimers)` to the water pool via `addPool` (clamped to capacity), and credit `net.water`. Pure arithmetic, no RNG.
-- **Unlock:** `GATES` entry `reclaimer: (s) => s.buildings.some(b => b.defId === "greenhouse" || b.defId === "electrolysis")` — thematically, you recycle their output.
+- **Unlock:** `GATES` entry `reclaimer: (s) => s.population >= 6 || s.buildings.some(b => b.defId === "greenhouse")` — a mid-game efficiency unlock. (Electrolysis is a *founding* building, so gating on it would open the reclaimer at sol 0 and defeat the "stretch what you have" intent; population/greenhouse keeps it a real progression step while still recycling the Hydroponics greywater.)
 - **Why it's distinct:** it can't bootstrap from empty (no sinks → nothing to reclaim), but it multiplies the value of every water source you have — the opposite end of the design from the generator and the well.
 
 ## 4. Resupply that lands
@@ -98,7 +98,7 @@ Three parts, matching what the player noticed:
 | Ice Extractor *(exists)* | 5/s | 4 water/s | 18 | 1 | 45 | founding |
 | Atmospheric Water Generator | 12/s | 8 water/s | 45 | 1 | 44 | sol 5 / pop 6 |
 | Aquifer Well | 3/s | 14 water/s | 60 | 1 | 46 | aquifer site + sol 8 |
-| Water Reclaimer | 6/s | ≤2.5/s, = 45% of water sunk | 40 | 1 | 40 | greenhouse or electrolysis built |
+| Water Reclaimer | 6/s | ≤2.5/s, = 45% of water sunk | 40 | 1 | 40 | population 6, or a Hydroponics built |
 
 Aquifer terrain: `AQUIFER_COUNT = 2`, edge/spacing/clearance mirroring the vent constants.
 
