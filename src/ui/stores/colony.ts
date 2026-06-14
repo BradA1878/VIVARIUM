@@ -96,6 +96,11 @@ let offBootSnap: (() => void) | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let stopSettingsWatch: (() => void) | null = null;
 let msgId = 1;
+// the persistence slot the live run reads/writes. Default reuses today's single
+// key (Mars behavior unchanged); founding/revisit point this at a world's slot.
+let activeSlot = "default";
+/** point persistence at a world's slot (founding / revisit — PTP). */
+export function setActiveSlot(slot: string): void { activeSlot = slot; }
 
 const HINT_TOAST_MS = 14_000;
 /** quiet beat between toasts — the next hint must not appear the frame the last one left */
@@ -194,7 +199,7 @@ function tearDownRun(): void {
   lastRealEventT = 0;
   lastDirectedStrike = null;
   attributionCounter = 0;
-  clearLocal(); // discard the saved colony; autosave will persist the fresh one
+  clearLocal(activeSlot); // discard the saved colony; autosave will persist the fresh one
   history = resetHistory(); // a new run starts its telemetry from zero
   dismissHint();
   hints = new Hints(); // fresh scratch; the persisted seen-set still holds
@@ -353,7 +358,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   // safely shrink — buildings could fall outside the new bounds). A save from a
   // SMALLER grid is fine: Colony.load re-centers it into the current grid.
   const bootT0 = Date.now();
-  void loadBest().then((save) => {
+  void loadBest(activeSlot).then((save) => {
     const usable = save && !save.state.outcome && save.state.N <= GRID_N;
     if (usable) {
       b.load(save);
@@ -364,7 +369,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
       history = loadHistory(); // a resumed run keeps its curves
       return save.state.difficulty; // greet in the SAVE's register, not the fresh seed's
     }
-    if (save) { clearLocal(); history = resetHistory(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
+    if (save) { clearLocal(activeSlot); history = resetHistory(); void b.save().then((s) => persist(activeSlot, s)); } // incompatible/finished — start fresh, overwrite everywhere
     return undefined; // fresh seed — the snapshot carries the run's difficulty
   }).then((resumedDiff) => {
     // A fresh game waits on the start screen: the worker's tick is gated until the
@@ -405,7 +410,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   // resume there (skipping the picker). The first save lands once start() begins.
   autosaveTimer = setInterval(() => {
     if (startScreen.value) return;
-    void b.save().then(persist);
+    void b.save().then((s) => persist(activeSlot, s));
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
 }
