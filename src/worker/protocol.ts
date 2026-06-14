@@ -28,7 +28,10 @@ export type Command =
   | { type: "reset"; difficulty?: Difficulty; seed?: number; world?: World }
   | { type: "load"; data: SaveData }
   | { type: "save"; reqId: number }
-  | { type: "start"; difficulty?: Difficulty; seed?: number; world?: World };
+  | { type: "start"; difficulty?: Difficulty; seed?: number; world?: World }
+  // launch the PTP: a deliberate player act ending the run as "expansion" (the
+  // run-ending that founds the next world). No-op without a functional pod built.
+  | { type: "launchPtp" };
 
 // ---- worker → main thread ----------------------------------------------------
 export type Outbound =

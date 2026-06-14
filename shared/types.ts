@@ -416,12 +416,14 @@ export type EventType =
   /** campaign end states (doc §2.5) */
   | "victory"
   | "defeat"
+  /** the PTP launched — a deliberate run-ending that founds the next world */
+  | "expansion"
   /** agent-layer only — emitted by the Sentinel (Phase 13), never by the engine */
   | "anomaly"
   /** agent-layer only — the council's idle-banter beat, never emitted by the engine */
   | "idle";
 
-export type Outcome = "victory" | "defeat" | null;
+export type Outcome = "victory" | "defeat" | "expansion" | null;
 
 /** Emitted by the engine for the UI and (optionally) for VIVARIUM. Never read
  *  back into the tick (doc §0). */

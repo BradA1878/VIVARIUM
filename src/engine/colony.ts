@@ -20,6 +20,7 @@ import { recomputeCaps } from "./caps";
 import { spawnHazard, hazardViews, SCHED_FIRST } from "./hazards";
 import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData } from "./state";
+import { buildingFunctional } from "./state";
 import { emptyBuilding } from "./state";
 import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed } from "./colonists";
 import { computeUnlocks } from "./unlocks";
@@ -81,6 +82,22 @@ export class Colony {
     this.events = [];
     this.seedColony();
     this.s.started = true;
+  }
+
+  /** PTP launch (the wall): a deliberate player act — NOT a tick threshold. If a
+   *  functional Transport Pod is built and the run is still live, end it as an
+   *  EXPANSION (the run-ending that founds the next world). The engine only
+   *  records the outcome + emits the event; the main thread orchestrates the
+   *  founding (archive the world, pick the next, carry the legacy). No-op if
+   *  there's no working pod or the run already ended. */
+  launchPtp(): void {
+    if (this.s.outcome !== null) return; // the run already ended
+    const pod = this.s.buildings.find((b) => b.defId === "ptp");
+    if (!pod || !buildingFunctional(pod)) return; // need a working pod to leave
+    this.s.outcome = "expansion";
+    this.s.outcomeReason = "expansion";
+    this.s.paused = true;
+    this.emit({ type: "expansion" });
   }
 
   // ---- placement ------------------------------------------------------------

@@ -45,6 +45,7 @@ export class SimHost {
       case "reset": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world); break; // in-game restart / PTP founding — stays running
       case "load": this.colony = Colony.load(cmd.data); this.started = true; break; // a resumed save ticks at once
       case "start": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world); this.started = true; break; // fresh game / founding on the chosen seed+world+difficulty
+      case "launchPtp": this.colony.launchPtp(); break; // end the run as expansion (the store founds the next world)
       case "save":
         return [{ type: "saved", reqId: cmd.reqId, data: this.colony.serialize() }];
     }

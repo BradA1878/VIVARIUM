@@ -5,6 +5,8 @@
 import { describe, it, expect } from "vitest";
 import { SimHost } from "./host";
 import type { Outbound } from "./protocol";
+import { Colony } from "@/engine";
+import { emptyBuilding, type ColonyState } from "@/engine/state";
 
 function snapsIn(msgs: Outbound[]): Outbound[] {
   return msgs.filter((m) => m.type === "snapshot");
@@ -153,5 +155,16 @@ describe("SimHost", () => {
     const saved = (host.applyCommand({ type: "save", reqId: 2 })
       .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
     expect(saved.seed).toBe(7);
+  });
+
+  it("launchPtp ends the run as expansion when a pod is built", () => {
+    const host = new SimHost();
+    host.applyCommand({ type: "start" });
+    // reach the host's colony and give it a working pod (the suite's injection seam)
+    const colony = (host as unknown as { colony: Colony }).colony;
+    (colony as unknown as { s: ColonyState }).s.buildings.push(emptyBuilding(999, "ptp", 0, 0));
+    const out = host.applyCommand({ type: "launchPtp" });
+    const snap = (out.find((m) => m.type === "snapshot") as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    expect(snap.outcome).toBe("expansion");
   });
 });

@@ -179,6 +179,14 @@ export const DEFS: Record<string, BuildingDef> = {
     requiresPressure: false, priority: 20, door: 2,
     desc: "Prints autonomous mining robots that work the field sol and night. Wants an engineer on the line.",
   },
+  ptp: {
+    id: "ptp", name: "Transport Pod", glyph: "PTP",
+    foot: [2, 2], h: 30, color: "#5a4a6e",
+    cost: { power: 0 }, matCost: 200,
+    staffing: 0, consumes: { power: 8 }, produces: {},
+    requiresPressure: false, priority: 30,
+    desc: "The way off-world. Build it past the reactor, then launch to found a colony on a new planet — this run ends in expansion.",
+  },
 };
 
 /** Palette display order (doc §4.4 table order). */
@@ -187,4 +195,5 @@ export const ORDER: string[] = [
   "extractor", "awg", "aquifer", "reclaimer",
   "electrolysis", "greenhouse", "medbay", "cistern", "o2tank", "deflector",
   "windturbine", "geothermal", "reactor", "printer", "roverbay", "roboticsbay",
+  "ptp",
 ];

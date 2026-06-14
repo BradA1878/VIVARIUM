@@ -114,6 +114,8 @@ export class SimBridge {
   /** begin a fresh game / found the next world (lifts the worker's start gate);
    *  carries the chosen difficulty + (for a PTP founding) seed + world */
   start(difficulty?: Difficulty, seed?: number, world?: World): void { this.send({ type: "start", difficulty, seed, world }); }
+  /** launch the PTP — end the run as "expansion" (the store founds the next world) */
+  launchPtp(): void { this.send({ type: "launchPtp" }); }
   load(data: SaveData): void { this.send({ type: "load", data }); }
 
   save(): Promise<SaveData> {
