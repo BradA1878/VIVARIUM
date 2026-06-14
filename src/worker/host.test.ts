@@ -27,6 +27,7 @@ describe("SimHost", () => {
 
   it("pause freezes sim time; resume restarts it", () => {
     const host = new SimHost(1);
+    host.applyCommand({ type: "start" }); // lift the start gate so the clock can run
     host.applyCommand({ type: "setPaused", value: true });
     const t0 = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
     for (let i = 0; i < 20; i++) host.step(0.05);
@@ -42,6 +43,8 @@ describe("SimHost", () => {
   it("speed multiplies advance (3× covers more sim time than 1×)", () => {
     const a = new SimHost(5);
     const b = new SimHost(5);
+    a.applyCommand({ type: "start" });
+    b.applyCommand({ type: "start" });
     b.applyCommand({ type: "setSpeed", value: 3 });
     for (let i = 0; i < 30; i++) { a.step(0.05); b.step(0.05); }
     const ta = (a.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
@@ -72,6 +75,7 @@ describe("SimHost", () => {
 
   it("save returns a SaveData reply that load restores", () => {
     const host = new SimHost(99);
+    host.applyCommand({ type: "start" }); // begin, so there's advanced state worth saving
     for (let i = 0; i < 40; i++) host.step(0.05);
     const reply = host.applyCommand({ type: "save", reqId: 7 });
     const saved = reply.find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>;
@@ -84,5 +88,46 @@ describe("SimHost", () => {
     const original = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
     expect(loaded.t).toBe(original.t);
     expect(loaded.pools).toEqual(original.pools);
+  });
+
+  // ---- the start gate (difficulty start screen) ----
+  // A fresh host holds the tick until `start` arrives, so the difficulty start
+  // screen can sit over a static colony; snapshots still flow so the UI paints it.
+
+  it("a fresh host does NOT advance until start; snapshots still flow", () => {
+    const host = new SimHost(7);
+    const t0 = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
+    let out: Outbound[] = [];
+    for (let i = 0; i < 30; i++) out = out.concat(host.step(0.05));
+    const t1 = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
+    expect(t1).toBe(t0); // gated — the tick never ran
+    expect(snapsIn(out).length).toBeGreaterThan(0); // but snapshots still painted the static colony
+  });
+
+  it("start{difficulty} begins ticking and carries that profile", () => {
+    const host = new SimHost(7);
+    expect((host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.difficulty).toBe("normal");
+    host.applyCommand({ type: "start", difficulty: "hard" });
+    const begun = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    expect(begun.difficulty).toBe("hard"); // the chosen profile is applied via reset
+    const before = begun.t;
+    for (let i = 0; i < 20; i++) host.step(0.05);
+    const after = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
+    expect(after).toBeGreaterThan(before); // and the clock now runs
+  });
+
+  it("load resumes ticking with no start (a save is already in progress)", () => {
+    const seed = new SimHost(42);
+    seed.applyCommand({ type: "start" });
+    for (let i = 0; i < 20; i++) seed.step(0.05);
+    const data = (seed.applyCommand({ type: "save", reqId: 1 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+
+    const fresh = new SimHost(1);
+    fresh.applyCommand({ type: "load", data }); // no `start` — load lifts the gate itself
+    const before = (fresh.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
+    for (let i = 0; i < 20; i++) fresh.step(0.05);
+    const after = (fresh.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
+    expect(after).toBeGreaterThan(before); // a resumed save ticks immediately
   });
 });

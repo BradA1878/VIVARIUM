@@ -110,6 +110,8 @@ export class SimBridge {
   forceStorm(): void { this.send({ type: "forceStorm" }); }
   /** restart from the seed; omitting the difficulty keeps the current one */
   reset(difficulty?: Difficulty): void { this.send({ type: "reset", difficulty }); }
+  /** begin a fresh game on the chosen difficulty (lifts the worker's start gate) */
+  start(difficulty?: Difficulty): void { this.send({ type: "start", difficulty }); }
   load(data: SaveData): void { this.send({ type: "load", data }); }
 
   save(): Promise<SaveData> {

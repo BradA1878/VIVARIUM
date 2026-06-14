@@ -5,7 +5,7 @@
    touches the tick.
    ============================================================================ */
 import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
-import type { ColonyEvent, Snapshot } from "@shared/types";
+import type { ColonyEvent, Difficulty, Snapshot } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo, SelectInfo } from "@/render/three/placement";
@@ -33,7 +33,7 @@ import { leaderId, boardableRover } from "../lead";
 // player preferences (persisted) — gate the director, the live narrator, render
 // quality, the audio gains, and the next run's difficulty. The deep watch below
 // applies them to the live subsystems the moment they change.
-const { settings } = useSettings();
+const { settings, updateSettings } = useSettings();
 
 export interface TerminalLine {
   id: number;
@@ -60,6 +60,12 @@ export const logOpen = ref(false);
 function toggleLog(): void {
   logOpen.value = !logOpen.value;
 }
+
+/** whether the fresh-game difficulty start screen is showing. A fresh boot raises
+ *  it (the worker's start gate holds the tick until Begin); a resumed save leaves
+ *  it down and ticks immediately. Set in initColony's load-vs-fresh resolution;
+ *  lowered by the start() action when the player commits a difficulty. */
+export const startScreen = ref(false);
 
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
@@ -142,6 +148,41 @@ export function pushLine(
     ...messages.value,
     { id: msgId++, text, sol: atSol, clock: clockOf(atTod), speaker, register, sev },
   ].slice(-120);
+}
+
+/** wipe a finished/abandoned run's agent-layer + telemetry state back to a clean
+ *  start, short of touching the worker (the caller reseeds the colony). Shared by
+ *  the in-game reset() and the start() action so "play again" lands as fresh as a
+ *  cold boot. The planet keeps its cross-run MEMORY (playerModel); only this run's
+ *  scratch is cleared, and the opening bias is re-aimed for the next run. */
+function tearDownRun(): void {
+  council?.reset();
+  sentinel?.reset();
+  director?.reset();
+  directorBias = openingBias(playerModel);
+  lastCritRes = null;
+  lastHazard = null;
+  lastRealEventT = 0;
+  lastDirectedStrike = null;
+  attributionCounter = 0;
+  clearLocal(); // discard the saved colony; autosave will persist the fresh one
+  history = resetHistory(); // a new run starts its telemetry from zero
+  dismissHint();
+  hints = new Hints(); // fresh scratch; the persisted seen-set still holds
+  messages.value = [];
+  clearTool();
+}
+
+/** fire the council's greeting after a beat, in the given difficulty's register.
+ *  Holds the shared bootTimer so dispose() can cancel an un-spoken line. */
+function greetAfter(ms: number, difficulty: Difficulty): void {
+  if (bootTimer) clearTimeout(bootTimer);
+  bootTimer = setTimeout(() => {
+    bootTimer = null;
+    if (!council) return;
+    const u = council.bootLine(difficulty);
+    pushLine(u.line, undefined, undefined, u.speaker, u.register, u.severity);
+  }, ms);
 }
 
 /** route one event (engine OR agent-originated) through the council. The gate
@@ -294,12 +335,16 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     if (save) { clearLocal(); history = resetHistory(); void b.save().then(persist); } // incompatible/finished — start fresh, overwrite everywhere
     return undefined; // fresh seed — the snapshot carries the run's difficulty
   }).then((resumedDiff) => {
-    // first words — pitched to the run's difficulty (a resumed save keeps its
-    // own). The greeting fires only once BOTH the load path above has settled
-    // AND a snapshot exists: a networked (Mongo) loadBest can resolve after any
-    // fixed timer, and greeting early put a hard/easy resume in the fresh
-    // seed's register. Fresh boots keep the same ~900ms beat — the load
-    // settles in milliseconds, so the remaining wait is the full beat.
+    // A fresh game waits on the start screen: the worker's tick is gated until the
+    // player picks a difficulty and presses Begin, and the greeting moves into the
+    // start() action so it's pitched to the CHOSEN register. A resumed save skips
+    // the screen, is already ticking, and greets here in its own saved register.
+    if (resumedDiff === undefined) { startScreen.value = true; return; }
+    // first words for a resume — pitched to the save's difficulty. The greeting
+    // fires only once BOTH the load path above has settled AND a snapshot exists:
+    // a networked (Mongo) loadBest can resolve after any fixed timer, and greeting
+    // early put the resume in the fresh seed's register. The load settles in
+    // milliseconds, so the remaining wait is the full ~900ms beat.
     const greet = (): void => {
       if (bootTimer) clearTimeout(bootTimer);
       bootTimer = setTimeout(() => {
@@ -322,8 +367,12 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     }
   });
 
-  // autosave on an interval — Mongo when reachable, localStorage always
+  // autosave on an interval — Mongo when reachable, localStorage always. Held
+  // while the start screen is up: the colony is gated at t0 on the default
+  // profile, and persisting it would let a reload-during-selection silently
+  // resume there (skipping the picker). The first save lands once start() begins.
   autosaveTimer = setInterval(() => {
+    if (startScreen.value) return;
     void b.save().then(persist);
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
@@ -403,32 +452,34 @@ const controls = {
   interact(): void { bridge?.interact(); },
   /** accept/decline a landed alien trade offer */
   respondTrade(accept: boolean): void { bridge?.respondTrade(accept); },
+  /** the fresh-game start screen committed a difficulty: lift the worker's start
+   *  gate on the chosen profile, drop the screen, and greet in that register
+   *  (a resumed save greets on load instead — see initColony). Also clears any
+   *  prior-run agent state so "play again" (EndScreen → replay) lands clean. */
+  start(difficulty: Difficulty): void {
+    if (!bridge) return;
+    bridge.start(difficulty); // host applies reset(difficulty) and begins ticking
+    updateSettings({ nextDifficulty: difficulty }); // the picked difficulty becomes the standing default
+    tearDownRun(); // wipe council/sentinel/director/history (no-op on a clean fresh boot)
+    bridge.setDirector(settings.value.directorEnabled); // start()'s reset reseeds with the scheduler on
+    startScreen.value = false;
+    // first words — pitched to the CHOSEN register. The screen has been up, so the
+    // colony is already painted; greet on the same gentle beat as a fresh boot.
+    greetAfter(BOOT_LINE_MS, difficulty);
+  },
   reset(): void {
     bridge?.reset(settings.value.nextDifficulty); // the chosen difficulty starts here
-    council?.reset();
-    sentinel?.reset();
-    director?.reset();
+    tearDownRun();
     bridge?.setDirector(settings.value.directorEnabled); // reset() reseeds with the scheduler on
-    // the planet keeps its cross-run memory; re-aim the opening for the new run
-    directorBias = openingBias(playerModel);
-    lastCritRes = null;
-    lastHazard = null;
-    lastRealEventT = 0;
-    lastDirectedStrike = null;
-    attributionCounter = 0;
-    clearLocal(); // discard the saved colony; autosave will persist the fresh one
-    history = resetHistory(); // a new run starts its telemetry from zero
-    dismissHint();
-    hints = new Hints(); // fresh scratch; the persisted seen-set still holds
-    messages.value = [];
-    clearTool();
     // re-greet after the colony reseeds — in the new run's difficulty register
-    setTimeout(() => {
-      if (council) {
-        const u = council.bootLine(settings.value.nextDifficulty);
-        pushLine(u.line, undefined, undefined, u.speaker, u.register, u.severity);
-      }
-    }, 600);
+    greetAfter(600, settings.value.nextDifficulty);
+  },
+  /** EndScreen "play again" — return to the difficulty start screen to re-pick,
+   *  rather than restarting immediately. The worker keeps its (finished, frozen)
+   *  colony until Begin calls start(), which reseeds it on the chosen profile. */
+  replay(): void {
+    messages.value = []; // clear the finished run's log so the screen is quiet behind the curtain
+    startScreen.value = true;
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };
@@ -507,7 +558,7 @@ function directorDossier(): DirectorDossier {
 
 export function useColony() {
   return {
-    snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen,
+    snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
     runHistory, runEpitaph, directorDossier, controls,
   };

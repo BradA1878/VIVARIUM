@@ -12,6 +12,13 @@ import {
 export class SimHost {
   private colony: Colony;
   private sinceSnapshot = 0;
+  /** the start gate (doc: difficulty start screen). The engine ticks eagerly —
+   *  hundreds of tests construct a Colony and tick at once — so the "wait for the
+   *  player to pick a difficulty and press Begin" pause lives HERE, host-side, not
+   *  in the engine. `start` (fresh game) and `load` (resumed save) flip it true.
+   *  While false, step() still emits snapshots so the UI paints the static colony
+   *  behind the start screen, but the tick is held. */
+  private started = false;
 
   constructor(seed?: number) {
     this.colony = seed === undefined ? new Colony() : new Colony(seed);
@@ -35,9 +42,9 @@ export class SimHost {
       case "setPaused": this.colony.setPaused(cmd.value); break;
       case "setSpeed": this.colony.setSpeed(cmd.value); break;
       case "forceStorm": this.colony.forceStorm(); break;
-      case "reset": this.colony.reset(cmd.difficulty); break;
-      case "load": this.colony = Colony.load(cmd.data); break;
-      case "start": break;
+      case "reset": this.colony.reset(cmd.difficulty); break; // in-game restart — stays running
+      case "load": this.colony = Colony.load(cmd.data); this.started = true; break; // a resumed save ticks at once
+      case "start": this.colony.reset(cmd.difficulty); this.started = true; break; // fresh game begins on the chosen difficulty
       case "save":
         return [{ type: "saved", reqId: cmd.reqId, data: this.colony.serialize() }];
     }
@@ -49,7 +56,7 @@ export class SimHost {
    *  outbound messages produced this step (events always; snapshot when due). */
   step(realDt: number): Outbound[] {
     const out: Outbound[] = [];
-    if (!this.colony.paused) {
+    if (this.started && !this.colony.paused) {
       let dt = realDt;
       if (dt > MAX_DT) dt = MAX_DT;
       this.colony.tick(dt * (this.colony.speed || 1));

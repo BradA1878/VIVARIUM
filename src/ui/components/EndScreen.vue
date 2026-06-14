@@ -172,7 +172,7 @@ const runDiff = computed(
           {{ d.label }}
         </button>
       </div>
-      <button class="end-btn" @click="controls.reset()">BEGIN AGAIN</button>
+      <button class="end-btn" @click="controls.replay()">BEGIN AGAIN</button>
     </div>
   </div>
 </template>
