@@ -4,7 +4,7 @@
    Exposes the latest snapshot, a snapshot/event subscription, command methods,
    and synchronous placement prediction (doc §0: observe, don't reach in).
    ============================================================================ */
-import type { BuildingState, ColonyEvent, Difficulty, HazardKind, Snapshot } from "@shared/types";
+import type { BuildingState, ColonyEvent, Difficulty, HazardKind, Snapshot, World } from "@shared/types";
 import { DEFS, FUNC_THRESHOLD, type SaveData } from "@/engine";
 import { buildingAtPredict, canPlacePredict, canMovePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
@@ -108,10 +108,12 @@ export class SimBridge {
   setPaused(value: boolean): void { this.send({ type: "setPaused", value }); }
   setSpeed(value: number): void { this.send({ type: "setSpeed", value }); }
   forceStorm(): void { this.send({ type: "forceStorm" }); }
-  /** restart from the seed; omitting the difficulty keeps the current one */
-  reset(difficulty?: Difficulty): void { this.send({ type: "reset", difficulty }); }
-  /** begin a fresh game on the chosen difficulty (lifts the worker's start gate) */
-  start(difficulty?: Difficulty): void { this.send({ type: "start", difficulty }); }
+  /** restart the run; a PTP founding can hand in a new seed + world (omitting any
+   *  keeps the current colony's value) */
+  reset(difficulty?: Difficulty, seed?: number, world?: World): void { this.send({ type: "reset", difficulty, seed, world }); }
+  /** begin a fresh game / found the next world (lifts the worker's start gate);
+   *  carries the chosen difficulty + (for a PTP founding) seed + world */
+  start(difficulty?: Difficulty, seed?: number, world?: World): void { this.send({ type: "start", difficulty, seed, world }); }
   load(data: SaveData): void { this.send({ type: "load", data }); }
 
   save(): Promise<SaveData> {

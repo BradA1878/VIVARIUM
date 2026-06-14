@@ -84,6 +84,7 @@ function makeSnap(over: Partial<Snapshot> = {}): Snapshot {
     dead: 0,
     morale: 0.9,
     difficulty: "normal",
+    world: "mars",
     deadlineSol: 30,
     targetPop: 12,
     selfSufficientFor: 0,

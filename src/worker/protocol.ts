@@ -3,7 +3,7 @@
    Main thread sends Commands; the worker (which owns the engine) sends Outbound
    messages: throttled snapshots, the event stream, and save responses.
    ============================================================================ */
-import type { ColonyEvent, Difficulty, HazardKind, Snapshot } from "@shared/types";
+import type { ColonyEvent, Difficulty, HazardKind, Snapshot, World } from "@shared/types";
 import type { SaveData } from "@/engine";
 
 // ---- main thread → worker ----------------------------------------------------
@@ -22,10 +22,13 @@ export type Command =
   | { type: "setPaused"; value: boolean }
   | { type: "setSpeed"; value: number }
   | { type: "forceStorm" }
-  | { type: "reset"; difficulty?: Difficulty }
+  // reset/start carry the PTP founding inputs: a new seed + world found the next
+  // run; omitting any of the three keeps the current colony's value (the engine
+  // applies them deterministically — the main thread chooses them, never the tick).
+  | { type: "reset"; difficulty?: Difficulty; seed?: number; world?: World }
   | { type: "load"; data: SaveData }
   | { type: "save"; reqId: number }
-  | { type: "start"; difficulty?: Difficulty };
+  | { type: "start"; difficulty?: Difficulty; seed?: number; world?: World };
 
 // ---- worker → main thread ----------------------------------------------------
 export type Outbound =

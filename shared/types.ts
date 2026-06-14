@@ -11,6 +11,11 @@ export type Resource = "power" | "water" | "oxygen" | "food";
  *  starting materials) live in engine/tuning.ts DIFFICULTY */
 export type Difficulty = "easy" | "normal" | "hard";
 
+/** the world a run is founded on. mars is the origin/anchor (its profile is
+   today's constants); ceres/io/titan are destinations reached via the PTP. World
+   is an axis orthogonal to Difficulty — the two profiles compose. */
+export type World = "mars" | "ceres" | "io" | "titan";
+
 export const RESOURCES: Resource[] = ["power", "water", "oxygen", "food"];
 
 /** A side of a footprint / a rotation step. N=0, E=1, S=2, W=3. Grid deltas:
@@ -334,6 +339,8 @@ export interface Snapshot {
   morale: number;
   /** the active difficulty profile (chosen at reset, persisted in state) */
   difficulty: Difficulty;
+  /** the world this run was founded on (PTP) — mars unless reached via expansion */
+  world: World;
 
   // ---- campaign (doc §2.5) ----
   /** the sol Earth's launch window closes; reach self-sufficiency before then */

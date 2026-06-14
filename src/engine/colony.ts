@@ -4,7 +4,7 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, Difficulty, Side, Snapshot,
+  BuildingDef, BuildingState, ColonyEvent, Difficulty, Side, Snapshot, World,
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
@@ -43,11 +43,11 @@ export class Colony {
   private seed: number;
   private events: ColonyEvent[] = [];
 
-  constructor(seed: number = DEFAULT_SEED, difficulty: Difficulty = "normal") {
+  constructor(seed: number = DEFAULT_SEED, difficulty: Difficulty = "normal", world: World = "mars") {
     this.seed = seed >>> 0;
     this.rng = new RNG(this.seed);
     this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
-    this.s = freshState(difficulty);
+    this.s = freshState(difficulty, world);
     this.seedColony();
     this.s.started = true;
   }
@@ -70,11 +70,14 @@ export class Colony {
     return out;
   }
 
-  /** restart from the seed; omitting the difficulty keeps the current one */
-  reset(difficulty?: Difficulty): void {
+  /** restart the run. Founding (PTP) can hand in a new seed and world; omitting
+   *  any of the three keeps the current colony's value. seed/world enter as
+   *  deterministic inputs — the engine never originates them (the wall). */
+  reset(difficulty?: Difficulty, seed?: number, world?: World): void {
+    if (seed !== undefined) this.seed = seed >>> 0;
     this.rng = new RNG(this.seed);
     this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
-    this.s = freshState(difficulty ?? this.s.difficulty);
+    this.s = freshState(difficulty ?? this.s.difficulty, world ?? this.s.world);
     this.events = [];
     this.seedColony();
     this.s.started = true;
@@ -286,6 +289,7 @@ export class Colony {
       dead: s.dead,
       morale: s.morale,
       difficulty: s.difficulty,
+      world: s.world,
       deadlineSol: s.deadlineSol,
       targetPop: s.targetPop,
       selfSufficientFor: s.selfSufficientFor,
@@ -393,6 +397,7 @@ export class Colony {
       morale: st.morale ?? MORALE_START,
       moraleLatch: st.moraleLatch ?? false,
       difficulty: st.difficulty ?? "normal",
+      world: st.world ?? "mars", // legacy saves predate worlds → the anchor
       acquiredTech: [...(st.acquiredTech ?? [])],
       // legacy saves carry no latch: re-derive the currently-true gates on the
       // first tick, re-announcing the new buildings once (engine/unlocks.ts)
@@ -421,7 +426,7 @@ export class Colony {
   }
 }
 
-function freshState(difficulty: Difficulty): ColonyState {
+function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState {
   const N = GRID_N;
   const prof = DIFFICULTY[difficulty];
   return {
@@ -496,5 +501,6 @@ function freshState(difficulty: Difficulty): ColonyState {
     morale: MORALE_START,
     moraleLatch: false,
     difficulty,
+    world,
   };
 }

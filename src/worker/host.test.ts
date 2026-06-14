@@ -130,4 +130,28 @@ describe("SimHost", () => {
     const after = (fresh.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
     expect(after).toBeGreaterThan(before); // a resumed save ticks immediately
   });
+
+  // ---- the world + seed founding channel (PTP) ----
+
+  it("start founds on the given seed + world", () => {
+    const host = new SimHost();
+    host.applyCommand({ type: "start", difficulty: "hard", seed: 4242, world: "ceres" });
+    const begun = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    expect(begun.world).toBe("ceres");
+    expect(begun.difficulty).toBe("hard");
+    const saved = (host.applyCommand({ type: "save", reqId: 1 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+    expect(saved.seed).toBe(4242); // the seed threaded into the founded run
+  });
+
+  it("reset threads a new seed + world too", () => {
+    const host = new SimHost();
+    host.applyCommand({ type: "start" }); // mars/default
+    host.applyCommand({ type: "reset", difficulty: "easy", seed: 7, world: "titan" });
+    const snap = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    expect(snap.world).toBe("titan");
+    const saved = (host.applyCommand({ type: "save", reqId: 2 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+    expect(saved.seed).toBe(7);
+  });
 });

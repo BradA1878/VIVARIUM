@@ -42,9 +42,9 @@ export class SimHost {
       case "setPaused": this.colony.setPaused(cmd.value); break;
       case "setSpeed": this.colony.setSpeed(cmd.value); break;
       case "forceStorm": this.colony.forceStorm(); break;
-      case "reset": this.colony.reset(cmd.difficulty); break; // in-game restart — stays running
+      case "reset": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world); break; // in-game restart / PTP founding — stays running
       case "load": this.colony = Colony.load(cmd.data); this.started = true; break; // a resumed save ticks at once
-      case "start": this.colony.reset(cmd.difficulty); this.started = true; break; // fresh game begins on the chosen difficulty
+      case "start": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world); this.started = true; break; // fresh game / founding on the chosen seed+world+difficulty
       case "save":
         return [{ type: "saved", reqId: cmd.reqId, data: this.colony.serialize() }];
     }
