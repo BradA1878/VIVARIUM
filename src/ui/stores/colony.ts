@@ -5,7 +5,7 @@
    touches the tick.
    ============================================================================ */
 import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
-import type { ColonyEvent, Difficulty, Resource, Snapshot, World } from "@shared/types";
+import type { ColonyEvent, Difficulty, LegacyManifest, Resource, Snapshot, World } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo, SelectInfo } from "@/render/three/placement";
@@ -105,7 +105,7 @@ let activeSlot = "default";
 export function setActiveSlot(slot: string): void { activeSlot = slot; }
 // the leaving run's identity, captured at launch() so foundNext() can derive the
 // next world's seed and carry the difficulty across the Expansion EndScreen.
-let pendingLaunch: { seed: number; difficulty: Difficulty; world: World } | null = null;
+let pendingLaunch: { seed: number; difficulty: Difficulty; world: World; legacy: LegacyManifest } | null = null;
 
 const HINT_TOAST_MS = 14_000;
 /** quiet beat between toasts — the next hint must not appear the frame the last one left */
@@ -546,7 +546,11 @@ const controls = {
       difficulty: save.state.difficulty, label: WORLD_META[save.state.world].label,
       outcome: "expansion", sols: s.sol, population: s.population, foundedAt: Date.now(),
     });
-    pendingLaunch = { seed: save.seed, difficulty: save.state.difficulty, world: save.state.world };
+    // the legacy that travels: the two lowest-id living colonists (commander +
+    // next-senior) by literal id, and one alien tech if any was acquired.
+    const livingIds = (save.state.colonists ?? []).map((c) => c.id).sort((a, b) => a - b);
+    const legacy: LegacyManifest = { veterans: livingIds.slice(0, 2), tech: (save.state.acquiredTech ?? [])[0] };
+    pendingLaunch = { seed: save.seed, difficulty: save.state.difficulty, world: save.state.world, legacy };
     bridge.launchPtp(); // engine: outcome=expansion, pause, emit → Expansion EndScreen
   },
   /** the Expansion EndScreen picked the next world: derive its seed from this run's,
@@ -556,15 +560,17 @@ const controls = {
     if (!bridge || !pendingLaunch) return;
     const seed = nextSeedFrom(pendingLaunch.seed);
     const difficulty = pendingLaunch.difficulty;
+    const legacy = pendingLaunch.legacy;
     const slot = slotId(world, seed);
     setActiveSlot(slot);
-    bridge.start(difficulty, seed, world); // found the new run on its own slot
+    bridge.start(difficulty, seed, world, legacy); // found the new run on its own slot, carrying the legacy
     tearDownRun(); // wipe agent/run scratch (clears the fresh slot — empty)
     bridge.setDirector(settings.value.directorEnabled);
     // log + persist the freshly founded world so it's revisitable from t0
     upsertColony({
       worldId: world, slotKey: slot, seed, difficulty,
       label: WORLD_META[world].label, outcome: null, sols: 1, population: 0, foundedAt: Date.now(),
+      legacy,
     });
     void bridge.save().then((sv) => persist(slot, sv));
     pendingLaunch = null;

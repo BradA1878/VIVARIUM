@@ -16,6 +16,15 @@ export type Difficulty = "easy" | "normal" | "hard";
    is an axis orthogonal to Difficulty — the two profiles compose. */
 export type World = "mars" | "ceres" | "io" | "titan";
 
+/** what a PTP launch carries from the world you leave into the next run (PTP):
+   a couple of veteran colonists BY THEIR LITERAL ID (name + role derive from the
+   id, so they're recognizably the same person — the lowest becomes the new
+   commander) and one alien tech. Applied as plain seed state, never live mutation. */
+export interface LegacyManifest {
+  veterans: number[];
+  tech?: string;
+}
+
 export const RESOURCES: Resource[] = ["power", "water", "oxygen", "food"];
 
 /** A side of a footprint / a rotation step. N=0, E=1, S=2, W=3. Grid deltas:

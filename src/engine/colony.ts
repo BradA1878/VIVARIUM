@@ -4,7 +4,7 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, Difficulty, Side, Snapshot, World,
+  BuildingDef, BuildingState, ColonyEvent, Difficulty, LegacyManifest, Side, Snapshot, World,
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
@@ -21,8 +21,8 @@ import { spawnHazard, hazardViews, SCHED_FIRST } from "./hazards";
 import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData } from "./state";
 import { buildingFunctional } from "./state";
-import { emptyBuilding } from "./state";
-import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed } from "./colonists";
+import { emptyBuilding, emptyColonist } from "./state";
+import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed, baseCenter, freeCellNear } from "./colonists";
 import { computeUnlocks } from "./unlocks";
 import { seedDeposits, seedVents, seedAquifers } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
@@ -74,13 +74,13 @@ export class Colony {
   /** restart the run. Founding (PTP) can hand in a new seed and world; omitting
    *  any of the three keeps the current colony's value. seed/world enter as
    *  deterministic inputs — the engine never originates them (the wall). */
-  reset(difficulty?: Difficulty, seed?: number, world?: World): void {
+  reset(difficulty?: Difficulty, seed?: number, world?: World, legacy?: LegacyManifest): void {
     if (seed !== undefined) this.seed = seed >>> 0;
     this.rng = new RNG(this.seed);
     this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
     this.s = freshState(difficulty ?? this.s.difficulty, world ?? this.s.world);
     this.events = [];
-    this.seedColony();
+    this.seedColony(legacy);
     this.s.started = true;
   }
 
@@ -233,7 +233,7 @@ export class Colony {
   private recomputeCaps(): void { recomputeCaps(this.s); }
 
   // ---- starter colony so the sim is alive on load (doc seed) ----------------
-  private seedColony(): void {
+  private seedColony(legacy?: LegacyManifest): void {
     // the starter buildings are a gift — placement charges materials, so float
     // the budget high while seeding, then set the real starting stock after.
     this.s.materials.amount = 9999;
@@ -255,7 +255,22 @@ export class Colony {
     // collection depot: a clear drop-off just off the hub's east side
     const hubB = this.s.buildings.find((b) => DEFS[b.defId]?.isHub);
     if (hubB) this.s.depot = { gx: hubB.gx + (DEFS[hubB.defId].foot[0] ?? 2), gy: hubB.gy + 1 };
-    reconcileColonists(this.s); // four astronauts, at the hub
+    // carried legacy (PTP): seed veterans at their LITERAL ids before reconcile, so
+    // name/role (pure id hashes) and commander rank (lowest living id) carry; bump
+    // the counter past them so fresh recruits get higher ids and no later mint dups.
+    // The carried alien tech rides acquiredTech, applied by recomputeCaps below.
+    if (legacy?.veterans.length) {
+      const center = baseCenter(this.s);
+      for (const id of legacy.veterans) {
+        const cell = freeCellNear(this.s, center);
+        this.s.colonists.push(emptyColonist(id, cell.x, cell.y));
+      }
+      this.s.colonistCounter = Math.max(this.s.colonistCounter, ...legacy.veterans) + 1;
+    }
+    if (legacy?.tech && !this.s.acquiredTech.includes(legacy.tech)) {
+      this.s.acquiredTech.push(legacy.tech);
+    }
+    reconcileColonists(this.s); // fills up to population with fresh recruits (ids past any veterans)
     seedVents(this.s, this.envRng); // geothermal terrain first — deposits avoid it
     seedAquifers(this.s, this.envRng); // aquifer sites next (off vents) — deposits avoid them too
     seedDeposits(this.s, this.envRng); // scatter the resource field
