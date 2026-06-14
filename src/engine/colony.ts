@@ -92,8 +92,12 @@ export class Colony {
    *  there's no working pod or the run already ended. */
   launchPtp(): void {
     if (this.s.outcome !== null) return; // the run already ended
-    const pod = this.s.buildings.find((b) => b.defId === "ptp");
-    if (!pod || !buildingFunctional(pod)) return; // need a working pod to leave
+    // ANY intact pod will do — match the functional one directly, so a damaged pod
+    // built earlier can't mask a working one (find returns the lowest index). Gated
+    // on integrity/fault only, NOT power: a transient brownout must never brick the
+    // one-shot endgame and strand the run (the pod's 8-power draw is an ongoing cost).
+    const pod = this.s.buildings.find((b) => b.defId === "ptp" && buildingFunctional(b));
+    if (!pod) return; // need a working pod to leave
     this.s.outcome = "expansion";
     this.s.outcomeReason = "expansion";
     this.s.paused = true;

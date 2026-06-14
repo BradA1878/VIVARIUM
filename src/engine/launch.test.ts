@@ -51,6 +51,24 @@ describe("launchPtp → expansion", () => {
     expect(c.drainEvents().filter((e) => e.type === "expansion")).toHaveLength(0);
   });
 
+  it("launches when ANY functional pod exists, even if a damaged pod was built first", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    const broken = emptyBuilding(998, "ptp", 0, 0); broken.integrity = 0.2; // dead pod, built first
+    const good = emptyBuilding(999, "ptp", 4, 4); // intact pod, built later
+    s.buildings.push(broken, good);
+    c.launchPtp();
+    expect(c.snapshot().outcome).toBe("expansion");
+  });
+
+  it("a single damaged pod is not enough to launch", () => {
+    const c = new Colony(7);
+    const dead = emptyBuilding(999, "ptp", 0, 0); dead.integrity = 0.2;
+    stateOf(c).buildings.push(dead);
+    c.launchPtp();
+    expect(c.snapshot().outcome).toBeNull();
+  });
+
   it("does nothing once the run has already ended", () => {
     const c = new Colony(7);
     const s = stateOf(c);
