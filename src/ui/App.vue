@@ -14,6 +14,7 @@ import Crew from "./components/Crew.vue";
 import Objective from "./components/Objective.vue";
 import Alerts from "./components/Alerts.vue";
 import EndScreen from "./components/EndScreen.vue";
+import StartScreen from "./components/StartScreen.vue";
 import NarratorTicker from "./components/NarratorTicker.vue";
 import LogOverlay from "./components/LogOverlay.vue";
 import Inspector from "./components/Inspector.vue";
@@ -36,7 +37,7 @@ const bridge = shallowRef<SimBridge | null>(null);
 const ready = ref(false);
 let renderer: ThreeRenderer | null = null;
 
-const { snapshot, clearTool, rotate, removeSelected, controls, logOpen, toggleLog } = useColony();
+const { snapshot, clearTool, rotate, removeSelected, controls, logOpen, toggleLog, startScreen } = useColony();
 const { settings, settingsOpen, updateSettings } = useSettings();
 const storming = computed(() => snapshot.value?.weather === "dust");
 const flaring = computed(() => snapshot.value?.hazards.some((h) => h.kind === "flare" && h.phase === "active") ?? false);
@@ -118,7 +119,7 @@ onUnmounted(() => {
     <div class="storm-veil" :class="{ on: storming }"></div>
     <div class="flare-veil" :class="{ on: flaring }"></div>
 
-    <div class="hud" v-if="ready">
+    <div class="hud" v-if="ready && !startScreen">
       <TopBar />
 
       <div class="left-col">
@@ -147,12 +148,14 @@ onUnmounted(() => {
       <SettingsModal />
     </div>
 
-    <div v-if="!booting" class="hint-layer">
+    <div v-if="!booting && !startScreen" class="hint-layer">
       <FirstHint />
       <HintToast />
     </div>
 
     <EndScreen v-if="!booting" />
+
+    <StartScreen v-if="!booting && startScreen" />
 
     <Boot v-if="booting" @done="booting = false" />
   </div>

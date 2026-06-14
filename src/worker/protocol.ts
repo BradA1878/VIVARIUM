@@ -25,7 +25,7 @@ export type Command =
   | { type: "reset"; difficulty?: Difficulty }
   | { type: "load"; data: SaveData }
   | { type: "save"; reqId: number }
-  | { type: "start" };
+  | { type: "start"; difficulty?: Difficulty };
 
 // ---- worker → main thread ----------------------------------------------------
 export type Outbound =
