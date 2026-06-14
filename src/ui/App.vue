@@ -20,6 +20,7 @@ import LogOverlay from "./components/LogOverlay.vue";
 import Inspector from "./components/Inspector.vue";
 import Palette from "./components/Palette.vue";
 import TradePrompt from "./components/TradePrompt.vue";
+import LaunchPrompt from "./components/LaunchPrompt.vue";
 import PilotBar from "./components/PilotBar.vue";
 import FirstHint from "./components/FirstHint.vue";
 import HintToast from "./components/HintToast.vue";
@@ -134,6 +135,7 @@ onUnmounted(() => {
       <div class="right-col">
         <Alerts />
         <TradePrompt />
+        <LaunchPrompt />
       </div>
 
       <NarratorTicker />

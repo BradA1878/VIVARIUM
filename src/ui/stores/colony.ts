@@ -5,7 +5,7 @@
    touches the tick.
    ============================================================================ */
 import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
-import type { ColonyEvent, Difficulty, Resource, Snapshot } from "@shared/types";
+import type { ColonyEvent, Difficulty, Resource, Snapshot, World } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo, SelectInfo } from "@/render/three/placement";
@@ -19,6 +19,8 @@ import {
   type PlayerModel, type Axis,
 } from "@/agent/director/memory";
 import { loadBest, persist, clearLocal } from "@/persistence";
+import { upsertColony, loadLedger, type ColonyRecord } from "@/persistence/colonies";
+import { nextSeedFrom, slotId, WORLD_META } from "../founding";
 import type { HazardKind } from "@shared/types";
 import { clockOf, fmt } from "../format";
 import { useSettings } from "./settings";
@@ -101,6 +103,9 @@ let msgId = 1;
 let activeSlot = "default";
 /** point persistence at a world's slot (founding / revisit — PTP). */
 export function setActiveSlot(slot: string): void { activeSlot = slot; }
+// the leaving run's identity, captured at launch() so foundNext() can derive the
+// next world's seed and carry the difficulty across the Expansion EndScreen.
+let pendingLaunch: { seed: number; difficulty: Difficulty; world: World } | null = null;
 
 const HINT_TOAST_MS = 14_000;
 /** quiet beat between toasts — the next hint must not appear the frame the last one left */
@@ -333,6 +338,10 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
       saveModel(playerModel);
       directorBias = openingBias(playerModel);
       saveHistory(history); // the report survives a closed tab
+    } else if (e.type === "expansion") {
+      // a launch isn't a win or a loss for the Director's death model — it's a
+      // continuation. Just persist the run report so the Expansion screen shows it.
+      saveHistory(history);
     }
   });
   r.onHover((info) => { hover.value = info; });
@@ -409,7 +418,11 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   // profile, and persisting it would let a reload-during-selection silently
   // resume there (skipping the picker). The first save lands once start() begins.
   autosaveTimer = setInterval(() => {
-    if (startScreen.value) return;
+    // Held while the start screen is up, and while an EXPANSION is pending: launch()
+    // has already archived the leaving world LIVE (outcome cleared) to its slot, and
+    // an autosave of the paused expansion-outcome state would clobber that archive.
+    // (victory/defeat still autosave so their boot-discard keeps working.)
+    if (startScreen.value || snapshot.value?.outcome === "expansion") return;
     void b.save().then((s) => persist(activeSlot, s));
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
@@ -518,6 +531,46 @@ const controls = {
     messages.value = []; // clear the finished run's log so the screen is quiet behind the curtain
     startScreen.value = true;
   },
+  /** PTP launch — archive the leaving world LIVE (revisitable) to its slot, log it
+   *  in the Colonies ledger, then end the run as "expansion" (the Expansion
+   *  EndScreen offers the next world). Captures the leaving identity for foundNext. */
+  async launch(): Promise<void> {
+    if (!bridge) return;
+    const s = snapshot.value;
+    if (!s || s.outcome) return;
+    const save = await bridge.save();
+    // archive a LIVE copy (outcome cleared) so a later revisit resumes the colony
+    await persist(activeSlot, { ...save, state: { ...save.state, outcome: null, outcomeReason: "" } });
+    upsertColony({
+      worldId: save.state.world, slotKey: activeSlot, seed: save.seed,
+      difficulty: save.state.difficulty, label: WORLD_META[save.state.world].label,
+      outcome: "expansion", sols: s.sol, population: s.population, foundedAt: Date.now(),
+    });
+    pendingLaunch = { seed: save.seed, difficulty: save.state.difficulty, world: save.state.world };
+    bridge.launchPtp(); // engine: outcome=expansion, pause, emit → Expansion EndScreen
+  },
+  /** the Expansion EndScreen picked the next world: derive its seed from this run's,
+   *  point persistence at its new slot, and found the run there (carrying difficulty).
+   *  Mirrors start() but for a planet-hop. */
+  foundNext(world: World): void {
+    if (!bridge || !pendingLaunch) return;
+    const seed = nextSeedFrom(pendingLaunch.seed);
+    const difficulty = pendingLaunch.difficulty;
+    const slot = slotId(world, seed);
+    setActiveSlot(slot);
+    bridge.start(difficulty, seed, world); // found the new run on its own slot
+    tearDownRun(); // wipe agent/run scratch (clears the fresh slot — empty)
+    bridge.setDirector(settings.value.directorEnabled);
+    // log + persist the freshly founded world so it's revisitable from t0
+    upsertColony({
+      worldId: world, slotKey: slot, seed, difficulty,
+      label: WORLD_META[world].label, outcome: null, sols: 1, population: 0, foundedAt: Date.now(),
+    });
+    void bridge.save().then((sv) => persist(slot, sv));
+    pendingLaunch = null;
+    startScreen.value = false;
+    greetAfter(BOOT_LINE_MS, difficulty);
+  },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };
 
@@ -560,6 +613,11 @@ function runEpitaph(): string {
       ? `The colony learned to breathe on its own — even ${clause}.`
       : "The colony learned to breathe on its own.";
   }
+  if (s.outcome === "expansion") {
+    return clause
+      ? `The pod cleared the gravity well ${clause}. This colony stands; the work goes on elsewhere.`
+      : "The pod cleared the gravity well. This colony stands on its own; the work goes on elsewhere.";
+  }
   if (s.outcomeReason === "window") {
     return clause
       ? `Time ran out ${clause}, with the colony still short of standing alone.`
@@ -593,10 +651,16 @@ function directorDossier(): DirectorDossier {
   };
 }
 
+/** the cross-run Colonies ledger, newest first — for the Expansion EndScreen and
+ *  the StartScreen's revisit list (PTP). Read fresh each call; it's tiny JSON. */
+function colonies(): ColonyRecord[] {
+  return [...loadLedger().colonies].sort((a, b) => b.foundedAt - a.foundedAt);
+}
+
 export function useColony() {
   return {
     snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
-    runHistory, runEpitaph, directorDossier, controls,
+    runHistory, runEpitaph, directorDossier, colonies, controls,
   };
 }
