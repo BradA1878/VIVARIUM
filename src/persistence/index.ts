@@ -29,7 +29,11 @@ export async function listSlots(): Promise<string[]> {
   return [...new Set([...remote, ...listLocal()])];
 }
 
-/** forget a settled world — remove its slot from Mongo and localStorage */
+/** forget a settled world — remove its slot from Mongo and localStorage.
+ *  Note: if the remote breaker is tripped (server down), deleteRemote no-ops and
+ *  the Mongo doc survives; it can resurface via listRemote after recovery. The
+ *  ledger UI (slice 4/7) reconciles this — locally-deleted is authoritative — and
+ *  is where a pending-delete tombstone/retry belongs if cross-device drift bites. */
 export async function deleteSlot(slot: string): Promise<void> {
   clearLocal(slot);
   await deleteRemote(slot);

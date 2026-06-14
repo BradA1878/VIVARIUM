@@ -14,7 +14,9 @@ import { encode, decode } from "./save";
 export type PersistStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 const PREFIX = "vivarium:save:v1";
-const INDEX_KEY = `${PREFIX}:index`;
+// the slot index lives OUTSIDE the slot keyspace (PREFIX:<slot>) so no slot id can
+// ever alias it — e.g. a world keyed "index" would otherwise collide with PREFIX:index.
+export const SLOT_INDEX_KEY = "vivarium:slots:v1";
 /** the default slot keeps the legacy unsuffixed key — existing saves survive */
 const keyFor = (slot: string): string => (slot === "default" ? PREFIX : `${PREFIX}:${slot}`);
 
@@ -30,20 +32,26 @@ function defaultStorage(): PersistStorage | null {
 /** the set of known slots. A legacy default save predates the index, so surface
  *  it whenever the unsuffixed key is present. */
 function readIndex(st: PersistStorage): string[] {
+  let list: string[] = [];
   try {
-    const raw = st.getItem(INDEX_KEY);
+    const raw = st.getItem(SLOT_INDEX_KEY);
     const arr = raw ? (JSON.parse(raw) as unknown) : [];
-    const list = Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
-    if (st.getItem(PREFIX) && !list.includes("default")) list.push("default");
-    return list;
+    list = Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
   } catch {
-    return [];
+    /* corrupt index — fall through with an empty list, but still surface the
+       legacy default below so a loadable back-compat save is never hidden */
   }
+  try {
+    if (st.getItem(PREFIX) && !list.includes("default")) list.push("default");
+  } catch {
+    /* ignore */
+  }
+  return list;
 }
 
 function writeIndex(st: PersistStorage, slots: string[]): void {
   try {
-    st.setItem(INDEX_KEY, JSON.stringify([...new Set(slots)]));
+    st.setItem(SLOT_INDEX_KEY, JSON.stringify([...new Set(slots)]));
   } catch {
     /* quota / private mode — non-fatal */
   }

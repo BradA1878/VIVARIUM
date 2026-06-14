@@ -5,8 +5,8 @@
    ============================================================================ */
 import { describe, it, expect, afterEach } from "vitest";
 import { Colony } from "@/engine";
-import { saveLocal, loadLocal, clearLocal, listLocal } from "./local";
-import { saveRemote, loadRemote, listRemote, deleteRemote } from "./remote";
+import { saveLocal, loadLocal, clearLocal, listLocal, SLOT_INDEX_KEY } from "./local";
+import { saveRemote, loadRemote, listRemote, deleteRemote, __resetBreaker } from "./remote";
 import { loadBest, persist, listSlots, deleteSlot } from "./index";
 import { toJSON, type SaveJSON } from "./save";
 
@@ -49,13 +49,35 @@ describe("local slot persistence", () => {
     saveLocal("titan", c.serialize(), st);
     expect(new Set(listLocal(st))).toEqual(new Set(["default", "titan"]));
   });
+
+  // verification finding 1: a world literally named "index" must not alias the
+  // slot-index key and mutually corrupt the save + the index.
+  it("a slot named 'index' does not corrupt the slot index", () => {
+    const st = fakeStorage();
+    const c = new Colony(9); c.tick(0.2);
+    saveLocal("default", c.serialize(), st);
+    saveLocal("index", c.serialize(), st);
+    expect(loadLocal("index", st)!.seed).toBe(9); // its save is intact
+    expect(new Set(listLocal(st))).toEqual(new Set(["default", "index"])); // index intact
+  });
+
+  // verification finding 2: a corrupt slot index must not hide a still-loadable
+  // legacy default save from the listing (back-compat the slice exists to protect).
+  it("a corrupt slot index still surfaces the legacy default save", () => {
+    const st = fakeStorage();
+    const c = new Colony(77); c.tick(0.2);
+    saveLocal("default", c.serialize(), st);
+    st.setItem(SLOT_INDEX_KEY, '["default'); // truncated / corrupt JSON
+    expect(loadLocal("default", st)!.seed).toBe(77); // still loads
+    expect(listLocal(st)).toContain("default"); // and is still listed
+  });
 });
 
 // ---- remote adapter (slot threading; happy path keeps the breaker clear) ------
 
 type FetchCall = { url: string; init?: RequestInit };
 const realFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = realFetch; });
+afterEach(() => { globalThis.fetch = realFetch; __resetBreaker(); });
 
 /** stub global fetch; record calls; reply with the handler's {ok, body}. */
 function stubFetch(handler: (url: string, init?: RequestInit) => { ok: boolean; body?: unknown }): FetchCall[] {

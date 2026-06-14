@@ -19,6 +19,10 @@ const isDown = (): boolean => Date.now() < backoffUntil;
 const trip = (): void => { backoffUntil = Date.now() + COOLDOWN_MS; };
 const clear = (): void => { backoffUntil = 0; };
 
+/** test-only: clear the module-level breaker so a negative-path test can't leak
+ *  its tripped state into the next test (the breaker is shared module state). */
+export function __resetBreaker(): void { backoffUntil = 0; }
+
 /** push a save to Mongo under `slot`. Returns true on success, false to fall back to local. */
 export async function saveRemote(slot: string, save: SaveData): Promise<boolean> {
   if (isDown()) return false;
