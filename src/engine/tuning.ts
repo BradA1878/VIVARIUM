@@ -353,7 +353,7 @@ export interface WorldProfile {
 
 export const WORLDS: Record<World, WorldProfile> = {
   // the anchor — today's constants exactly (Mars stays byte-identical)
-  mars: { solar: 1, wind: 1, vents: VENT_COUNT, oreCut: 0.4, iceCut: 0.72, hazardWeights: {}, startPools: START_AMOUNT },
+  mars: { solar: 1, wind: 1, vents: VENT_COUNT, oreCut: 0.4, iceCut: 0.72, hazardWeights: {}, startPools: { ...START_AMOUNT } },
   // ice everywhere, a weak sun, no dust — water is free, POWER is the squeeze
   ceres: {
     solar: 0.6, wind: 1.1, vents: 2, oreCut: 0.28, iceCut: 0.82,
@@ -374,7 +374,8 @@ export const WORLDS: Record<World, WorldProfile> = {
   },
 };
 
-/** world lookup tolerant of pre-PTP saves / minimal test states */
+/** world lookup tolerant of pre-PTP saves / minimal test states / a corrupt world
+ *  string (falls back to the mars anchor rather than throwing on the first tick) */
 export function worldProfile(w: World | undefined): WorldProfile {
-  return WORLDS[w ?? "mars"];
+  return WORLDS[w ?? "mars"] ?? WORLDS.mars;
 }

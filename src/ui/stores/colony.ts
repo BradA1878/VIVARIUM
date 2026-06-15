@@ -116,6 +116,10 @@ export function setActiveSlot(slot: string): void {
 // the leaving run's identity, captured at launch() so foundNext() can derive the
 // next world's seed and carry the difficulty across the Expansion EndScreen.
 let pendingLaunch: { seed: number; difficulty: Difficulty; world: World; legacy: LegacyManifest } | null = null;
+// true from launch() until the next run begins — a SYNCHRONOUS gate on autosave so
+// no save can interleave between launchPtp and the expansion snapshot landing and
+// clobber the cleared archive (the snapshot.outcome check alone has a 1-tick window).
+let launching = false;
 
 const HINT_TOAST_MS = 14_000;
 /** quiet beat between toasts — the next hint must not appear the frame the last one left */
@@ -214,6 +218,7 @@ function tearDownRun(): void {
   lastRealEventT = 0;
   lastDirectedStrike = null;
   attributionCounter = 0;
+  launching = false; // the new run is beginning — let autosave resume
   clearLocal(activeSlot); // discard the saved colony; autosave will persist the fresh one
   history = resetHistory(); // a new run starts its telemetry from zero
   dismissHint();
@@ -432,7 +437,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     // has already archived the leaving world LIVE (outcome cleared) to its slot, and
     // an autosave of the paused expansion-outcome state would clobber that archive.
     // (victory/defeat still autosave so their boot-discard keeps working.)
-    if (startScreen.value || snapshot.value?.outcome === "expansion") return;
+    if (startScreen.value || launching || snapshot.value?.outcome === "expansion") return;
     void b.save().then((s) => persist(activeSlot, s));
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
@@ -518,6 +523,7 @@ const controls = {
    *  prior-run agent state so "play again" (EndScreen → replay) lands clean. */
   start(difficulty: Difficulty): void {
     if (!bridge) return;
+    setActiveSlot("default"); // a fresh game lives in the origin slot, not the last world's
     bridge.start(difficulty); // host applies reset(difficulty) and begins ticking
     updateSettings({ nextDifficulty: difficulty }); // the picked difficulty becomes the standing default
     tearDownRun(); // wipe council/sentinel/director/history (no-op on a clean fresh boot)
@@ -528,6 +534,7 @@ const controls = {
     greetAfter(BOOT_LINE_MS, difficulty);
   },
   reset(): void {
+    setActiveSlot("default"); // an in-game restart returns to the origin slot
     bridge?.reset(settings.value.nextDifficulty); // the chosen difficulty starts here
     tearDownRun();
     bridge?.setDirector(settings.value.directorEnabled); // reset() reseeds with the scheduler on
@@ -548,14 +555,17 @@ const controls = {
     if (!bridge) return;
     const s = snapshot.value;
     if (!s || s.outcome) return;
+    launching = true; // gate autosave across the whole launch → handoff window
     const save = await bridge.save();
-    // archive a LIVE copy (outcome cleared) so a later revisit resumes the colony
-    await persist(activeSlot, { ...save, state: { ...save.state, outcome: null, outcomeReason: "" } });
+    const archive = { ...save, state: { ...save.state, outcome: null, outcomeReason: "" } };
+    // log the ledger row FIRST (synchronous), so a tab-close during the remote save
+    // round-trip can't orphan the world (local archive + ledger land in one tick).
     upsertColony({
       worldId: save.state.world, slotKey: activeSlot, seed: save.seed,
       difficulty: save.state.difficulty, label: WORLD_META[save.state.world].label,
       outcome: "expansion", sols: s.sol, population: s.population, foundedAt: Date.now(),
     });
+    void persist(activeSlot, archive); // archive the LIVE copy (outcome cleared) so revisit resumes it
     // the legacy that travels: the two lowest-id living colonists (commander +
     // next-senior) by literal id, and one alien tech if any was acquired.
     const livingIds = (save.state.colonists ?? []).map((c) => c.id).sort((a, b) => a - b);
@@ -568,9 +578,14 @@ const controls = {
    *  Mirrors start() but for a planet-hop. */
   foundNext(world: World): void {
     if (!bridge || !pendingLaunch) return;
-    const seed = nextSeedFrom(pendingLaunch.seed);
     const difficulty = pendingLaunch.difficulty;
     const legacy = pendingLaunch.legacy;
+    // derive the next world's seed; if a settled colony already occupies that slot
+    // (you revisited and relaunched the same route — the parent seed is stable), keep
+    // advancing so we never silently overwrite an existing world.
+    const taken = new Set(loadLedger().colonies.map((c) => c.slotKey));
+    let seed = nextSeedFrom(pendingLaunch.seed);
+    while (taken.has(slotId(world, seed))) seed = nextSeedFrom(seed);
     const slot = slotId(world, seed);
     setActiveSlot(slot);
     bridge.start(difficulty, seed, world, legacy); // found the new run on its own slot, carrying the legacy
@@ -596,12 +611,17 @@ const controls = {
     if (!save) return; // the slot was abandoned/cleared — ignore the click
     setActiveSlot(slotKey);
     council?.reset(); sentinel?.reset(); director?.reset();
+    // clear the run-scratch tearDownRun would (minus the slot wipe revisit must avoid),
+    // so the resumed colony's epitaph/attribution reflect ITS run, not the last one.
+    lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
     dismissHint();
     messages.value = [];
     bridge.load(save); // resumes the colony byte-identical
     bridge.setDirector(settings.value.directorEnabled);
     lastRealEventT = save.state.t;
-    history = loadHistory();
+    // history isn't slot-scoped — start the resumed run's curves fresh rather than
+    // show the previous world's telemetry until new samples accrue.
+    history = resetHistory();
     startScreen.value = false;
     greetAfter(BOOT_LINE_MS, save.state.difficulty);
   },

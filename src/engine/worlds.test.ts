@@ -36,6 +36,11 @@ describe("world profiles", () => {
     expect(worldProfile("titan").hazardWeights.dust ?? 0).toBeGreaterThan(4); // > mars default weight
   });
 
+  it("worldProfile falls back to mars for an unknown/corrupt world (never throws)", () => {
+    expect(worldProfile(undefined)).toBe(WORLDS.mars);
+    expect(worldProfile("pluto" as unknown as "mars")).toBe(WORLDS.mars);
+  });
+
   it("a non-mars world is still internally deterministic (same seed → same future)", () => {
     const a = new Colony(77, "normal", "io");
     const b = new Colony(77, "normal", "io");
