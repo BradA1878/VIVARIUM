@@ -100,9 +100,19 @@ let stopSettingsWatch: (() => void) | null = null;
 let msgId = 1;
 // the persistence slot the live run reads/writes. Default reuses today's single
 // key (Mars behavior unchanged); founding/revisit point this at a world's slot.
-let activeSlot = "default";
-/** point persistence at a world's slot (founding / revisit — PTP). */
-export function setActiveSlot(slot: string): void { activeSlot = slot; }
+const ACTIVE_SLOT_KEY = "vivarium:activeslot:v1";
+function readActiveSlot(): string {
+  try { return localStorage.getItem(ACTIVE_SLOT_KEY) || "default"; } catch { return "default"; }
+}
+// the persistence slot the live run reads/writes — PERSISTED so a reload resumes
+// the world you were last on (default reuses today's single key). Founding/revisit
+// repoint it; load-on-boot reads it.
+let activeSlot = readActiveSlot();
+/** point persistence at a world's slot (founding / revisit — PTP), and remember it. */
+export function setActiveSlot(slot: string): void {
+  activeSlot = slot;
+  try { localStorage.setItem(ACTIVE_SLOT_KEY, slot); } catch { /* private mode */ }
+}
 // the leaving run's identity, captured at launch() so foundNext() can derive the
 // next world's seed and carry the difficulty across the Expansion EndScreen.
 let pendingLaunch: { seed: number; difficulty: Difficulty; world: World; legacy: LegacyManifest } | null = null;
@@ -576,6 +586,24 @@ const controls = {
     pendingLaunch = null;
     startScreen.value = false;
     greetAfter(BOOT_LINE_MS, difficulty);
+  },
+  /** revisit a settled world from the StartScreen's Colonies list: load its slot
+   *  and resume the colony live (Colony.load does the work). Mirrors load-on-boot,
+   *  NOT a fresh start — it must never clear the slot it just loaded. */
+  async revisit(slotKey: string): Promise<void> {
+    if (!bridge) return;
+    const save = await loadBest(slotKey);
+    if (!save) return; // the slot was abandoned/cleared — ignore the click
+    setActiveSlot(slotKey);
+    council?.reset(); sentinel?.reset(); director?.reset();
+    dismissHint();
+    messages.value = [];
+    bridge.load(save); // resumes the colony byte-identical
+    bridge.setDirector(settings.value.directorEnabled);
+    lastRealEventT = save.state.t;
+    history = loadHistory();
+    startScreen.value = false;
+    greetAfter(BOOT_LINE_MS, save.state.difficulty);
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };
