@@ -4,11 +4,11 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, Difficulty, Side, Snapshot,
+  BuildingDef, BuildingState, ColonyEvent, Difficulty, LegacyManifest, Side, Snapshot, World,
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  BASE_CAP, START_AMOUNT, GRID_N, SOL_LENGTH, START_TOD,
+  BASE_CAP, GRID_N, SOL_LENGTH, START_TOD,
   ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
   TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
@@ -20,8 +20,9 @@ import { recomputeCaps } from "./caps";
 import { spawnHazard, hazardViews, SCHED_FIRST } from "./hazards";
 import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData } from "./state";
-import { emptyBuilding } from "./state";
-import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed } from "./colonists";
+import { buildingFunctional } from "./state";
+import { emptyBuilding, emptyColonist } from "./state";
+import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed, baseCenter, freeCellNear } from "./colonists";
 import { computeUnlocks } from "./unlocks";
 import { seedDeposits, seedVents, seedAquifers } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
@@ -31,7 +32,7 @@ import { robotViews } from "./robots";
 import {
   START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
   MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT, AQUIFER_BACKFILL_SALT, RESUPPLY_AMOUNT,
-  ROVER_BUILD_TIME, ROBOT_BUILD_TIME,
+  ROVER_BUILD_TIME, ROBOT_BUILD_TIME, worldProfile,
 } from "./tuning";
 
 export class Colony {
@@ -43,11 +44,11 @@ export class Colony {
   private seed: number;
   private events: ColonyEvent[] = [];
 
-  constructor(seed: number = DEFAULT_SEED, difficulty: Difficulty = "normal") {
+  constructor(seed: number = DEFAULT_SEED, difficulty: Difficulty = "normal", world: World = "mars") {
     this.seed = seed >>> 0;
     this.rng = new RNG(this.seed);
     this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
-    this.s = freshState(difficulty);
+    this.s = freshState(difficulty, world);
     this.seedColony();
     this.s.started = true;
   }
@@ -70,14 +71,37 @@ export class Colony {
     return out;
   }
 
-  /** restart from the seed; omitting the difficulty keeps the current one */
-  reset(difficulty?: Difficulty): void {
+  /** restart the run. Founding (PTP) can hand in a new seed and world; omitting
+   *  any of the three keeps the current colony's value. seed/world enter as
+   *  deterministic inputs — the engine never originates them (the wall). */
+  reset(difficulty?: Difficulty, seed?: number, world?: World, legacy?: LegacyManifest): void {
+    if (seed !== undefined) this.seed = seed >>> 0;
     this.rng = new RNG(this.seed);
     this.envRng = new RNG((this.seed ^ 0x9e3779b9) >>> 0);
-    this.s = freshState(difficulty ?? this.s.difficulty);
+    this.s = freshState(difficulty ?? this.s.difficulty, world ?? this.s.world);
     this.events = [];
-    this.seedColony();
+    this.seedColony(legacy);
     this.s.started = true;
+  }
+
+  /** PTP launch (the wall): a deliberate player act — NOT a tick threshold. If a
+   *  functional Transport Pod is built and the run is still live, end it as an
+   *  EXPANSION (the run-ending that founds the next world). The engine only
+   *  records the outcome + emits the event; the main thread orchestrates the
+   *  founding (archive the world, pick the next, carry the legacy). No-op if
+   *  there's no working pod or the run already ended. */
+  launchPtp(): void {
+    if (this.s.outcome !== null) return; // the run already ended
+    // ANY intact pod will do — match the functional one directly, so a damaged pod
+    // built earlier can't mask a working one (find returns the lowest index). Gated
+    // on integrity/fault only, NOT power: a transient brownout must never brick the
+    // one-shot endgame and strand the run (the pod's 8-power draw is an ongoing cost).
+    const pod = this.s.buildings.find((b) => b.defId === "ptp" && buildingFunctional(b));
+    if (!pod) return; // need a working pod to leave
+    this.s.outcome = "expansion";
+    this.s.outcomeReason = "expansion";
+    this.s.paused = true;
+    this.emit({ type: "expansion" });
   }
 
   // ---- placement ------------------------------------------------------------
@@ -209,7 +233,7 @@ export class Colony {
   private recomputeCaps(): void { recomputeCaps(this.s); }
 
   // ---- starter colony so the sim is alive on load (doc seed) ----------------
-  private seedColony(): void {
+  private seedColony(legacy?: LegacyManifest): void {
     // the starter buildings are a gift — placement charges materials, so float
     // the budget high while seeding, then set the real starting stock after.
     this.s.materials.amount = 9999;
@@ -231,7 +255,22 @@ export class Colony {
     // collection depot: a clear drop-off just off the hub's east side
     const hubB = this.s.buildings.find((b) => DEFS[b.defId]?.isHub);
     if (hubB) this.s.depot = { gx: hubB.gx + (DEFS[hubB.defId].foot[0] ?? 2), gy: hubB.gy + 1 };
-    reconcileColonists(this.s); // four astronauts, at the hub
+    // carried legacy (PTP): seed veterans at their LITERAL ids before reconcile, so
+    // name/role (pure id hashes) and commander rank (lowest living id) carry; bump
+    // the counter past them so fresh recruits get higher ids and no later mint dups.
+    // The carried alien tech rides acquiredTech, applied by recomputeCaps below.
+    if (legacy?.veterans.length) {
+      const center = baseCenter(this.s);
+      for (const id of legacy.veterans) {
+        const cell = freeCellNear(this.s, center);
+        this.s.colonists.push(emptyColonist(id, cell.x, cell.y));
+      }
+      this.s.colonistCounter = Math.max(this.s.colonistCounter, ...legacy.veterans) + 1;
+    }
+    if (legacy?.tech && !this.s.acquiredTech.includes(legacy.tech)) {
+      this.s.acquiredTech.push(legacy.tech);
+    }
+    reconcileColonists(this.s); // fills up to population with fresh recruits (ids past any veterans)
     seedVents(this.s, this.envRng); // geothermal terrain first — deposits avoid it
     seedAquifers(this.s, this.envRng); // aquifer sites next (off vents) — deposits avoid them too
     seedDeposits(this.s, this.envRng); // scatter the resource field
@@ -286,6 +325,7 @@ export class Colony {
       dead: s.dead,
       morale: s.morale,
       difficulty: s.difficulty,
+      world: s.world,
       deadlineSol: s.deadlineSol,
       targetPop: s.targetPop,
       selfSufficientFor: s.selfSufficientFor,
@@ -393,6 +433,7 @@ export class Colony {
       morale: st.morale ?? MORALE_START,
       moraleLatch: st.moraleLatch ?? false,
       difficulty: st.difficulty ?? "normal",
+      world: st.world ?? "mars", // legacy saves predate worlds → the anchor
       acquiredTech: [...(st.acquiredTech ?? [])],
       // legacy saves carry no latch: re-derive the currently-true gates on the
       // first tick, re-announcing the new buildings once (engine/unlocks.ts)
@@ -421,18 +462,19 @@ export class Colony {
   }
 }
 
-function freshState(difficulty: Difficulty): ColonyState {
+function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState {
   const N = GRID_N;
   const prof = DIFFICULTY[difficulty];
+  const wp = worldProfile(world); // world start pools (mars == START_AMOUNT)
   return {
     N,
     grid: new Int32Array(N * N),
     buildings: [],
     pools: {
-      power: { amount: START_AMOUNT.power, capacity: BASE_CAP.power },
-      water: { amount: START_AMOUNT.water, capacity: BASE_CAP.water },
-      oxygen: { amount: START_AMOUNT.oxygen, capacity: BASE_CAP.oxygen },
-      food: { amount: START_AMOUNT.food, capacity: BASE_CAP.food },
+      power: { amount: wp.startPools.power, capacity: BASE_CAP.power },
+      water: { amount: wp.startPools.water, capacity: BASE_CAP.water },
+      oxygen: { amount: wp.startPools.oxygen, capacity: BASE_CAP.oxygen },
+      food: { amount: wp.startPools.food, capacity: BASE_CAP.food },
     },
     flow: { power: 0, water: 0, oxygen: 0, food: 0 },
     materials: { amount: prof.startMaterials, capacity: MATERIALS_CAP },
@@ -496,5 +538,6 @@ function freshState(difficulty: Difficulty): ColonyState {
     morale: MORALE_START,
     moraleLatch: false,
     difficulty,
+    world,
   };
 }

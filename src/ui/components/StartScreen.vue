@@ -8,14 +8,15 @@
    cards are pulled live from the engine's DIFFICULTY profiles, so they can't
    drift from balance. Begin routes through the store's start(difficulty) action.
    ============================================================================ */
-import { ref } from "vue";
-import type { Difficulty } from "@shared/types";
+import { ref, computed } from "vue";
+import type { Difficulty, World } from "@shared/types";
 import { Tuning } from "@/engine";
 import { useColony } from "@/ui/stores/colony";
 import { useSettings } from "@/ui/stores/settings";
+import { WORLD_META } from "@/ui/founding";
 import { audio } from "@/ui/audio";
 
-const { controls } = useColony();
+const { controls, colonies } = useColony();
 const { settings } = useSettings();
 
 const { DIFFICULTY } = Tuning;
@@ -68,6 +69,15 @@ function begin(): void {
   audio.uiTick();
   controls.start(selected.value); // lifts the worker gate on the chosen profile + greets
 }
+
+// settled worlds from the Colonies ledger — revisiting loads that slot and resumes
+// the colony live (the Round-4 entry point). Newest first.
+const ledger = computed(() => colonies());
+const worldLabel = (id: string): string => WORLD_META[id as World]?.label ?? id;
+function revisit(slotKey: string): void {
+  audio.uiTick();
+  void controls.revisit(slotKey);
+}
 </script>
 
 <template>
@@ -102,6 +112,21 @@ function begin(): void {
       </div>
 
       <button class="start-btn" @click="begin">BEGIN</button>
+
+      <div v-if="ledger.length" class="start-colonies">
+        <div class="start-colonies-label">— or return to a colony —</div>
+        <div class="colony-list">
+          <button
+            v-for="c in ledger"
+            :key="c.slotKey"
+            class="colony-chip"
+            @click="revisit(c.slotKey)"
+          >
+            <span class="colony-world">{{ worldLabel(c.worldId) }}</span>
+            <span class="colony-meta">{{ c.sols }} {{ c.sols === 1 ? "sol" : "sols" }} · {{ c.population }} souls</span>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -233,6 +258,39 @@ function begin(): void {
   border-color: var(--cyan);
   box-shadow: 0 0 22px rgba(127, 212, 232, 0.2);
 }
+
+/* the Colonies ledger — revisit a settled world (PTP). A quiet row of chips
+   under BEGIN, in the launch prompt's purple so it reads as the planet-hop. */
+.start-colonies { margin-top: 28px; }
+.start-colonies-label {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+}
+.colony-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.colony-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 13px;
+  border-radius: 4px;
+  border: 1px solid rgba(176, 130, 232, 0.35);
+  background: rgba(176, 130, 232, 0.05);
+  transition: 0.14s;
+  cursor: pointer;
+}
+.colony-chip:hover { background: rgba(176, 130, 232, 0.15); border-color: rgba(176, 130, 232, 0.6); }
+.colony-world { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: #c7a6f2; }
+.colony-meta { font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: var(--dim); }
 
 @media (max-width: 720px) {
   .start-cards { grid-template-columns: 1fr; }

@@ -14,7 +14,7 @@ import {
   BROWNOUT_DEFICIT, BROWNOUT_LOW, BROWNOUT_RECOVER_FRAC,
   RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT, RESUPPLY_BIAS,
   BIRTH_MIN_POP, BIRTH_GAP_MIN, BIRTH_GAP_SPAN, BIRTH_RETRY,
-  ROLE_BONUS, MORALE_BUMP,
+  ROLE_BONUS, MORALE_BUMP, worldProfile,
 } from "./tuning";
 import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
@@ -88,7 +88,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // hazards — the living environment (scheduler + lifecycle + effects + damage)
   updateHazards(s, dt, rng, emit);
   const mods = hazardMods(s);
-  s.solarMul = solarOutput(s) * mods.solarFactor;
+  s.solarMul = solarOutput(s) * mods.solarFactor * worldProfile(s.world).solar; // world ×solar (mars 1)
   s.windLevel = windLevel(s); // pure derivation — peaks exactly when solar dies
 
   // Earth resupply windows (doc §2.5) — a window opens on a schedule and trickles

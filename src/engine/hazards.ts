@@ -6,9 +6,9 @@
    down and hazards arrive only via triggerHazard. Pure: all randomness comes from
    the passed RNG (no Math.random / Date / async — engine determinism, doc §0).
    ============================================================================ */
-import type { ColonyEvent, HazardKind, HazardView } from "@shared/types";
+import type { ColonyEvent, HazardKind, HazardView, World } from "@shared/types";
 import { DEFS } from "./defs";
-import { difficultyProfile } from "./tuning";
+import { difficultyProfile, worldProfile } from "./tuning";
 import { idx, removeBuilding } from "./grid";
 import { recomputeCaps } from "./caps";
 import { applyStrikeInjuries } from "./injury";
@@ -68,10 +68,15 @@ export function spawnHazard(s: ColonyState, kind: HazardKind, rng: RNG, intensit
   return inten;
 }
 
-function pickKind(rng: RNG): HazardKind {
-  const total = ORDER.reduce((a, k) => a + HAZARD_META[k].weight, 0);
+function pickKind(rng: RNG, world: World): HazardKind {
+  // per-world weight OVERRIDES on HAZARD_META — still exactly ONE draw, just
+  // remapped, so the draw count is unchanged (mars has no overrides → today's
+  // stream byte-identical). 0 is respected (?? only falls through on undefined).
+  const wts = worldProfile(world).hazardWeights;
+  const weightOf = (k: HazardKind): number => wts[k] ?? HAZARD_META[k].weight;
+  const total = ORDER.reduce((a, k) => a + weightOf(k), 0);
   let r = rng.next() * total;
-  for (const k of ORDER) { r -= HAZARD_META[k].weight; if (r <= 0) return k; }
+  for (const k of ORDER) { r -= weightOf(k); if (r <= 0) return k; }
   return "dust";
 }
 
@@ -80,7 +85,7 @@ export function updateHazards(s: ColonyState, dt: number, rng: RNG, emit: Emit):
   if (!s.directorControlled) {
     s.nextHazard -= dt;
     if (s.nextHazard <= 0) {
-      const kind = pickKind(rng);
+      const kind = pickKind(rng, s.world);
       spawnHazard(s, kind, rng);
       emit({ type: "hazard_warn", kind, detail: kind, secs: Math.round(HAZARD_META[kind].warn) });
       // gap mult applies after the draw — same draw count on every difficulty

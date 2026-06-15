@@ -18,7 +18,7 @@ export const SEV: Record<EventType, number> = {
   resupply_done: 1, // the window closed — a quiet confirmation of what landed
   dusk: 1, dawn: 1, new_sol: 1, build: 0, boot: 0,
   anomaly: 3, // agent-originated (Sentinel); only the Watcher has a bank for it
-  victory: 6, defeat: 6, // campaign end — the Chronicler speaks, through anything
+  victory: 6, defeat: 6, expansion: 6, // campaign end — the Chronicler speaks, through anything
   hazard_warn: 3, hazard_start: 2, hazard_end: 1,
   strike: 0, building_damaged: 2, building_destroyed: 4,
   traders_inbound: 3, trade_done: 2, trade_left: 1, // first contact

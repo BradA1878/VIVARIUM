@@ -11,6 +11,20 @@ export type Resource = "power" | "water" | "oxygen" | "food";
  *  starting materials) live in engine/tuning.ts DIFFICULTY */
 export type Difficulty = "easy" | "normal" | "hard";
 
+/** the world a run is founded on. mars is the origin/anchor (its profile is
+   today's constants); ceres/io/titan are destinations reached via the PTP. World
+   is an axis orthogonal to Difficulty — the two profiles compose. */
+export type World = "mars" | "ceres" | "io" | "titan";
+
+/** what a PTP launch carries from the world you leave into the next run (PTP):
+   a couple of veteran colonists BY THEIR LITERAL ID (name + role derive from the
+   id, so they're recognizably the same person — the lowest becomes the new
+   commander) and one alien tech. Applied as plain seed state, never live mutation. */
+export interface LegacyManifest {
+  veterans: number[];
+  tech?: string;
+}
+
 export const RESOURCES: Resource[] = ["power", "water", "oxygen", "food"];
 
 /** A side of a footprint / a rotation step. N=0, E=1, S=2, W=3. Grid deltas:
@@ -334,6 +348,8 @@ export interface Snapshot {
   morale: number;
   /** the active difficulty profile (chosen at reset, persisted in state) */
   difficulty: Difficulty;
+  /** the world this run was founded on (PTP) — mars unless reached via expansion */
+  world: World;
 
   // ---- campaign (doc §2.5) ----
   /** the sol Earth's launch window closes; reach self-sufficiency before then */
@@ -409,12 +425,14 @@ export type EventType =
   /** campaign end states (doc §2.5) */
   | "victory"
   | "defeat"
+  /** the PTP launched — a deliberate run-ending that founds the next world */
+  | "expansion"
   /** agent-layer only — emitted by the Sentinel (Phase 13), never by the engine */
   | "anomaly"
   /** agent-layer only — the council's idle-banter beat, never emitted by the engine */
   | "idle";
 
-export type Outcome = "victory" | "defeat" | null;
+export type Outcome = "victory" | "defeat" | "expansion" | null;
 
 /** Emitted by the engine for the UI and (optionally) for VIVARIUM. Never read
  *  back into the tick (doc §0). */

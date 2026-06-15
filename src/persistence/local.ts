@@ -2,33 +2,95 @@
    localStorage adapter — the offline persistence floor (doc §5: "localStorage is
    genuinely sufficient for an Easter egg"). Also the fallback cache when Mongo
    is unreachable.
+
+   Slot-aware (PTP): each settled world persists under its own key. The default
+   slot keeps the legacy unsuffixed key so saves from before planet-hopping
+   survive untouched. Storage is injectable (the settings.ts pattern) so the
+   adapter is testable in plain node, where there is no localStorage.
    ============================================================================ */
 import type { SaveData } from "@/engine";
 import { encode, decode } from "./save";
 
-const KEY = "vivarium:save:v1";
+export type PersistStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-export function saveLocal(save: SaveData): void {
+const PREFIX = "vivarium:save:v1";
+// the slot index lives OUTSIDE the slot keyspace (PREFIX:<slot>) so no slot id can
+// ever alias it — e.g. a world keyed "index" would otherwise collide with PREFIX:index.
+export const SLOT_INDEX_KEY = "vivarium:slots:v1";
+/** the default slot keeps the legacy unsuffixed key — existing saves survive */
+const keyFor = (slot: string): string => (slot === "default" ? PREFIX : `${PREFIX}:${slot}`);
+
+/** the browser's localStorage when it exists and is reachable, else null (node, SSR) */
+function defaultStorage(): PersistStorage | null {
   try {
-    localStorage.setItem(KEY, encode(save));
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** the set of known slots. A legacy default save predates the index, so surface
+ *  it whenever the unsuffixed key is present. */
+function readIndex(st: PersistStorage): string[] {
+  let list: string[] = [];
+  try {
+    const raw = st.getItem(SLOT_INDEX_KEY);
+    const arr = raw ? (JSON.parse(raw) as unknown) : [];
+    list = Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    /* corrupt index — fall through with an empty list, but still surface the
+       legacy default below so a loadable back-compat save is never hidden */
+  }
+  try {
+    if (st.getItem(PREFIX) && !list.includes("default")) list.push("default");
+  } catch {
+    /* ignore */
+  }
+  return list;
+}
+
+function writeIndex(st: PersistStorage, slots: string[]): void {
+  try {
+    st.setItem(SLOT_INDEX_KEY, JSON.stringify([...new Set(slots)]));
   } catch {
     /* quota / private mode — non-fatal */
   }
 }
 
-export function loadLocal(): SaveData | null {
+export function saveLocal(slot: string, save: SaveData, storage?: PersistStorage): void {
+  const st = storage ?? defaultStorage();
+  if (!st) return;
   try {
-    const text = localStorage.getItem(KEY);
+    st.setItem(keyFor(slot), encode(save));
+    writeIndex(st, [...readIndex(st), slot]);
+  } catch {
+    /* quota / private mode — non-fatal */
+  }
+}
+
+export function loadLocal(slot: string, storage?: PersistStorage): SaveData | null {
+  const st = storage ?? defaultStorage();
+  if (!st) return null;
+  try {
+    const text = st.getItem(keyFor(slot));
     return text ? decode(text) : null;
   } catch {
     return null;
   }
 }
 
-export function clearLocal(): void {
+export function clearLocal(slot: string, storage?: PersistStorage): void {
+  const st = storage ?? defaultStorage();
+  if (!st) return;
   try {
-    localStorage.removeItem(KEY);
+    st.removeItem(keyFor(slot));
+    writeIndex(st, readIndex(st).filter((s) => s !== slot));
   } catch {
     /* ignore */
   }
+}
+
+export function listLocal(storage?: PersistStorage): string[] {
+  const st = storage ?? defaultStorage();
+  return st ? readIndex(st) : [];
 }

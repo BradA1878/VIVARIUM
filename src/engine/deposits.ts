@@ -12,8 +12,9 @@ import type { DepositKind } from "@shared/types";
 import {
   DEPOSIT_COUNT, DEPOSIT_MIN, DEPOSIT_SPAN, DEPOSIT_EDGE, DEPOSIT_CLEAR,
   DEPOSIT_RESPAWN, DEPOSIT_FIELD_MAX,
-  VENT_CLEAR, VENT_COUNT, VENT_EDGE, VENT_SPACING,
+  VENT_CLEAR, VENT_EDGE, VENT_SPACING,
   AQUIFER_CLEAR, AQUIFER_COUNT, AQUIFER_EDGE, AQUIFER_SPACING,
+  worldProfile, type WorldProfile,
 } from "./tuning";
 import type { ColonyState } from "./state";
 import { idx } from "./grid";
@@ -24,11 +25,11 @@ import type { RNG } from "./rng";
  *  underran demand by ~sol 4 on an untouched colony — food needs the share.
  *  Still exactly ONE rng draw, so the env stream's draw count (and every
  *  position/amount after it) is unchanged. */
-function pickKind(rng: RNG): DepositKind {
+function pickKind(rng: RNG, w: WorldProfile): DepositKind {
   const r = rng.next();
-  if (r < 0.4) return "ore";    // build economy
-  if (r < 0.72) return "ice";   // → water
-  return "cache";               // → food — common enough to keep pace
+  if (r < w.oreCut) return "ore";  // build economy (mars 0.4)
+  if (r < w.iceCut) return "ice";  // → water (mars 0.72)
+  return "cache";                  // → food — common enough to keep pace
 }
 
 /** try to place one deposit on a free cell away from the base; returns true if placed */
@@ -44,7 +45,7 @@ function tryPlace(s: ColonyState, rng: RNG): boolean {
     if (s.vents.some((v) => v.gx === gx && v.gy === gy)) continue;    // not on a vent
     if (s.aquifers.some((a) => a.gx === gx && a.gy === gy)) continue; // not on an aquifer
     if (Math.hypot(gx - base.x, gy - base.y) < DEPOSIT_CLEAR) continue; // not in the yard
-    const kind = pickKind(rng);
+    const kind = pickKind(rng, worldProfile(s.world));
     s.deposits.push({
       id: s.depositCounter++, gx, gy, kind,
       amount: DEPOSIT_MIN + rng.next() * DEPOSIT_SPAN,
@@ -69,7 +70,7 @@ export function seedVents(s: ColonyState, rng: RNG): void {
   const lo = VENT_EDGE, hi = s.N - 1 - VENT_EDGE;
   const span = hi - lo;
   const base = baseCenter(s);
-  for (let i = 0; i < VENT_COUNT; i++) {
+  for (let i = 0; i < worldProfile(s.world).vents; i++) {
     for (let attempt = 0; attempt < 12; attempt++) {
       const gx = lo + Math.floor(rng.next() * (span + 1));
       const gy = lo + Math.floor(rng.next() * (span + 1));

@@ -6,7 +6,7 @@
    ============================================================================ */
 import type {
   BuildingState, ColonistAct, DepositKind, Difficulty, HazardKind, HazardPhase,
-  Outcome, Pool, Resource, Side, TradeGive, TradePhase, UfoPhase, Weather,
+  Outcome, Pool, Resource, Side, TradeGive, TradePhase, UfoPhase, Weather, World,
 } from "@shared/types";
 
 /** a live hazard with the bookkeeping the tick needs (the HUD sees HazardView) */
@@ -256,6 +256,9 @@ export interface ColonyState {
   /** the active difficulty profile (tuning.ts DIFFICULTY) — chosen at reset,
    *  multipliers consumed by hazards/ufo, persisted with the colony */
   difficulty: Difficulty;
+  /** the world this run was founded on (PTP). mars is the anchor (today's
+   *  constants); set at reset/founding, persisted with the colony, legacy → mars */
+  world: World;
 }
 
 /** Save payload: state plus the RNG seed/state for a bit-identical resume. */

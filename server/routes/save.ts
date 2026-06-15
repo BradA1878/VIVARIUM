@@ -49,3 +49,32 @@ persistence.get("/load", async (c) => {
     return c.json({ error: "read failed", fallback: "local" }, 503);
   }
 });
+
+// the Colonies ledger lists settled worlds — one slot per world. Server down →
+// empty list so the client falls back to its local index (never an error here).
+persistence.get("/saves", async (c) => {
+  const col = await saves();
+  if (!col) return c.json({ slots: [] });
+  try {
+    const docs = await col.find({}, { projection: { slot: 1, updatedAt: 1, _id: 0 } }).toArray();
+    return c.json({ slots: docs });
+  } catch (err) {
+    console.warn("[saves] list failed:", (err as Error).message);
+    return c.json({ slots: [] });
+  }
+});
+
+// abandon a settled world — drop its slot document.
+persistence.delete("/save", async (c) => {
+  const col = await saves();
+  if (!col) return c.json({ error: "persistence unavailable", fallback: "local" }, 503);
+
+  const slot = c.req.query("slot") || "default";
+  try {
+    await col.deleteOne({ slot });
+    return c.json({ ok: true });
+  } catch (err) {
+    console.warn("[save] delete failed:", (err as Error).message);
+    return c.json({ error: "delete failed", fallback: "local" }, 503);
+  }
+});

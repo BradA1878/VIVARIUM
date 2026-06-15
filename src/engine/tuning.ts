@@ -2,7 +2,7 @@
    Tuning knobs — the balance lives here, never in the engine logic (doc §2.1).
    These are the values the prototype settled on (doc §4.4).
    ============================================================================ */
-import type { Difficulty, Resource } from "@shared/types";
+import type { Difficulty, HazardKind, Resource, World } from "@shared/types";
 
 /** Per-colonist life-support demand, per second (doc §4.4). */
 export const PERSON: Record<"oxygen" | "water" | "food", number> = {
@@ -323,4 +323,59 @@ export const DIFFICULTY: Record<Difficulty, DifficultyProfile> = {
 /** profile lookup tolerant of pre-difficulty saves / minimal test states */
 export function difficultyProfile(d: Difficulty | undefined): DifficultyProfile {
   return DIFFICULTY[d ?? "normal"];
+}
+
+/* ----------------------------------------------------------------------------
+   World profiles (PTP) — an axis ORTHOGONAL to difficulty. A world reshapes the
+   ENVIRONMENT (sun, wind, geothermal, deposit mix, hazard mix, starting stock)
+   on the unchanged engine. mars is the ANCHOR: every field is today's constant,
+   so the Mars path stays byte-identical and the determinism suite is untouched.
+   World levers apply as multipliers/lookups AFTER the rng draw (or change only
+   seeding INPUTS), so draw COUNT is preserved — there is no cross-world replay
+   parity (each world is its own seed + slot), only within-world determinism.
+   ---------------------------------------------------------------------------- */
+export interface WorldProfile {
+  /** ×solar generation (mars 1; ceres weak; titan near-dead) */
+  solar: number;
+  /** ×wind level before clamp (mars 1; titan strong, the lifeline) */
+  wind: number;
+  /** geothermal vent count seeded off the env-rng (mars VENT_COUNT) */
+  vents: number;
+  /** deposit-kind cuts: r < oreCut → ore; r < iceCut → ice; else cache (mars 0.4 / 0.72) */
+  oreCut: number;
+  iceCut: number;
+  /** per-kind hazard weight OVERRIDES on HAZARD_META (mars {} → today's weights);
+   *  pickKind is one draw remapped, so the draw count is unchanged */
+  hazardWeights: Partial<Record<HazardKind, number>>;
+  /** starting pool amounts (mars START_AMOUNT) */
+  startPools: Record<Resource, number>;
+}
+
+export const WORLDS: Record<World, WorldProfile> = {
+  // the anchor — today's constants exactly (Mars stays byte-identical)
+  mars: { solar: 1, wind: 1, vents: VENT_COUNT, oreCut: 0.4, iceCut: 0.72, hazardWeights: {}, startPools: { ...START_AMOUNT } },
+  // ice everywhere, a weak sun, no dust — water is free, POWER is the squeeze
+  ceres: {
+    solar: 0.6, wind: 1.1, vents: 2, oreCut: 0.28, iceCut: 0.82,
+    hazardWeights: { dust: 0, coldsnap: 5, flare: 3 },
+    startPools: { power: 45, water: 60, oxygen: 35, food: 45 },
+  },
+  // abundant geothermal but quake-heavy; ore-rich, ice-poor — free power if you survive the shaking
+  io: {
+    solar: 1, wind: 0.9, vents: 6, oreCut: 0.55, iceCut: 0.78,
+    hazardWeights: { quake: 6, meteor: 3, dust: 2 },
+    startPools: { power: 60, water: 30, oxygen: 35, food: 45 },
+  },
+  // no real sun — strong, steady wind is the lifeline; a power buffer to bootstrap toward turbines
+  titan: {
+    solar: 0.2, wind: 1.7, vents: 3, oreCut: 0.4, iceCut: 0.72,
+    hazardWeights: { dust: 6, coldsnap: 3 },
+    startPools: { power: 80, water: 40, oxygen: 35, food: 45 }, // full base reserve (capped at BASE_CAP) to bootstrap with no sun
+  },
+};
+
+/** world lookup tolerant of pre-PTP saves / minimal test states / a corrupt world
+ *  string (falls back to the mars anchor rather than throwing on the first tick) */
+export function worldProfile(w: World | undefined): WorldProfile {
+  return WORLDS[w ?? "mars"] ?? WORLDS.mars;
 }

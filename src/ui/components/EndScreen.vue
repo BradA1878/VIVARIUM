@@ -6,26 +6,42 @@
    curves, the event ledger, the planet's cross-run dossier, and the terms of the
    next attempt. */
 import { computed } from "vue";
-import type { Difficulty, EventType, HazardKind } from "@shared/types";
+import type { Difficulty, EventType, HazardKind, Outcome, World } from "@shared/types";
 import { useColony } from "@/ui/stores/colony";
 import { useSettings } from "@/ui/stores/settings";
 import { RES } from "@/ui/resources";
+import { destinationsFrom, WORLD_META } from "@/ui/founding";
 import Sparkline from "./Sparkline.vue";
 
-const { snapshot, controls, runHistory, runEpitaph, directorDossier } = useColony();
+const { snapshot, controls, runHistory, runEpitaph, directorDossier, colonies } = useColony();
 const { settings, updateSettings } = useSettings();
 
 const s = computed(() => snapshot.value);
 const won = computed(() => s.value?.outcome === "victory");
+const isExpansion = computed(() => s.value?.outcome === "expansion");
+const screenClass = computed(() => (won.value ? "win" : isExpansion.value ? "expansion" : "lose"));
 
-const headline = computed(() => (won.value ? "SELF-SUFFICIENT" : "THE COLONY IS LOST"));
+const headline = computed(() =>
+  won.value ? "SELF-SUFFICIENT" : isExpansion.value ? "TRANSPORT POD AWAY" : "THE COLONY IS LOST",
+);
 const subline = computed(() => {
   if (!s.value) return "";
   if (won.value) return "It needs Earth no longer. The watch holds.";
+  if (isExpansion.value) return "This colony stands on its own. Choose where the work continues.";
   return s.value.outcomeReason === "window"
     ? "The launch window closed before the colony could stand on its own."
     : "The last of them stopped breathing. Only the record remains.";
 });
+
+// ---- expansion: the next-world picker + the cross-run colonies ledger ----------
+const META = WORLD_META;
+const destinations = computed<World[]>(() => (s.value ? destinationsFrom(s.value.world) : []));
+const ledger = computed(() => colonies());
+const worldLabel = (id: string): string => META[id as World]?.label ?? id;
+const OUTCOME_WORD: Record<string, string> = {
+  victory: "self-sufficient", defeat: "lost", expansion: "expanded", "": "active",
+};
+const outcomeWord = (o: Outcome): string => OUTCOME_WORD[o ?? ""] ?? "active";
 
 // the run report reads once the outcome is set; the store keeps recording until then
 const hist = computed(() => (s.value?.outcome ? runHistory() : null));
@@ -105,7 +121,7 @@ const runDiff = computed(
 </script>
 
 <template>
-  <div v-if="s && s.outcome" class="endscreen" :class="won ? 'win' : 'lose'">
+  <div v-if="s && s.outcome" class="endscreen" :class="screenClass">
     <div class="end-inner">
       <div class="end-mark">{{ headline }}</div>
       <div class="end-sub">{{ subline }}</div>
@@ -160,19 +176,47 @@ const runDiff = computed(
         <div class="dos-bias">{{ biasLine }}</div>
       </div>
 
-      <div class="end-next">
-        <span class="end-next-label">NEXT RUN</span>
-        <button
-          v-for="d in DIFFS"
-          :key="d.value"
-          class="end-diff"
-          :class="{ on: settings.nextDifficulty === d.value }"
-          @click="updateSettings({ nextDifficulty: d.value })"
-        >
-          {{ d.label }}
-        </button>
+      <div v-if="ledger.length" class="end-sec colonies">
+        <div class="end-sec-title">COLONIES</div>
+        <div v-for="c in ledger" :key="c.slotKey" class="col-row">
+          <span class="col-world">{{ worldLabel(c.worldId) }}</span>
+          <span class="col-meta">
+            {{ c.sols }} {{ c.sols === 1 ? "sol" : "sols" }} · {{ c.population }} souls · {{ outcomeWord(c.outcome) }}
+          </span>
+        </div>
       </div>
-      <button class="end-btn" @click="controls.replay()">BEGIN AGAIN</button>
+
+      <!-- expansion: choose where the work continues; otherwise the next-run controls -->
+      <div v-if="isExpansion" class="end-worlds">
+        <div class="end-sec-title">CHOOSE THE NEXT WORLD</div>
+        <div class="world-cards">
+          <button
+            v-for="w in destinations"
+            :key="w"
+            class="world-card"
+            @click="controls.foundNext(w)"
+          >
+            <div class="world-name">{{ META[w].label }}</div>
+            <div class="world-blurb">{{ META[w].blurb }}</div>
+            <div class="world-go">LAUNCH &#9656;</div>
+          </button>
+        </div>
+      </div>
+      <template v-else>
+        <div class="end-next">
+          <span class="end-next-label">NEXT RUN</span>
+          <button
+            v-for="d in DIFFS"
+            :key="d.value"
+            class="end-diff"
+            :class="{ on: settings.nextDifficulty === d.value }"
+            @click="updateSettings({ nextDifficulty: d.value })"
+          >
+            {{ d.label }}
+          </button>
+        </div>
+        <button class="end-btn" @click="controls.replay()">BEGIN AGAIN</button>
+      </template>
     </div>
   </div>
 </template>
@@ -261,6 +305,32 @@ const runDiff = computed(
 }
 .end-diff:hover { color: var(--ink); border-color: rgba(127, 212, 232, 0.4); }
 .end-diff.on { color: var(--cyan); border-color: rgba(127, 212, 232, 0.5); background: rgba(127, 212, 232, 0.1); }
+
+/* expansion — the planet-hop's own accent (purple, matching the launch prompt) */
+.endscreen.expansion .end-mark { color: #c7a6f2; }
+
+.colonies { text-align: left; }
+.col-row {
+  display: flex; align-items: baseline; gap: 10px;
+  font-family: var(--mono); padding: 4px 0;
+  border-bottom: 1px solid var(--hair2);
+}
+.col-world { font-size: 11px; color: #e6eef1; letter-spacing: 0.08em; min-width: 60px; }
+.col-meta { font-size: 10px; color: var(--dim); letter-spacing: 0.04em; }
+
+.end-worlds { margin: 8px 0 14px; }
+.world-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;
+}
+.world-card {
+  text-align: left; padding: 11px 12px; border-radius: 4px;
+  border: 1px solid rgba(176, 130, 232, 0.4); background: rgba(176, 130, 232, 0.06);
+  transition: 0.14s; cursor: pointer;
+}
+.world-card:hover { background: rgba(176, 130, 232, 0.16); border-color: rgba(176, 130, 232, 0.7); }
+.world-name { font-family: var(--mono); font-size: 13px; letter-spacing: 0.1em; color: #c7a6f2; margin-bottom: 5px; }
+.world-blurb { font-size: 10.5px; line-height: 1.4; color: var(--dim); margin-bottom: 8px; }
+.world-go { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: #c7a6f2; }
 
 @media (max-width: 880px) {
   .end-charts { grid-template-columns: 1fr; }

@@ -2,22 +2,41 @@
    Persistence orchestration: Mongo when reachable, localStorage always as the
    cache/fallback (doc §5). Load prefers the networked save (cross-device), then
    the local one. Save writes both so an offline reload still resumes.
+
+   Slot-aware (PTP): every call carries a slot id — one settled world per slot.
+   listSlots / deleteSlot back the cross-run Colonies ledger (revisit / abandon).
    ============================================================================ */
 import type { SaveData } from "@/engine";
-import { saveLocal, loadLocal, clearLocal } from "./local";
-import { saveRemote, loadRemote } from "./remote";
+import { saveLocal, loadLocal, clearLocal, listLocal } from "./local";
+import { saveRemote, loadRemote, listRemote, deleteRemote } from "./remote";
 
-/** the best available save: networked first, then local */
-export async function loadBest(): Promise<SaveData | null> {
-  const remote = await loadRemote();
+/** the best available save for `slot`: networked first, then local */
+export async function loadBest(slot: string): Promise<SaveData | null> {
+  const remote = await loadRemote(slot);
   if (remote) return remote;
-  return loadLocal();
+  return loadLocal(slot);
 }
 
-/** persist everywhere — Mongo (best effort) + localStorage (always) */
-export async function persist(save: SaveData): Promise<void> {
-  saveLocal(save); // synchronous, can't fail the caller
-  await saveRemote(save); // best effort; falls back silently
+/** persist `slot` everywhere — Mongo (best effort) + localStorage (always) */
+export async function persist(slot: string, save: SaveData): Promise<void> {
+  saveLocal(slot, save); // synchronous, can't fail the caller
+  await saveRemote(slot, save); // best effort; falls back silently
+}
+
+/** every known slot — the union of networked and local (the ledger's source of truth) */
+export async function listSlots(): Promise<string[]> {
+  const remote = await listRemote(); // [] when the server is down
+  return [...new Set([...remote, ...listLocal()])];
+}
+
+/** forget a settled world — remove its slot from Mongo and localStorage.
+ *  Note: if the remote breaker is tripped (server down), deleteRemote no-ops and
+ *  the Mongo doc survives; it can resurface via listRemote after recovery. The
+ *  ledger UI (slice 4/7) reconciles this — locally-deleted is authoritative — and
+ *  is where a pending-delete tombstone/retry belongs if cross-device drift bites. */
+export async function deleteSlot(slot: string): Promise<void> {
+  clearLocal(slot);
+  await deleteRemote(slot);
 }
 
 export { clearLocal };

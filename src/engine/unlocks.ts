@@ -33,6 +33,12 @@ export const GATES: Record<string, (s: ColonyState) => boolean> = {
   // have" intent; the population/greenhouse gate keeps it a real progression step.)
   reclaimer: (s) =>
     s.population >= 6 || s.buildings.some((b) => b.defId === "greenhouse"),
+  // the endgame: only once the colony is thriving PAST the reactor tier — a built
+  // reactor plus a real settlement's population and a materials stockpile. The
+  // prize you launch from. (threshold tuned in balance — design open question #1)
+  ptp: (s) =>
+    s.buildings.some((b) => b.defId === "reactor") &&
+    s.population >= 12 && s.materials.amount >= 300,
 };
 
 /** is this def still behind its gate? Founding defs are never locked.

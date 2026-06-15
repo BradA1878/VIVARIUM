@@ -7,7 +7,7 @@
    ============================================================================ */
 import {
   WIND_BASE_LEVEL, WIND_DIURNAL, WIND_DUST_BOOST, WIND_MIN, WIND_SWELL,
-  WIND_SWELL_PERIOD,
+  WIND_SWELL_PERIOD, worldProfile,
 } from "./tuning";
 import type { ColonyState } from "./state";
 
@@ -24,9 +24,10 @@ function maxActiveDustIntensity(s: ColonyState): number {
  *  DAY_START..DAY_END midpoint), so the diurnal term bottoms exactly when the
  *  panels peak. */
 export function windLevel(s: ColonyState): number {
-  const raw = WIND_BASE_LEVEL
+  const raw = (WIND_BASE_LEVEL
     - WIND_DIURNAL * Math.cos(2 * Math.PI * (s.tod - 0.51))
     + WIND_SWELL * Math.sin((2 * Math.PI * (s.sol + s.tod)) / WIND_SWELL_PERIOD)
-    + WIND_DUST_BOOST * maxActiveDustIntensity(s);
+    + WIND_DUST_BOOST * maxActiveDustIntensity(s))
+    * worldProfile(s.world).wind; // world ×wind before clamp (mars 1; titan strong)
   return Math.max(WIND_MIN, Math.min(1, raw));
 }
