@@ -322,8 +322,14 @@ function goTo(slotKey: string, target: SaveData): void {
   // credit any inter-planet shipments that have ARRIVED at this world, then drop them
   // from the queue — synchronously, before the async switch (exactly-once, ordered by id).
   const matured = maturedShipments(slotKey, Date.now());
-  if (matured.length) removeShipments(matured.map((s) => s.id));
   bridge.switchColony(target, steps, settings.value.directorEnabled, matured.map((s) => s.manifest)); // credit + catch-up + resume
+  // Drop the credited shipments only AFTER the credit is durable: persist the credited
+  // (+caught-up) target first, then remove the queue rows. A tab-close before this can't lose
+  // the credit — the shipment stays queued and simply re-credits on the next switch (its credit
+  // was lost too). Safe: no mass lost, no double-credit.
+  if (matured.length) {
+    void bridge.save().then((s) => { persist(slotKey, s); removeShipments(matured.map((m) => m.id)); });
+  }
   lastRealEventT = target.state.t;
   history = resetHistory();
   startScreen.value = false;
@@ -769,9 +775,12 @@ const controls = {
   /** send an inter-planet shipment from the LIVE colony to another settled world: debit
    *  the sender in its tick, then queue it on the ledger for the destination to credit
    *  on arrival (after transitSols of transit). */
-  dispatchShipment(toSlot: string, manifest: ShipmentManifest, transitSols = 1): void {
+  async dispatchShipment(toSlot: string, manifest: ShipmentManifest, transitSols = 1): Promise<void> {
     if (!bridge || toSlot === activeSlot) return;
-    bridge.dispatchShipment(manifest); // debit the live colony (deterministic, in-tick)
+    bridge.dispatchShipment(manifest);   // debit the live colony in its tick (deterministic)
+    const debited = await bridge.save(); // capture the DEBITED state and make it durable BEFORE the shipment
+    await persist(activeSlot, debited);  // is queued — so a tab-close can't keep the shipment without the
+    refreshLedgerRow(debited);           // matching debit (no mass duplication). The queue row lands last.
     addShipment({ fromSlot: activeSlot, toSlot, manifest, dispatchedAt: Date.now(), transitSols });
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },

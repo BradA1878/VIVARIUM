@@ -54,6 +54,7 @@ export class SimHost {
         this.colony.setDirector(false);        // catch-up runs the engine scheduler (the main-thread Director isn't in the fast-forward)
         const events = this.colony.fastForward(cmd.steps, true); // collect the off-screen events for the "while you were away" digest
         this.colony.setDirector(cmd.director); // restore the player's director setting for live play
+        this.colony.setPaused(false);          // a switched-to colony always resumes RUNNING (even if it was saved paused)
         this.started = true;                   // the switched colony ticks at once
         // Return early (like `save`): the catch-up report + the post-catch-up snapshot.
         // The events ride the report ONLY — routing them through `events` would replay
