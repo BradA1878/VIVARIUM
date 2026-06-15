@@ -1,10 +1,14 @@
 /* ============================================================================
-   The Martian surface — a continuous displaced rust plane (no checkerboard) with
+   The colony's surface — a continuous displaced plane (no checkerboard) with
    instanced boulders scattered past the play grid. Noise + colour ported from
-   render.js (fbm / drawTerrain). InstancedMesh for the rock field (doc §1).
+   render.js (fbm / drawTerrain). InstancedMesh for the rock field (doc §1). The
+   seeds + palette + rock/monolith tints are per-WORLD (worldlook.ts); Mars is
+   the anchor and reproduces today's rust plane exactly.
    ============================================================================ */
 import * as THREE from "three";
+import type { World } from "@shared/types";
 import { CELL, GridSpace } from "./coords";
+import { worldLook, type WorldLook } from "./worldlook";
 
 function hash(x: number, y: number): number {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -36,11 +40,6 @@ const smooth01 = (t: number): number => {
   return c * c * (3 - 2 * c);
 };
 
-const RUST_LO = new THREE.Color(54 / 255, 28 / 255, 21 / 255);
-const RUST_HI = new THREE.Color(120 / 255, 64 / 255, 42 / 255);
-const OCHRE = new THREE.Color(108 / 255, 58 / 255, 34 / 255);
-const BASALT = new THREE.Color(24 / 255, 13 / 255, 11 / 255);
-
 export class Terrain {
   readonly group = new THREE.Group();
   private disposables: (THREE.BufferGeometry | THREE.Material)[] = [];
@@ -49,7 +48,14 @@ export class Terrain {
    *  rock/monolith scatter so everything sits on the same ground. */
   private sample: (x: number, z: number) => { h: number; ridge: number; n: number; dune: number };
 
-  constructor(grid: GridSpace, margin = 10) {
+  constructor(grid: GridSpace, world: World = "mars", margin = 10) {
+    const look = worldLook(world);
+    // per-world ground palette, minted once (Mars values reproduce RUST_LO/HI,
+    // OCHRE, BASALT exactly — see worldlook.ts)
+    const groundLo = new THREE.Color(look.ground.lo);
+    const groundHi = new THREE.Color(look.ground.hi);
+    const accent = new THREE.Color(look.ground.accent);
+    const ridgeColor = new THREE.Color(look.ground.ridge);
     const span = (grid.N + margin * 2) * CELL;
     const segs = grid.N + margin * 2;
     const half = grid.half();
@@ -82,11 +88,11 @@ export class Terrain {
       const x = pos.getX(i), z = pos.getZ(i);
       const s = this.sample(x, z);
       pos.setY(i, s.h);
-      const c = RUST_LO.clone().lerp(RUST_HI, Math.min(1, s.n * 0.72 + s.dune * 0.28));
-      c.lerp(OCHRE, s.dune * 0.3);
-      // ridge tops/faces fall toward dark basalt so the far relief reads as
-      // shadowed rock against the fog (vertex colours only — no textures)
-      if (s.ridge > 0) c.lerp(BASALT, Math.min(0.7, s.ridge * 0.38));
+      const c = groundLo.clone().lerp(groundHi, Math.min(1, s.n * 0.72 + s.dune * 0.28));
+      c.lerp(accent, s.dune * 0.3);
+      // ridge tops/faces fall toward dark shadowed rock so the far relief reads
+      // against the fog (vertex colours only — no textures)
+      if (s.ridge > 0) c.lerp(ridgeColor, Math.min(0.7, s.ridge * 0.38));
       colors.push(c.r, c.g, c.b);
     }
     geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
@@ -98,14 +104,14 @@ export class Terrain {
     this.disposables.push(geo, mat);
 
     // ---- instanced boulders past the play grid ----
-    this.scatterRocks(grid, margin);
+    this.scatterRocks(grid, margin, look);
 
     // ---- distant monoliths on the far relief ----
-    this.scatterMonoliths(edge);
+    this.scatterMonoliths(edge, look);
   }
 
-  private scatterRocks(grid: GridSpace, margin: number): void {
-    const rng = mulberry(98213);
+  private scatterRocks(grid: GridSpace, margin: number, look: WorldLook): void {
+    const rng = mulberry(look.rockSeed);
     const count = 90;
     const rockGeo = new THREE.IcosahedronGeometry(1, 0);
     // rough up the rock a touch
@@ -115,7 +121,7 @@ export class Terrain {
       rp.setXYZ(i, rp.getX(i) * f, rp.getY(i) * f * 0.7, rp.getZ(i) * f);
     }
     rockGeo.computeVertexNormals();
-    const rockMat = new THREE.MeshStandardMaterial({ color: 0x5a3322, roughness: 0.95, metalness: 0.03 });
+    const rockMat = new THREE.MeshStandardMaterial({ color: look.rockColor, roughness: 0.95, metalness: 0.03 });
     const mesh = new THREE.InstancedMesh(rockGeo, rockMat, count);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -150,12 +156,12 @@ export class Terrain {
   /** ~7 tapered five-sided basalt monoliths out on the far relief — tall
    *  silhouettes for the fog line. Their rng is a separate seeded stream, so
    *  the boulder field above is untouched by their draws. */
-  private scatterMonoliths(edge: number): void {
-    const rng = mulberry(0x77aa);
+  private scatterMonoliths(edge: number, look: WorldLook): void {
+    const rng = mulberry(look.monolithSeed);
     const count = 7;
     const geo = new THREE.CylinderGeometry(0.34, 0.62, 1, 5, 1);
     geo.translate(0, 0.5, 0); // base at y = 0 so scale.y sets the height
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2a1a16, roughness: 0.92, metalness: 0.05 });
+    const mat = new THREE.MeshStandardMaterial({ color: look.monolithColor, roughness: 0.92, metalness: 0.05 });
     const mesh = new THREE.InstancedMesh(geo, mat, count);
     mesh.castShadow = false; // far outside the shadow camera — never pay for it
     const dummy = new THREE.Object3D();
