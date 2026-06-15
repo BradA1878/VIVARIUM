@@ -8,7 +8,7 @@ import type {
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  BASE_CAP, GRID_N, SOL_LENGTH, START_TOD,
+  BASE_CAP, GRID_N, SOL_LENGTH, START_TOD, CATCHUP_STEP,
   ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
   TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
@@ -68,6 +68,26 @@ export class Colony {
     if (this.events.length === 0) return [];
     const out = this.events;
     this.events = [];
+    return out;
+  }
+
+  /** Deterministically advance the colony by `budgetSeconds` of sim time, in fixed
+   *  CATCHUP_STEP sub-steps — the catch-up that fast-forwards an away colony on switch
+   *  (parallel-colonies Round 4). Reproducible: same save + same budget → byte-identical
+   *  (a FIXED dt schedule + seeded RNG). Stops early once the run ends, so a finished
+   *  colony is never over-ticked. `collect` accumulates the emitted events for the
+   *  "while you were away" digest; otherwise they're discarded. The budget is computed
+   *  on the MAIN thread (the engine never reads a clock — the wall). */
+  fastForward(budgetSeconds: number, collect = false): ColonyEvent[] {
+    const out: ColonyEvent[] = [];
+    let remaining = Math.max(0, budgetSeconds);
+    while (remaining > 1e-9 && this.s.outcome === null) {
+      const dt = Math.min(CATCHUP_STEP, remaining);
+      this.tick(dt);
+      if (collect) out.push(...this.drainEvents());
+      else this.events = [];
+      remaining -= dt;
+    }
     return out;
   }
 

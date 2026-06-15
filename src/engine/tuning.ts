@@ -32,6 +32,11 @@ export const GRID_N = 25; // buildable area (25×25 = 625 cells; was 15×15 = 22
 /** seconds per sol (compressed) */
 export const SOL_LENGTH = 150;
 
+/** the fixed sub-step the catch-up (Colony.fastForward) replays — a FIXED dt schedule
+ *  is what makes fast-forward reproducible. Matches the live loop's MAX_DT clamp, so a
+ *  catch-up step looks like a maximal live tick (parallel-colonies Round 4). */
+export const CATCHUP_STEP = 0.1;
+
 /** time of day a fresh colony starts at — mid-morning */
 export const START_TOD = 0.32;
 
