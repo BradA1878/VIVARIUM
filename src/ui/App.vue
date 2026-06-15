@@ -21,6 +21,7 @@ import Inspector from "./components/Inspector.vue";
 import Palette from "./components/Palette.vue";
 import TradePrompt from "./components/TradePrompt.vue";
 import LaunchPrompt from "./components/LaunchPrompt.vue";
+import ColoniesMap from "./components/ColoniesMap.vue";
 import PilotBar from "./components/PilotBar.vue";
 import FirstHint from "./components/FirstHint.vue";
 import HintToast from "./components/HintToast.vue";
@@ -136,6 +137,7 @@ onUnmounted(() => {
         <Alerts />
         <TradePrompt />
         <LaunchPrompt />
+        <ColoniesMap />
       </div>
 
       <NarratorTicker />

@@ -109,9 +109,12 @@ function readActiveSlot(): string {
 // the world you were last on (default reuses today's single key). Founding/revisit
 // repoint it; load-on-boot reads it.
 let activeSlot = readActiveSlot();
-/** point persistence at a world's slot (founding / revisit — PTP), and remember it. */
+/** reactive mirror of activeSlot for the Colonies map (highlight the live colony) */
+const activeSlotRef = ref(activeSlot);
+/** point persistence at a world's slot (founding / revisit / switch), and remember it. */
 export function setActiveSlot(slot: string): void {
   activeSlot = slot;
+  activeSlotRef.value = slot;
   try { localStorage.setItem(ACTIVE_SLOT_KEY, slot); } catch { /* private mode */ }
 }
 // the leaving run's identity, captured at launch() so foundNext() can derive the
@@ -751,6 +754,6 @@ export function useColony() {
   return {
     snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
-    runHistory, runEpitaph, directorDossier, colonies, controls,
+    runHistory, runEpitaph, directorDossier, colonies, activeSlot: activeSlotRef, controls,
   };
 }
