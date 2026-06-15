@@ -168,7 +168,7 @@ describe("SimHost", () => {
     // a live Mars host switches to it with a ~1-sol catch-up (1500 steps)
     const host = new SimHost();
     host.applyCommand({ type: "start" });
-    const out = host.applyCommand({ type: "switchColony", save, steps: 1500, director: true });
+    const out = host.applyCommand({ type: "switchColony", save, steps: 1500, director: true, credits: [] });
     const snap = (out.find((m) => m.type === "snapshot") as Extract<Outbound, { type: "snapshot" }>).snapshot;
     expect(snap.world).toBe("ceres");            // now showing the target world
     expect(snap.t).toBeGreaterThan(save.state.t); // caught up — sim time advanced past the save
@@ -177,6 +177,21 @@ describe("SimHost", () => {
     const t0 = snap.t;
     for (let i = 0; i < 20; i++) host.step(0.05);
     expect((host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t).toBeGreaterThan(t0);
+  });
+
+  it("switchColony credits matured shipments into the loaded colony", () => {
+    const seed = new SimHost();
+    seed.applyCommand({ type: "start", seed: 5, world: "ceres" });
+    const save = (seed.applyCommand({ type: "save", reqId: 1 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+    const mat0 = save.state.materials.amount;
+
+    const host = new SimHost();
+    host.applyCommand({ type: "start" });
+    host.applyCommand({ type: "switchColony", save, steps: 0, director: true, credits: [{ materials: 50 }] });
+    const saved = (host.applyCommand({ type: "save", reqId: 2 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+    expect(saved.state.materials.amount).toBe(mat0 + 50); // the shipment was credited on load (no catch-up at steps 0)
   });
 
   it("launchPtp ends the run as expansion when a pod is built", () => {

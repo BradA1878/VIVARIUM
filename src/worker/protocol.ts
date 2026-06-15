@@ -3,7 +3,7 @@
    Main thread sends Commands; the worker (which owns the engine) sends Outbound
    messages: throttled snapshots, the event stream, and save responses.
    ============================================================================ */
-import type { ColonyEvent, Difficulty, HazardKind, LegacyManifest, Snapshot, World } from "@shared/types";
+import type { ColonyEvent, Difficulty, HazardKind, LegacyManifest, ShipmentManifest, Snapshot, World } from "@shared/types";
 import type { SaveData } from "@/engine";
 
 // ---- main thread → worker ----------------------------------------------------
@@ -32,11 +32,15 @@ export type Command =
   // launch the PTP: a deliberate player act ending the run as "expansion" (the
   // run-ending that founds the next world). No-op without a functional pod built.
   | { type: "launchPtp" }
-  // switch the live colony to another settled world (parallel-colonies): load its
-  // SaveData, fast-forward it `steps` catch-up sub-steps (deterministic off-screen
-  // advance — the count is computed main-side), then resume it live. `director` is the
-  // player's setting to restore after the catch-up (which always runs the engine scheduler).
-  | { type: "switchColony"; save: SaveData; steps: number; director: boolean };
+  // switch the live colony to another settled world (parallel-colonies): credit any
+  // matured inter-planet shipments into the loaded save (seed-state), fast-forward it
+  // `steps` catch-up sub-steps (deterministic off-screen advance — count computed
+  // main-side), then resume it live. `director` is the player's setting to restore after
+  // the catch-up (which always runs the engine scheduler).
+  | { type: "switchColony"; save: SaveData; steps: number; director: boolean; credits: ShipmentManifest[] }
+  // DEBIT an inter-planet shipment from the live colony (the store queues it for the
+  // destination). Deterministic, mirrors respondTrade's pool debit.
+  | { type: "dispatchShipment"; manifest: ShipmentManifest };
 
 // ---- worker → main thread ----------------------------------------------------
 export type Outbound =

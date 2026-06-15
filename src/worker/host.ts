@@ -46,9 +46,11 @@ export class SimHost {
       case "load": this.colony = Colony.load(cmd.data); this.started = true; break; // a resumed save ticks at once
       case "start": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world, cmd.legacy); this.started = true; break; // fresh game / founding on seed+world+difficulty+legacy
       case "launchPtp": this.colony.launchPtp(); break; // end the run as expansion (the store founds the next world)
+      case "dispatchShipment": this.colony.dispatchShipment(cmd.manifest); break; // debit the sender (the store queues it for the destination)
       case "switchColony": { // parallel-colonies: load a settled world, catch it up, resume live
         this.colony = Colony.load(cmd.save);
-        const before = this.colony.snapshot(); // the colony AS SAVED, before the off-screen catch-up — the digest diffs it
+        const before = this.colony.snapshot(); // the colony AS SAVED, before any credit/catch-up — the digest diffs it
+        for (const credit of cmd.credits) this.colony.creditShipment(credit); // matured shipments arrive as seed-state, before the catch-up
         this.colony.setDirector(false);        // catch-up runs the engine scheduler (the main-thread Director isn't in the fast-forward)
         const events = this.colony.fastForward(cmd.steps, true); // collect the off-screen events for the "while you were away" digest
         this.colony.setDirector(cmd.director); // restore the player's director setting for live play

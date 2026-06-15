@@ -6,7 +6,7 @@
    ============================================================================ */
 import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
 import { RESOURCES } from "@shared/types";
-import type { ColonyEvent, Difficulty, LegacyManifest, Resource, Snapshot, World } from "@shared/types";
+import type { ColonyEvent, Difficulty, LegacyManifest, Resource, ShipmentManifest, Snapshot, World } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo, SelectInfo } from "@/render/three/placement";
@@ -20,7 +20,10 @@ import {
   type PlayerModel, type Axis,
 } from "@/agent/director/memory";
 import { loadBest, persist, clearLocal } from "@/persistence";
-import { upsertColony, loadLedger, type ColonyRecord } from "@/persistence/colonies";
+import {
+  upsertColony, loadLedger, type ColonyRecord,
+  addShipment, maturedShipments, removeShipments, shipmentsInTransit, type Shipment,
+} from "@/persistence/colonies";
 import { nextSeedFrom, slotId, WORLD_META, catchupSteps } from "../founding";
 import type { SaveData } from "@/engine";
 import type { HazardKind } from "@shared/types";
@@ -316,7 +319,11 @@ function goTo(slotKey: string, target: SaveData): void {
   const rec = loadLedger().colonies.find((c) => c.slotKey === slotKey);
   const savedAt = rec?.savedAt ?? rec?.foundedAt ?? Date.now();
   const steps = catchupSteps(Date.now() - savedAt);
-  bridge.switchColony(target, steps, settings.value.directorEnabled); // load + catch-up + resume live
+  // credit any inter-planet shipments that have ARRIVED at this world, then drop them
+  // from the queue — synchronously, before the async switch (exactly-once, ordered by id).
+  const matured = maturedShipments(slotKey, Date.now());
+  if (matured.length) removeShipments(matured.map((s) => s.id));
+  bridge.switchColony(target, steps, settings.value.directorEnabled, matured.map((s) => s.manifest)); // credit + catch-up + resume
   lastRealEventT = target.state.t;
   history = resetHistory();
   startScreen.value = false;
@@ -759,6 +766,14 @@ const controls = {
     if (!save) return; // target slot gone
     goTo(slotKey, save);
   },
+  /** send an inter-planet shipment from the LIVE colony to another settled world: debit
+   *  the sender in its tick, then queue it on the ledger for the destination to credit
+   *  on arrival (after transitSols of transit). */
+  dispatchShipment(toSlot: string, manifest: ShipmentManifest, transitSols = 1): void {
+    if (!bridge || toSlot === activeSlot) return;
+    bridge.dispatchShipment(manifest); // debit the live colony (deterministic, in-tick)
+    addShipment({ fromSlot: activeSlot, toSlot, manifest, dispatchedAt: Date.now(), transitSols });
+  },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };
 
@@ -845,10 +860,15 @@ function colonies(): ColonyRecord[] {
   return [...loadLedger().colonies].sort((a, b) => b.foundedAt - a.foundedAt);
 }
 
+/** in-flight inter-planet shipments — for the Colonies map's transit display */
+function shipments(): Shipment[] {
+  return shipmentsInTransit();
+}
+
 export function useColony() {
   return {
     snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
-    runHistory, runEpitaph, directorDossier, colonies, activeSlot: activeSlotRef, controls,
+    runHistory, runEpitaph, directorDossier, colonies, shipments, activeSlot: activeSlotRef, controls,
   };
 }

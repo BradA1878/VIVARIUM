@@ -4,7 +4,7 @@
    Exposes the latest snapshot, a snapshot/event subscription, command methods,
    and synchronous placement prediction (doc §0: observe, don't reach in).
    ============================================================================ */
-import type { BuildingState, ColonyEvent, Difficulty, HazardKind, LegacyManifest, Snapshot, World } from "@shared/types";
+import type { BuildingState, ColonyEvent, Difficulty, HazardKind, LegacyManifest, ShipmentManifest, Snapshot, World } from "@shared/types";
 import { DEFS, FUNC_THRESHOLD, type SaveData } from "@/engine";
 import { buildingAtPredict, canPlacePredict, canMovePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
@@ -133,7 +133,9 @@ export class SimBridge {
   launchPtp(): void { this.send({ type: "launchPtp" }); }
   /** switch the live colony to another settled world: load it, fast-forward `steps`
    *  catch-up sub-steps, resume live (parallel-colonies) */
-  switchColony(save: SaveData, steps: number, director: boolean): void { this.send({ type: "switchColony", save, steps, director }); }
+  switchColony(save: SaveData, steps: number, director: boolean, credits: ShipmentManifest[]): void { this.send({ type: "switchColony", save, steps, director, credits }); }
+  /** debit an inter-planet shipment from the live colony (the store queues it for the destination) */
+  dispatchShipment(manifest: ShipmentManifest): void { this.send({ type: "dispatchShipment", manifest }); }
   load(data: SaveData): void { this.send({ type: "load", data }); }
 
   save(): Promise<SaveData> {
