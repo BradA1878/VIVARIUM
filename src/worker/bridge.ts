@@ -12,11 +12,15 @@ import type { Command, Outbound } from "./protocol";
 
 type SnapshotFn = (s: Snapshot) => void;
 type EventFn = (e: ColonyEvent) => void;
+/** the "while you were away" digest input: the pre-catch-up snapshot + the off-screen
+ *  events a switchColony's catch-up produced (parallel-colonies) */
+type CatchupReportFn = (before: Snapshot, events: ColonyEvent[]) => void;
 
 export class SimBridge {
   private worker: Worker;
   private snapshotSubs = new Set<SnapshotFn>();
   private eventSubs = new Set<EventFn>();
+  private catchupSubs = new Set<CatchupReportFn>();
   private saveResolvers = new Map<number, (d: SaveData) => void>();
   private reqId = 1;
   private occ: Set<string> | null = null;
@@ -46,6 +50,11 @@ export class SimBridge {
       case "events":
         for (const e of msg.events) for (const fn of this.eventSubs) fn(e);
         break;
+      case "catchupReport":
+        // the away digest only — deliberately NOT fanned out through eventSubs (that
+        // would replay the off-screen run through the narrator).
+        for (const fn of this.catchupSubs) fn(msg.before, msg.events);
+        break;
       case "saved": {
         const r = this.saveResolvers.get(msg.reqId);
         if (r) { r(msg.data); this.saveResolvers.delete(msg.reqId); }
@@ -63,6 +72,12 @@ export class SimBridge {
   onEvent(fn: EventFn): () => void {
     this.eventSubs.add(fn);
     return () => this.eventSubs.delete(fn);
+  }
+  /** subscribe to a switchColony's catch-up report (the "while you were away" digest
+   *  input) — the pre-catch-up snapshot + the off-screen events (parallel-colonies) */
+  onCatchupReport(fn: CatchupReportFn): () => void {
+    this.catchupSubs.add(fn);
+    return () => this.catchupSubs.delete(fn);
   }
 
   // ---- commands -------------------------------------------------------------
@@ -160,6 +175,7 @@ export class SimBridge {
     this.worker.terminate();
     this.snapshotSubs.clear();
     this.eventSubs.clear();
+    this.catchupSubs.clear();
     this.saveResolvers.clear();
   }
 }

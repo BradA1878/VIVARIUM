@@ -48,11 +48,18 @@ export class SimHost {
       case "launchPtp": this.colony.launchPtp(); break; // end the run as expansion (the store founds the next world)
       case "switchColony": { // parallel-colonies: load a settled world, catch it up, resume live
         this.colony = Colony.load(cmd.save);
+        const before = this.colony.snapshot(); // the colony AS SAVED, before the off-screen catch-up — the digest diffs it
         this.colony.setDirector(false);        // catch-up runs the engine scheduler (the main-thread Director isn't in the fast-forward)
-        this.colony.fastForward(cmd.steps);    // deterministic off-screen advance (events discarded; the digest arrives in slice 6)
+        const events = this.colony.fastForward(cmd.steps, true); // collect the off-screen events for the "while you were away" digest
         this.colony.setDirector(cmd.director); // restore the player's director setting for live play
         this.started = true;                   // the switched colony ticks at once
-        break;
+        // Return early (like `save`): the catch-up report + the post-catch-up snapshot.
+        // The events ride the report ONLY — routing them through `events` would replay
+        // the whole off-screen run through the narrator.
+        return [
+          { type: "catchupReport", before, events },
+          { type: "snapshot", snapshot: this.colony.snapshot() },
+        ];
       }
       case "save":
         return [{ type: "saved", reqId: cmd.reqId, data: this.colony.serialize() }];

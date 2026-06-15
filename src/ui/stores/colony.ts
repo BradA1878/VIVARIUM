@@ -5,6 +5,7 @@
    touches the tick.
    ============================================================================ */
 import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
+import { RESOURCES } from "@shared/types";
 import type { ColonyEvent, Difficulty, LegacyManifest, Resource, Snapshot, World } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
@@ -74,6 +75,41 @@ export const startScreen = ref(false);
  *  a colony, lowered once it's live — masks the rebuild hitch as a calm "descent". */
 export const curtain = ref(false);
 let curtainTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** the "while you were away" digest (parallel-colonies): what a switched-to colony's
+ *  off-screen catch-up actually did — the before/after delta + a tally of the notable
+ *  events — surfaced as a small panel on arrival, dismissed by the player. Null when
+ *  there's nothing to report (no real absence, or the colony died off-screen so the
+ *  EndScreen covers it instead). */
+export interface AwayDigest {
+  /** the world's display label (e.g. "Ceres") */
+  label: string;
+  /** sols that elapsed during the catch-up (after.sol − before.sol) */
+  sols: number;
+  /** net population change (after − before); negative = net lost, positive = net gained */
+  popDelta: number;
+  /** net building-count change (after − before) */
+  buildingDelta: number;
+  /** hazards that started off-screen (hazard_start count) */
+  hazards: number;
+  /** colonists lost to casualties off-screen (casualty count) */
+  casualties: number;
+  /** colonists born off-screen (birth count) */
+  births: number;
+  /** buildings destroyed off-screen (building_destroyed count) */
+  destroyed: number;
+  /** per-resource pool swing (after − before), only the pools that moved a unit+ */
+  resourceSwing: Partial<Record<Resource, number>>;
+  /** the build-currency swing (after − before) */
+  materialsDelta: number;
+}
+export const awayDigest = ref<AwayDigest | null>(null);
+/** dismiss the away digest (the panel's close button) */
+export function dismissAwayDigest(): void { awayDigest.value = null; }
+// the in-flight catch-up report, awaiting the post-catch-up snapshot to diff against.
+// The host posts {catchupReport} then {snapshot} as two messages; the report lands
+// first (before `snapshot.value` updates), so the digest is built on the NEXT snapshot.
+let pendingCatchup: { before: Snapshot; events: ColonyEvent[] } | null = null;
 
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
@@ -228,6 +264,7 @@ function tearDownRun(): void {
   lastDirectedStrike = null;
   attributionCounter = 0;
   launching = false; // the new run is beginning — let autosave resume
+  awayDigest.value = null; pendingCatchup = null; // a fresh run has no "while you were away" to show
   clearLocal(activeSlot); // discard the saved colony; autosave will persist the fresh one
   history = resetHistory(); // a new run starts its telemetry from zero
   dismissHint();
@@ -273,6 +310,7 @@ function goTo(slotKey: string, target: SaveData): void {
   setActiveSlot(slotKey);
   council?.reset(); sentinel?.reset(); director?.reset();
   lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
+  awayDigest.value = null; pendingCatchup = null; // supersede any unread digest from a prior switch
   dismissHint();
   messages.value = [];
   const rec = loadLedger().colonies.find((c) => c.slotKey === slotKey);
@@ -283,6 +321,42 @@ function goTo(slotKey: string, target: SaveData): void {
   history = resetHistory();
   startScreen.value = false;
   greetAfter(BOOT_LINE_MS, target.state.difficulty);
+}
+
+/** build the "while you were away" digest from the catch-up's before/after snapshots
+ *  + the off-screen events (parallel-colonies). Pure — diffs the two snapshots for the
+ *  state deltas and tallies the event stream for the notable counts. Returns null when
+ *  there was no real absence (no sol elapsed and no casualty/loss) OR the colony died
+ *  off-screen (the EndScreen already surfaces a dead world — don't double up). */
+function buildAwayDigest(before: Snapshot, after: Snapshot, events: ColonyEvent[]): AwayDigest | null {
+  // a colony that died off-screen is handled by the EndScreen, not the digest
+  if (after.outcome != null) return null;
+  const sols = after.sol - before.sol;
+  let hazards = 0, casualties = 0, births = 0, destroyed = 0;
+  for (const e of events) {
+    if (e.type === "hazard_start") hazards++;
+    else if (e.type === "casualty") casualties++;
+    else if (e.type === "birth") births++;
+    else if (e.type === "building_destroyed") destroyed++;
+  }
+  // only surface a digest for a REAL absence: at least a sol passed, or something was lost
+  const realAbsence = sols >= 1 || casualties > 0 || destroyed > 0 ||
+    after.population < before.population || after.buildings.length < before.buildings.length;
+  if (!realAbsence) return null;
+  const resourceSwing: Partial<Record<Resource, number>> = {};
+  for (const r of RESOURCES) {
+    const d = after.pools[r].amount - before.pools[r].amount;
+    if (Math.abs(d) >= 1) resourceSwing[r] = d;
+  }
+  return {
+    label: WORLD_META[after.world]?.label ?? after.world,
+    sols,
+    popDelta: after.population - before.population,
+    buildingDelta: after.buildings.length - before.buildings.length,
+    hazards, casualties, births, destroyed,
+    resourceSwing,
+    materialsDelta: after.materials.amount - before.materials.amount,
+  };
 }
 
 /** route one event (engine OR agent-originated) through the council. The gate
@@ -339,6 +413,12 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   b.onEvent((e) => audio.onEvent(e));
   b.onSnapshot((s) => audio.onSnapshot(s));
 
+  // the "while you were away" digest (parallel-colonies): a switchColony's catch-up
+  // posts {catchupReport} then {snapshot}. Stash the report here; the post-catch-up
+  // snapshot lands next, and the onSnapshot handler below builds the digest off it.
+  // The events ride this stream ONLY — they never reach the council/narrator path.
+  b.onCatchupReport((before, events) => { pendingCatchup = { before, events }; });
+
   // settings → live subsystems: quality, the director toggle, and the audio
   // gains apply the moment they change.
   let appliedQuality = settings.value.graphics.quality;
@@ -359,6 +439,13 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 
   b.onSnapshot((s) => {
     snapshot.value = s;
+    // the post-catch-up snapshot of a switch: diff it against the stashed pre-catch-up
+    // snapshot into the "while you were away" digest (parallel-colonies). Built here so
+    // `s` is genuinely the after-catch-up state (the report arrived one message earlier).
+    if (pendingCatchup) {
+      awayDigest.value = buildAwayDigest(pendingCatchup.before, s, pendingCatchup.events);
+      pendingCatchup = null;
+    }
     recordSnapshot(history, s); // the run report's curves sample from here
     sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
     // the Director observes and may throw a hazard, aimed by colony shape, the

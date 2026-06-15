@@ -43,7 +43,12 @@ export type Outbound =
   | { type: "ready" }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "events"; events: ColonyEvent[] }
-  | { type: "saved"; reqId: number; data: SaveData };
+  | { type: "saved"; reqId: number; data: SaveData }
+  // the "while you were away" digest (parallel-colonies): a switchColony's catch-up
+  // ran real hazards/casualties off-screen — this carries the pre-catch-up snapshot
+  // and the accumulated events so the store can diff them into a digest. It goes ONLY
+  // here, never through the `events` stream, so the away events don't spam the narrator.
+  | { type: "catchupReport"; before: Snapshot; events: ColonyEvent[] };
 
 /** how often the worker pushes a fresh snapshot to the HUD (~12 fps) */
 export const SNAPSHOT_INTERVAL = 0.08;
