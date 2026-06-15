@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextSeedFrom, slotId, destinationsFrom, WORLD_META } from "./founding";
+import { nextSeedFrom, slotId, destinationsFrom, WORLD_META, catchupSteps } from "./founding";
 
 describe("founding helpers", () => {
   it("nextSeedFrom is deterministic and differs from the input seed", () => {
@@ -22,6 +22,14 @@ describe("founding helpers", () => {
   it("destinationsFrom excludes the current world and covers the rest", () => {
     expect(destinationsFrom("mars")).toEqual(["ceres", "io", "titan"]);
     expect(destinationsFrom("io")).toEqual(["mars", "ceres", "titan"]);
+  });
+
+  it("catchupSteps maps elapsed real-time to capped, whole catch-up steps", () => {
+    expect(catchupSteps(0)).toBe(0);
+    expect(catchupSteps(-5000)).toBe(0); // negative clamps to 0
+    expect(catchupSteps(10_000)).toBe(100); // 10s → 100 steps of 0.1s
+    const cap = Math.round((3 * 150) / 0.1); // CATCHUP_CAP_SOLS * SOL_LENGTH / CATCHUP_STEP = 4500
+    expect(catchupSteps(1000 * 60 * 60)).toBe(cap); // an hour away → clamped to the cap
   });
 
   it("every world has picker metadata", () => {

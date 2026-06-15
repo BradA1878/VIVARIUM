@@ -157,6 +157,28 @@ describe("SimHost", () => {
     expect(saved.seed).toBe(7);
   });
 
+  it("switchColony loads a settled world, catches it up, and resumes live", () => {
+    // build + save a Ceres colony
+    const seed = new SimHost();
+    seed.applyCommand({ type: "start", difficulty: "normal", seed: 999, world: "ceres" });
+    for (let i = 0; i < 10; i++) seed.step(0.05);
+    const save = (seed.applyCommand({ type: "save", reqId: 1 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+
+    // a live Mars host switches to it with a ~1-sol catch-up (1500 steps)
+    const host = new SimHost();
+    host.applyCommand({ type: "start" });
+    const out = host.applyCommand({ type: "switchColony", save, steps: 1500, director: true });
+    const snap = (out.find((m) => m.type === "snapshot") as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    expect(snap.world).toBe("ceres");            // now showing the target world
+    expect(snap.t).toBeGreaterThan(save.state.t); // caught up — sim time advanced past the save
+
+    // and it ticks live now
+    const t0 = snap.t;
+    for (let i = 0; i < 20; i++) host.step(0.05);
+    expect((host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t).toBeGreaterThan(t0);
+  });
+
   it("launchPtp ends the run as expansion when a pod is built", () => {
     const host = new SimHost();
     host.applyCommand({ type: "start" });

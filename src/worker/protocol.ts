@@ -31,7 +31,12 @@ export type Command =
   | { type: "start"; difficulty?: Difficulty; seed?: number; world?: World; legacy?: LegacyManifest }
   // launch the PTP: a deliberate player act ending the run as "expansion" (the
   // run-ending that founds the next world). No-op without a functional pod built.
-  | { type: "launchPtp" };
+  | { type: "launchPtp" }
+  // switch the live colony to another settled world (parallel-colonies): load its
+  // SaveData, fast-forward it `steps` catch-up sub-steps (deterministic off-screen
+  // advance — the count is computed main-side), then resume it live. `director` is the
+  // player's setting to restore after the catch-up (which always runs the engine scheduler).
+  | { type: "switchColony"; save: SaveData; steps: number; director: boolean };
 
 // ---- worker → main thread ----------------------------------------------------
 export type Outbound =

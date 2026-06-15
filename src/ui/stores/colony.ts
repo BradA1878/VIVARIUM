@@ -20,7 +20,8 @@ import {
 } from "@/agent/director/memory";
 import { loadBest, persist, clearLocal } from "@/persistence";
 import { upsertColony, loadLedger, type ColonyRecord } from "@/persistence/colonies";
-import { nextSeedFrom, slotId, WORLD_META } from "../founding";
+import { nextSeedFrom, slotId, WORLD_META, catchupSteps } from "../founding";
+import type { SaveData } from "@/engine";
 import type { HazardKind } from "@shared/types";
 import { clockOf, fmt } from "../format";
 import { useSettings } from "./settings";
@@ -239,6 +240,40 @@ function greetAfter(ms: number, difficulty: Difficulty): void {
   }, ms);
 }
 
+/** keep the active colony's ledger row live — sols/population/savedAt refreshed from a
+ *  save, preserving foundedAt/legacy — so the Colonies map shows current numbers and the
+ *  catch-up has an accurate "last saved" stamp (parallel-colonies). */
+function refreshLedgerRow(save: SaveData): void {
+  const st = save.state;
+  const existing = loadLedger().colonies.find((c) => c.slotKey === activeSlot);
+  upsertColony({
+    ...existing,
+    worldId: st.world, slotKey: activeSlot, seed: save.seed, difficulty: st.difficulty,
+    label: WORLD_META[st.world].label, outcome: st.outcome, sols: st.sol, population: st.population,
+    foundedAt: existing?.foundedAt ?? Date.now(), savedAt: Date.now(),
+  });
+}
+
+/** enter a colony as the live one: reset agent scratch (NOT the slot it loads), then
+ *  load + deterministically CATCH UP (by the elapsed-since-savedAt step count) + resume,
+ *  via the switchColony command. Shared by revisit (StartScreen) and switchTo (in-game). */
+function goTo(slotKey: string, target: SaveData): void {
+  if (!bridge) return;
+  setActiveSlot(slotKey);
+  council?.reset(); sentinel?.reset(); director?.reset();
+  lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
+  dismissHint();
+  messages.value = [];
+  const rec = loadLedger().colonies.find((c) => c.slotKey === slotKey);
+  const savedAt = rec?.savedAt ?? rec?.foundedAt ?? Date.now();
+  const steps = catchupSteps(Date.now() - savedAt);
+  bridge.switchColony(target, steps, settings.value.directorEnabled); // load + catch-up + resume live
+  lastRealEventT = target.state.t;
+  history = resetHistory();
+  startScreen.value = false;
+  greetAfter(BOOT_LINE_MS, target.state.difficulty);
+}
+
 /** route one event (engine OR agent-originated) through the council. The gate
  *  short-circuits BEFORE any model call (doc §3.1); a live line falls back to the
  *  scripted line on any failure — the game never depends on it. */
@@ -438,7 +473,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     // an autosave of the paused expansion-outcome state would clobber that archive.
     // (victory/defeat still autosave so their boot-discard keeps working.)
     if (startScreen.value || launching || snapshot.value?.outcome === "expansion") return;
-    void b.save().then((s) => persist(activeSlot, s));
+    void b.save().then((s) => { persist(activeSlot, s); refreshLedgerRow(s); }); // keep the Colonies map + savedAt current
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
 }
@@ -563,7 +598,8 @@ const controls = {
     upsertColony({
       worldId: save.state.world, slotKey: activeSlot, seed: save.seed,
       difficulty: save.state.difficulty, label: WORLD_META[save.state.world].label,
-      outcome: "expansion", sols: s.sol, population: s.population, foundedAt: Date.now(),
+      outcome: "expansion", sols: s.sol, population: s.population,
+      foundedAt: Date.now(), savedAt: Date.now(),
     });
     void persist(activeSlot, archive); // archive the LIVE copy (outcome cleared) so revisit resumes it
     // the legacy that travels: the two lowest-id living colonists (commander +
@@ -594,7 +630,8 @@ const controls = {
     // log + persist the freshly founded world so it's revisitable from t0
     upsertColony({
       worldId: world, slotKey: slot, seed, difficulty,
-      label: WORLD_META[world].label, outcome: null, sols: 1, population: 0, foundedAt: Date.now(),
+      label: WORLD_META[world].label, outcome: null, sols: 1, population: 0,
+      foundedAt: Date.now(), savedAt: Date.now(),
       legacy,
     });
     void bridge.save().then((sv) => persist(slot, sv));
@@ -605,25 +642,24 @@ const controls = {
   /** revisit a settled world from the StartScreen's Colonies list: load its slot
    *  and resume the colony live (Colony.load does the work). Mirrors load-on-boot,
    *  NOT a fresh start — it must never clear the slot it just loaded. */
+  /** revisit a settled world from the StartScreen — load + catch up + resume live. */
   async revisit(slotKey: string): Promise<void> {
     if (!bridge) return;
     const save = await loadBest(slotKey);
     if (!save) return; // the slot was abandoned/cleared — ignore the click
-    setActiveSlot(slotKey);
-    council?.reset(); sentinel?.reset(); director?.reset();
-    // clear the run-scratch tearDownRun would (minus the slot wipe revisit must avoid),
-    // so the resumed colony's epitaph/attribution reflect ITS run, not the last one.
-    lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
-    dismissHint();
-    messages.value = [];
-    bridge.load(save); // resumes the colony byte-identical
-    bridge.setDirector(settings.value.directorEnabled);
-    lastRealEventT = save.state.t;
-    // history isn't slot-scoped — start the resumed run's curves fresh rather than
-    // show the previous world's telemetry until new samples accrue.
-    history = resetHistory();
-    startScreen.value = false;
-    greetAfter(BOOT_LINE_MS, save.state.difficulty);
+    goTo(slotKey, save);
+  },
+  /** switch the live colony to another settled world (the in-game Colonies map): save the
+   *  LEAVING colony first (no loss) + refresh its ledger row, then load + catch up + resume
+   *  the target. */
+  async switchTo(slotKey: string): Promise<void> {
+    if (!bridge || slotKey === activeSlot) return; // already here
+    const leaving = await bridge.save();
+    await persist(activeSlot, leaving);
+    refreshLedgerRow(leaving);
+    const save = await loadBest(slotKey);
+    if (!save) return; // target slot gone
+    goTo(slotKey, save);
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };

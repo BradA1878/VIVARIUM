@@ -46,6 +46,14 @@ export class SimHost {
       case "load": this.colony = Colony.load(cmd.data); this.started = true; break; // a resumed save ticks at once
       case "start": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world, cmd.legacy); this.started = true; break; // fresh game / founding on seed+world+difficulty+legacy
       case "launchPtp": this.colony.launchPtp(); break; // end the run as expansion (the store founds the next world)
+      case "switchColony": { // parallel-colonies: load a settled world, catch it up, resume live
+        this.colony = Colony.load(cmd.save);
+        this.colony.setDirector(false);        // catch-up runs the engine scheduler (the main-thread Director isn't in the fast-forward)
+        this.colony.fastForward(cmd.steps);    // deterministic off-screen advance (events discarded; the digest arrives in slice 6)
+        this.colony.setDirector(cmd.director); // restore the player's director setting for live play
+        this.started = true;                   // the switched colony ticks at once
+        break;
+      }
       case "save":
         return [{ type: "saved", reqId: cmd.reqId, data: this.colony.serialize() }];
     }

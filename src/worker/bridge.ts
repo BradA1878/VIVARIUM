@@ -116,6 +116,9 @@ export class SimBridge {
   start(difficulty?: Difficulty, seed?: number, world?: World, legacy?: LegacyManifest): void { this.send({ type: "start", difficulty, seed, world, legacy }); }
   /** launch the PTP — end the run as "expansion" (the store founds the next world) */
   launchPtp(): void { this.send({ type: "launchPtp" }); }
+  /** switch the live colony to another settled world: load it, fast-forward `steps`
+   *  catch-up sub-steps, resume live (parallel-colonies) */
+  switchColony(save: SaveData, steps: number, director: boolean): void { this.send({ type: "switchColony", save, steps, director }); }
   load(data: SaveData): void { this.send({ type: "load", data }); }
 
   save(): Promise<SaveData> {

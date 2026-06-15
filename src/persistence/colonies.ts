@@ -20,6 +20,10 @@ export interface ColonyRecord {
   population: number;
   foundedAt: number;
   endedAt?: number;
+  /** wall-clock (ms) the colony's save was last current — the catch-up reads it to
+   *  compute how long the colony has been away (parallel-colonies Round 4). Stamped
+   *  main-side on every upsert; falls back to foundedAt for pre-Round-4 rows. */
+  savedAt?: number;
   legacy?: { veterans: number[]; tech?: string };
 }
 
