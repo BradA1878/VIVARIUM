@@ -71,22 +71,25 @@ export class Colony {
     return out;
   }
 
-  /** Deterministically advance the colony by `budgetSeconds` of sim time, in fixed
-   *  CATCHUP_STEP sub-steps — the catch-up that fast-forwards an away colony on switch
-   *  (parallel-colonies Round 4). Reproducible: same save + same budget → byte-identical
-   *  (a FIXED dt schedule + seeded RNG). Stops early once the run ends, so a finished
-   *  colony is never over-ticked. `collect` accumulates the emitted events for the
-   *  "while you were away" digest; otherwise they're discarded. The budget is computed
-   *  on the MAIN thread (the engine never reads a clock — the wall). */
-  fastForward(budgetSeconds: number, collect = false): ColonyEvent[] {
+  /** Deterministically advance the colony by `steps` catch-up sub-steps (each exactly
+   *  CATCHUP_STEP seconds) — the fast-forward for an away colony on switch (parallel-
+   *  colonies Round 4). Driving by an integer step COUNT (not a float budget) makes it
+   *  CHUNKING-INVARIANT: fastForward(i) then fastForward(j) is byte-identical to
+   *  fastForward(i+j) — because each step is the SAME size and integer addition is exact,
+   *  there is no float residual whose rounding depends on where a call stopped. So the
+   *  host can stream catch-up progress across frames without forking determinism.
+   *  Reproducible (fixed step + seeded RNG); stops early once the run ends so a finished
+   *  colony is never over-ticked. `collect` accumulates the emitted events for the "while
+   *  you were away" digest. The step count is computed MAIN-SIDE (the engine never reads a
+   *  clock — the wall): steps = round(elapsedSimSeconds / CATCHUP_STEP). */
+  fastForward(steps: number, collect = false): ColonyEvent[] {
     const out: ColonyEvent[] = [];
-    let remaining = Math.max(0, budgetSeconds);
-    while (remaining > 1e-9 && this.s.outcome === null) {
-      const dt = Math.min(CATCHUP_STEP, remaining);
-      this.tick(dt);
+    let n = Math.max(0, Math.floor(steps));
+    while (n > 0 && this.s.outcome === null) {
+      this.tick(CATCHUP_STEP);
       if (collect) out.push(...this.drainEvents());
       else this.events = [];
-      remaining -= dt;
+      n--;
     }
     return out;
   }

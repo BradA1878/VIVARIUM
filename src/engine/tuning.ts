@@ -32,10 +32,15 @@ export const GRID_N = 25; // buildable area (25×25 = 625 cells; was 15×15 = 22
 /** seconds per sol (compressed) */
 export const SOL_LENGTH = 150;
 
-/** the fixed sub-step the catch-up (Colony.fastForward) replays — a FIXED dt schedule
- *  is what makes fast-forward reproducible. Matches the live loop's MAX_DT clamp, so a
- *  catch-up step looks like a maximal live tick (parallel-colonies Round 4). */
+/** the fixed sub-step size the catch-up (Colony.fastForward) replays. Equal to MAX_DT,
+ *  the live loop's single-frame dt CLAMP (the live tick is MAX_DT*speed). A FIXED step is
+ *  what makes fast-forward reproducible against itself + chunking-invariant; it is NOT
+ *  required to reproduce a variable-dt live run (parallel-colonies Round 4). */
 export const CATCHUP_STEP = 0.1;
+
+/** an away colony advances at most this many sols of catch-up per visit — bounds the
+ *  fast-forward CPU so a months-away return doesn't replay forever (Round 4, tunable). */
+export const CATCHUP_CAP_SOLS = 3;
 
 /** time of day a fresh colony starts at — mid-morning */
 export const START_TOD = 0.32;
