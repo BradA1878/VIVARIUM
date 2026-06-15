@@ -65,17 +65,17 @@ export class Terrain {
       // grid-space sample coords (match render.js scale loosely)
       const gx = x / CELL + grid.N / 2, gy = z / CELL + grid.N / 2;
       const n = fbm(gx * 0.5 + 4, gy * 0.5 + 9);
-      const dune = vnoise(gx * 0.14 + 20, gy * 0.14 + 3);
+      const dune = vnoise(gx * look.relief.duneFreq + 20, gy * look.relief.duneFreq + 3);
       // flatten the play field so placement stays readable: 0.15 of the
       // displacement inside the grid + half a cell, full again ~3 cells out
       const d = Math.max(Math.abs(x), Math.abs(z));
       const flat = 0.15 + 0.85 * smooth01((d - (half + 0.5 * CELL)) / (3 * CELL));
-      const base = ((n - 0.5) * 0.5 + (dune - 0.5) * 0.35) * flat;
+      const base = ((n - 0.5) * look.relief.noise + (dune - 0.5) * look.relief.dune) * flat;
       // far relief: a ridged band past ~N/2 + 4 cells, ramping toward the fog
       const rn = vnoise(gx * 0.22 + 40, gy * 0.22 + 17);
       const crest = (1 - Math.abs(2 * rn - 1)) ** 2;
       const ramp = smooth01((Math.hypot(x, z) - (half + 4 * CELL)) / (edge - half - 4 * CELL));
-      const ridge = crest * 1.8 * ramp;
+      const ridge = crest * look.relief.ridge * ramp;
       return { h: base + ridge, ridge, n, dune };
     };
 
@@ -97,7 +97,10 @@ export class Terrain {
     }
     geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
     geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0.02 });
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: look.mat.rough, metalness: look.mat.metal,
+      emissive: new THREE.Color(look.ground.accent), emissiveIntensity: look.mat.emissive, // 0 for mars (no glow); Io's faint lava
+    });
     const ground = new THREE.Mesh(geo, mat);
     ground.receiveShadow = true;
     this.group.add(ground);
@@ -112,13 +115,13 @@ export class Terrain {
 
   private scatterRocks(grid: GridSpace, margin: number, look: WorldLook): void {
     const rng = mulberry(look.rockSeed);
-    const count = 90;
-    const rockGeo = new THREE.IcosahedronGeometry(1, 0);
+    const count = look.rocks.count;
+    const rockGeo = new THREE.IcosahedronGeometry(1, look.rocks.detail); // detail 0 = jagged shards, 1+ = rounder
     // rough up the rock a touch
     const rp = rockGeo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < rp.count; i++) {
       const f = 0.7 + hash(i + 1, 7) * 0.5;
-      rp.setXYZ(i, rp.getX(i) * f, rp.getY(i) * f * 0.7, rp.getZ(i) * f);
+      rp.setXYZ(i, rp.getX(i) * f, rp.getY(i) * f * look.rocks.squash, rp.getZ(i) * f);
     }
     rockGeo.computeVertexNormals();
     const rockMat = new THREE.MeshStandardMaterial({ color: look.rockColor, roughness: 0.95, metalness: 0.03 });
@@ -140,7 +143,7 @@ export class Terrain {
         continue;
       }
       const p = grid.cellCenter(gx, gy);
-      const s = 0.18 + rng() * 0.6;
+      const s = look.rocks.min + rng() * (look.rocks.max - look.rocks.min);
       dummy.position.set(p.x, this.sample(p.x, p.z).h + s * 0.4 - 0.1, p.z);
       dummy.rotation.set(rng() * 0.4, rng() * 6.28, rng() * 0.4);
       dummy.scale.set(s, s, s);
@@ -158,7 +161,7 @@ export class Terrain {
    *  the boulder field above is untouched by their draws. */
   private scatterMonoliths(edge: number, look: WorldLook): void {
     const rng = mulberry(look.monolithSeed);
-    const count = 7;
+    const count = look.monoliths.count;
     const geo = new THREE.CylinderGeometry(0.34, 0.62, 1, 5, 1);
     geo.translate(0, 0.5, 0); // base at y = 0 so scale.y sets the height
     const mat = new THREE.MeshStandardMaterial({ color: look.monolithColor, roughness: 0.92, metalness: 0.05 });
