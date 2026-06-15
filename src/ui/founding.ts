@@ -10,6 +10,7 @@
    ============================================================================ */
 import type { World } from "@shared/types";
 import { RNG } from "@/engine/rng";
+import { CATCHUP_STEP, CATCHUP_CAP_SOLS, SOL_LENGTH } from "@/engine/tuning";
 
 /** distinct from the envRng salt (0x9e3779b9) so world seeds don't correlate with terrain */
 export const WORLD_SALT = 0xc2b2ae35;
@@ -36,4 +37,16 @@ export const WORLD_META: Record<World, { label: string; blurb: string }> = {
 /** the worlds you can launch TO — every world except the one you're leaving */
 export function destinationsFrom(world: World): World[] {
   return (["mars", "ceres", "io", "titan"] as World[]).filter((w) => w !== world);
+}
+
+/** how many catch-up sub-steps a colony last saved `elapsedMs` ago should fast-forward
+ *  on switch (parallel-colonies): elapsed real-time maps 1:1 to sim-time, rounded to whole
+ *  CATCHUP_STEP steps, clamped to CATCHUP_CAP_SOLS sols so a long absence stays bounded.
+ *  Computed MAIN-SIDE — the engine never reads a clock. An integer count keeps the
+ *  catch-up chunking-invariant (see Colony.fastForward). */
+export function catchupSteps(elapsedMs: number): number {
+  const simSeconds = Math.max(0, elapsedMs) / 1000;
+  const steps = Math.round(simSeconds / CATCHUP_STEP);
+  const cap = Math.round((CATCHUP_CAP_SOLS * SOL_LENGTH) / CATCHUP_STEP);
+  return Math.min(steps, cap);
 }

@@ -15,12 +15,15 @@ import Objective from "./components/Objective.vue";
 import Alerts from "./components/Alerts.vue";
 import EndScreen from "./components/EndScreen.vue";
 import StartScreen from "./components/StartScreen.vue";
+import AwayDigest from "./components/AwayDigest.vue";
+import Curtain from "./components/Curtain.vue";
 import NarratorTicker from "./components/NarratorTicker.vue";
 import LogOverlay from "./components/LogOverlay.vue";
 import Inspector from "./components/Inspector.vue";
 import Palette from "./components/Palette.vue";
 import TradePrompt from "./components/TradePrompt.vue";
 import LaunchPrompt from "./components/LaunchPrompt.vue";
+import ColoniesMap from "./components/ColoniesMap.vue";
 import PilotBar from "./components/PilotBar.vue";
 import FirstHint from "./components/FirstHint.vue";
 import HintToast from "./components/HintToast.vue";
@@ -136,6 +139,7 @@ onUnmounted(() => {
         <Alerts />
         <TradePrompt />
         <LaunchPrompt />
+        <ColoniesMap />
       </div>
 
       <NarratorTicker />
@@ -158,6 +162,10 @@ onUnmounted(() => {
     <EndScreen v-if="!booting" />
 
     <StartScreen v-if="!booting && startScreen" />
+
+    <AwayDigest v-if="!booting" />
+
+    <Curtain />
 
     <Boot v-if="booting" @done="booting = false" />
   </div>

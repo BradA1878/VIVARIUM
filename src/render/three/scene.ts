@@ -5,7 +5,9 @@
    ambient curve and sky colours are ported from render.js (ambient/drawSky).
    ============================================================================ */
 import * as THREE from "three";
+import type { World } from "@shared/types";
 import { PostFx } from "./postfx";
+import { worldLook, type SkyLook } from "./worldlook";
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 function lerpColor(a: number[], b: number[], t: number): THREE.Color {
@@ -48,6 +50,9 @@ export class SceneManager {
   /** the iso vantage direction: camera sits at focus + this offset (doc §4.6) */
   private readonly isoOffset = new THREE.Vector3(28, 26, 28);
   private focus = new THREE.Vector3(0, 0, 0);
+  /** the active world's sky/sun/ambient tint endpoints update() lerps between —
+   *  the mars anchor by default (today's exact constants); re-themed by setWorld */
+  private sky: SkyLook = worldLook("mars").sky;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -130,13 +135,23 @@ export class SceneManager {
     this.camera.updateProjectionMatrix();
   }
 
-  /** drive sun/sky/ambient from the time of day + weather (render.js parity) */
+  /** re-theme the sky/sun/ambient tint for a world. Only changes the colour
+   *  endpoints update() lerps between — the day/night CURVE (and mars's exact
+   *  values) are unchanged. The renderer calls this when snapshot.world changes. */
+  setWorld(world: World): void {
+    this.sky = worldLook(world).sky;
+  }
+
+  /** drive sun/sky/ambient from the time of day + weather (render.js parity).
+   *  The tint endpoints are the active world's (this.sky) — mars reproduces the
+   *  original hardcoded constants exactly. */
   update(tod: number, dust: boolean): void {
     const amb = ambientLevel(tod, dust);
+    const sk = this.sky;
 
-    // sky / fog: dark void at top, rust horizon — collapse to a single fog+bg
-    const horizon = lerpColor([16, 12, 13], dust ? [128, 70, 42] : [158, 92, 60], amb);
-    const top = lerpColor([8, 10, 14], dust ? [44, 28, 20] : [22, 24, 32], amb);
+    // sky / fog: dark void at top, tinted horizon — collapse to a single fog+bg
+    const horizon = lerpColor(sk.horizon.night, dust ? sk.horizon.dust : sk.horizon.clear, amb);
+    const top = lerpColor(sk.top.night, dust ? sk.top.dust : sk.top.clear, amb);
     const sky = top.clone().lerp(horizon, 0.5);
     this.scene.background = sky;
     (this.scene.fog as THREE.Fog).color.copy(horizon);
@@ -149,10 +164,10 @@ export class SceneManager {
     this.sun.target.position.set(0, 0, 0);
     const sunStrength = Math.max(0, elev);
     this.sun.intensity = (dust ? 0.35 : 1.0) * (0.15 + sunStrength * 1.35);
-    this.sun.color.copy(lerpColor([90, 70, 60], dust ? [200, 120, 70] : [255, 226, 190], 0.4 + amb * 0.6));
+    this.sun.color.copy(lerpColor(sk.sun.low, dust ? sk.sun.dust : sk.sun.clear, 0.4 + amb * 0.6));
 
     this.ambientLight.intensity = 0.18 + amb * 0.5;
-    this.ambientLight.color.copy(lerpColor([30, 28, 44], [120, 120, 150], amb));
+    this.ambientLight.color.copy(lerpColor(sk.ambient.low, sk.ambient.high, amb));
     this.hemi.intensity = 0.2 + amb * 0.45;
   }
 

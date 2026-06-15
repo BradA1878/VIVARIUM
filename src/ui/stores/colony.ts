@@ -5,7 +5,8 @@
    touches the tick.
    ============================================================================ */
 import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
-import type { ColonyEvent, Difficulty, LegacyManifest, Resource, Snapshot, World } from "@shared/types";
+import { RESOURCES } from "@shared/types";
+import type { ColonyEvent, Difficulty, LegacyManifest, Resource, ShipmentManifest, Snapshot, World } from "@shared/types";
 import type { SimBridge } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo, SelectInfo } from "@/render/three/placement";
@@ -19,8 +20,12 @@ import {
   type PlayerModel, type Axis,
 } from "@/agent/director/memory";
 import { loadBest, persist, clearLocal } from "@/persistence";
-import { upsertColony, loadLedger, type ColonyRecord } from "@/persistence/colonies";
-import { nextSeedFrom, slotId, WORLD_META } from "../founding";
+import {
+  upsertColony, loadLedger, type ColonyRecord,
+  addShipment, maturedShipments, removeShipments, shipmentsInTransit, type Shipment,
+} from "@/persistence/colonies";
+import { nextSeedFrom, slotId, WORLD_META, catchupSteps } from "../founding";
+import type { SaveData } from "@/engine";
 import type { HazardKind } from "@shared/types";
 import { clockOf, fmt } from "../format";
 import { useSettings } from "./settings";
@@ -69,6 +74,46 @@ function toggleLog(): void {
  *  lowered by the start() action when the player commits a difficulty. */
 export const startScreen = ref(false);
 
+/** the switch curtain (parallel-colonies): raised while goTo loads + catches up + rebuilds
+ *  a colony, lowered once it's live — masks the rebuild hitch as a calm "descent". */
+export const curtain = ref(false);
+let curtainTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** the "while you were away" digest (parallel-colonies): what a switched-to colony's
+ *  off-screen catch-up actually did — the before/after delta + a tally of the notable
+ *  events — surfaced as a small panel on arrival, dismissed by the player. Null when
+ *  there's nothing to report (no real absence, or the colony died off-screen so the
+ *  EndScreen covers it instead). */
+export interface AwayDigest {
+  /** the world's display label (e.g. "Ceres") */
+  label: string;
+  /** sols that elapsed during the catch-up (after.sol − before.sol) */
+  sols: number;
+  /** net population change (after − before); negative = net lost, positive = net gained */
+  popDelta: number;
+  /** net building-count change (after − before) */
+  buildingDelta: number;
+  /** hazards that started off-screen (hazard_start count) */
+  hazards: number;
+  /** colonists lost to casualties off-screen (casualty count) */
+  casualties: number;
+  /** colonists born off-screen (birth count) */
+  births: number;
+  /** buildings destroyed off-screen (building_destroyed count) */
+  destroyed: number;
+  /** per-resource pool swing (after − before), only the pools that moved a unit+ */
+  resourceSwing: Partial<Record<Resource, number>>;
+  /** the build-currency swing (after − before) */
+  materialsDelta: number;
+}
+export const awayDigest = ref<AwayDigest | null>(null);
+/** dismiss the away digest (the panel's close button) */
+export function dismissAwayDigest(): void { awayDigest.value = null; }
+// the in-flight catch-up report, awaiting the post-catch-up snapshot to diff against.
+// The host posts {catchupReport} then {snapshot} as two messages; the report lands
+// first (before `snapshot.value` updates), so the digest is built on the NEXT snapshot.
+let pendingCatchup: { before: Snapshot; events: ColonyEvent[] } | null = null;
+
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
 let council: Council | null = null;
@@ -108,9 +153,12 @@ function readActiveSlot(): string {
 // the world you were last on (default reuses today's single key). Founding/revisit
 // repoint it; load-on-boot reads it.
 let activeSlot = readActiveSlot();
-/** point persistence at a world's slot (founding / revisit — PTP), and remember it. */
+/** reactive mirror of activeSlot for the Colonies map (highlight the live colony) */
+const activeSlotRef = ref(activeSlot);
+/** point persistence at a world's slot (founding / revisit / switch), and remember it. */
 export function setActiveSlot(slot: string): void {
   activeSlot = slot;
+  activeSlotRef.value = slot;
   try { localStorage.setItem(ACTIVE_SLOT_KEY, slot); } catch { /* private mode */ }
 }
 // the leaving run's identity, captured at launch() so foundNext() can derive the
@@ -219,6 +267,7 @@ function tearDownRun(): void {
   lastDirectedStrike = null;
   attributionCounter = 0;
   launching = false; // the new run is beginning — let autosave resume
+  awayDigest.value = null; pendingCatchup = null; // a fresh run has no "while you were away" to show
   clearLocal(activeSlot); // discard the saved colony; autosave will persist the fresh one
   history = resetHistory(); // a new run starts its telemetry from zero
   dismissHint();
@@ -237,6 +286,90 @@ function greetAfter(ms: number, difficulty: Difficulty): void {
     const u = council.bootLine(difficulty);
     pushLine(u.line, undefined, undefined, u.speaker, u.register, u.severity);
   }, ms);
+}
+
+/** keep the active colony's ledger row live — sols/population/savedAt refreshed from a
+ *  save, preserving foundedAt/legacy — so the Colonies map shows current numbers and the
+ *  catch-up has an accurate "last saved" stamp (parallel-colonies). */
+function refreshLedgerRow(save: SaveData): void {
+  const st = save.state;
+  const existing = loadLedger().colonies.find((c) => c.slotKey === activeSlot);
+  upsertColony({
+    ...existing,
+    worldId: st.world, slotKey: activeSlot, seed: save.seed, difficulty: st.difficulty,
+    label: WORLD_META[st.world].label, outcome: st.outcome, sols: st.sol, population: st.population,
+    foundedAt: existing?.foundedAt ?? Date.now(), savedAt: Date.now(),
+  });
+}
+
+/** enter a colony as the live one: reset agent scratch (NOT the slot it loads), then
+ *  load + deterministically CATCH UP (by the elapsed-since-savedAt step count) + resume,
+ *  via the switchColony command. Shared by revisit (StartScreen) and switchTo (in-game). */
+function goTo(slotKey: string, target: SaveData): void {
+  if (!bridge) return;
+  curtain.value = true; // drop the curtain to mask the catch-up + world rebuild
+  if (curtainTimer) clearTimeout(curtainTimer);
+  curtainTimer = setTimeout(() => { curtain.value = false; }, 850); // lift once the new colony has rendered
+  setActiveSlot(slotKey);
+  council?.reset(); sentinel?.reset(); director?.reset();
+  lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
+  awayDigest.value = null; pendingCatchup = null; // supersede any unread digest from a prior switch
+  dismissHint();
+  messages.value = [];
+  const rec = loadLedger().colonies.find((c) => c.slotKey === slotKey);
+  const savedAt = rec?.savedAt ?? rec?.foundedAt ?? Date.now();
+  const steps = catchupSteps(Date.now() - savedAt);
+  // credit any inter-planet shipments that have ARRIVED at this world, then drop them
+  // from the queue — synchronously, before the async switch (exactly-once, ordered by id).
+  const matured = maturedShipments(slotKey, Date.now());
+  bridge.switchColony(target, steps, settings.value.directorEnabled, matured.map((s) => s.manifest)); // credit + catch-up + resume
+  // Drop the credited shipments only AFTER the credit is durable: persist the credited
+  // (+caught-up) target first, then remove the queue rows. A tab-close before this can't lose
+  // the credit — the shipment stays queued and simply re-credits on the next switch (its credit
+  // was lost too). Safe: no mass lost, no double-credit.
+  if (matured.length) {
+    void bridge.save().then((s) => { persist(slotKey, s); removeShipments(matured.map((m) => m.id)); });
+  }
+  lastRealEventT = target.state.t;
+  history = resetHistory();
+  startScreen.value = false;
+  greetAfter(BOOT_LINE_MS, target.state.difficulty);
+}
+
+/** build the "while you were away" digest from the catch-up's before/after snapshots
+ *  + the off-screen events (parallel-colonies). Pure — diffs the two snapshots for the
+ *  state deltas and tallies the event stream for the notable counts. Returns null when
+ *  there was no real absence (no sol elapsed and no casualty/loss) OR the colony died
+ *  off-screen (the EndScreen already surfaces a dead world — don't double up). */
+function buildAwayDigest(before: Snapshot, after: Snapshot, events: ColonyEvent[]): AwayDigest | null {
+  // a colony that died off-screen is handled by the EndScreen, not the digest
+  if (after.outcome != null) return null;
+  const sols = after.sol - before.sol;
+  let hazards = 0, casualties = 0, births = 0, destroyed = 0;
+  for (const e of events) {
+    if (e.type === "hazard_start") hazards++;
+    else if (e.type === "casualty") casualties++;
+    else if (e.type === "birth") births++;
+    else if (e.type === "building_destroyed") destroyed++;
+  }
+  // only surface a digest for a REAL absence: at least a sol passed, or something was lost
+  const realAbsence = sols >= 1 || casualties > 0 || destroyed > 0 ||
+    after.population < before.population || after.buildings.length < before.buildings.length;
+  if (!realAbsence) return null;
+  const resourceSwing: Partial<Record<Resource, number>> = {};
+  for (const r of RESOURCES) {
+    const d = after.pools[r].amount - before.pools[r].amount;
+    if (Math.abs(d) >= 1) resourceSwing[r] = d;
+  }
+  return {
+    label: WORLD_META[after.world]?.label ?? after.world,
+    sols,
+    popDelta: after.population - before.population,
+    buildingDelta: after.buildings.length - before.buildings.length,
+    hazards, casualties, births, destroyed,
+    resourceSwing,
+    materialsDelta: after.materials.amount - before.materials.amount,
+  };
 }
 
 /** route one event (engine OR agent-originated) through the council. The gate
@@ -293,6 +426,12 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
   b.onEvent((e) => audio.onEvent(e));
   b.onSnapshot((s) => audio.onSnapshot(s));
 
+  // the "while you were away" digest (parallel-colonies): a switchColony's catch-up
+  // posts {catchupReport} then {snapshot}. Stash the report here; the post-catch-up
+  // snapshot lands next, and the onSnapshot handler below builds the digest off it.
+  // The events ride this stream ONLY — they never reach the council/narrator path.
+  b.onCatchupReport((before, events) => { pendingCatchup = { before, events }; });
+
   // settings → live subsystems: quality, the director toggle, and the audio
   // gains apply the moment they change.
   let appliedQuality = settings.value.graphics.quality;
@@ -313,6 +452,13 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 
   b.onSnapshot((s) => {
     snapshot.value = s;
+    // the post-catch-up snapshot of a switch: diff it against the stashed pre-catch-up
+    // snapshot into the "while you were away" digest (parallel-colonies). Built here so
+    // `s` is genuinely the after-catch-up state (the report arrived one message earlier).
+    if (pendingCatchup) {
+      awayDigest.value = buildAwayDigest(pendingCatchup.before, s, pendingCatchup.events);
+      pendingCatchup = null;
+    }
     recordSnapshot(history, s); // the run report's curves sample from here
     sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
     // the Director observes and may throw a hazard, aimed by colony shape, the
@@ -438,7 +584,7 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     // an autosave of the paused expansion-outcome state would clobber that archive.
     // (victory/defeat still autosave so their boot-discard keeps working.)
     if (startScreen.value || launching || snapshot.value?.outcome === "expansion") return;
-    void b.save().then((s) => persist(activeSlot, s));
+    void b.save().then((s) => { persist(activeSlot, s); refreshLedgerRow(s); }); // keep the Colonies map + savedAt current
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
 }
@@ -563,7 +709,8 @@ const controls = {
     upsertColony({
       worldId: save.state.world, slotKey: activeSlot, seed: save.seed,
       difficulty: save.state.difficulty, label: WORLD_META[save.state.world].label,
-      outcome: "expansion", sols: s.sol, population: s.population, foundedAt: Date.now(),
+      outcome: "expansion", sols: s.sol, population: s.population,
+      foundedAt: Date.now(), savedAt: Date.now(),
     });
     void persist(activeSlot, archive); // archive the LIVE copy (outcome cleared) so revisit resumes it
     // the legacy that travels: the two lowest-id living colonists (commander +
@@ -594,7 +741,8 @@ const controls = {
     // log + persist the freshly founded world so it's revisitable from t0
     upsertColony({
       worldId: world, slotKey: slot, seed, difficulty,
-      label: WORLD_META[world].label, outcome: null, sols: 1, population: 0, foundedAt: Date.now(),
+      label: WORLD_META[world].label, outcome: null, sols: 1, population: 0,
+      foundedAt: Date.now(), savedAt: Date.now(),
       legacy,
     });
     void bridge.save().then((sv) => persist(slot, sv));
@@ -605,25 +753,35 @@ const controls = {
   /** revisit a settled world from the StartScreen's Colonies list: load its slot
    *  and resume the colony live (Colony.load does the work). Mirrors load-on-boot,
    *  NOT a fresh start — it must never clear the slot it just loaded. */
+  /** revisit a settled world from the StartScreen — load + catch up + resume live. */
   async revisit(slotKey: string): Promise<void> {
     if (!bridge) return;
     const save = await loadBest(slotKey);
     if (!save) return; // the slot was abandoned/cleared — ignore the click
-    setActiveSlot(slotKey);
-    council?.reset(); sentinel?.reset(); director?.reset();
-    // clear the run-scratch tearDownRun would (minus the slot wipe revisit must avoid),
-    // so the resumed colony's epitaph/attribution reflect ITS run, not the last one.
-    lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
-    dismissHint();
-    messages.value = [];
-    bridge.load(save); // resumes the colony byte-identical
-    bridge.setDirector(settings.value.directorEnabled);
-    lastRealEventT = save.state.t;
-    // history isn't slot-scoped — start the resumed run's curves fresh rather than
-    // show the previous world's telemetry until new samples accrue.
-    history = resetHistory();
-    startScreen.value = false;
-    greetAfter(BOOT_LINE_MS, save.state.difficulty);
+    goTo(slotKey, save);
+  },
+  /** switch the live colony to another settled world (the in-game Colonies map): save the
+   *  LEAVING colony first (no loss) + refresh its ledger row, then load + catch up + resume
+   *  the target. */
+  async switchTo(slotKey: string): Promise<void> {
+    if (!bridge || slotKey === activeSlot) return; // already here
+    const leaving = await bridge.save();
+    await persist(activeSlot, leaving);
+    refreshLedgerRow(leaving);
+    const save = await loadBest(slotKey);
+    if (!save) return; // target slot gone
+    goTo(slotKey, save);
+  },
+  /** send an inter-planet shipment from the LIVE colony to another settled world: debit
+   *  the sender in its tick, then queue it on the ledger for the destination to credit
+   *  on arrival (after transitSols of transit). */
+  async dispatchShipment(toSlot: string, manifest: ShipmentManifest, transitSols = 1): Promise<void> {
+    if (!bridge || toSlot === activeSlot) return;
+    bridge.dispatchShipment(manifest);   // debit the live colony in its tick (deterministic)
+    const debited = await bridge.save(); // capture the DEBITED state and make it durable BEFORE the shipment
+    await persist(activeSlot, debited);  // is queued — so a tab-close can't keep the shipment without the
+    refreshLedgerRow(debited);           // matching debit (no mass duplication). The queue row lands last.
+    addShipment({ fromSlot: activeSlot, toSlot, manifest, dispatchedAt: Date.now(), transitSols });
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };
@@ -711,10 +869,15 @@ function colonies(): ColonyRecord[] {
   return [...loadLedger().colonies].sort((a, b) => b.foundedAt - a.foundedAt);
 }
 
+/** in-flight inter-planet shipments — for the Colonies map's transit display */
+function shipments(): Shipment[] {
+  return shipmentsInTransit();
+}
+
 export function useColony() {
   return {
     snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
-    runHistory, runEpitaph, directorDossier, colonies, controls,
+    runHistory, runEpitaph, directorDossier, colonies, shipments, activeSlot: activeSlotRef, controls,
   };
 }

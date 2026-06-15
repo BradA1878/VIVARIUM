@@ -4,11 +4,11 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, Difficulty, LegacyManifest, Side, Snapshot, World,
+  BuildingDef, BuildingState, ColonyEvent, Difficulty, LegacyManifest, Resource, ShipmentManifest, Side, Snapshot, World,
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  BASE_CAP, GRID_N, SOL_LENGTH, START_TOD,
+  BASE_CAP, GRID_N, SOL_LENGTH, START_TOD, CATCHUP_STEP,
   ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
   TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
@@ -69,6 +69,56 @@ export class Colony {
     const out = this.events;
     this.events = [];
     return out;
+  }
+
+  /** Deterministically advance the colony by `steps` catch-up sub-steps (each exactly
+   *  CATCHUP_STEP seconds) — the fast-forward for an away colony on switch (parallel-
+   *  colonies Round 4). Driving by an integer step COUNT (not a float budget) makes it
+   *  CHUNKING-INVARIANT: fastForward(i) then fastForward(j) is byte-identical to
+   *  fastForward(i+j) — because each step is the SAME size and integer addition is exact,
+   *  there is no float residual whose rounding depends on where a call stopped. So the
+   *  host can stream catch-up progress across frames without forking determinism.
+   *  Reproducible (fixed step + seeded RNG); stops early once the run ends so a finished
+   *  colony is never over-ticked. `collect` accumulates the emitted events for the "while
+   *  you were away" digest. The step count is computed MAIN-SIDE (the engine never reads a
+   *  clock — the wall): steps = round(elapsedSimSeconds / CATCHUP_STEP). */
+  fastForward(steps: number, collect = false): ColonyEvent[] {
+    const out: ColonyEvent[] = [];
+    let n = Math.max(0, Math.floor(steps));
+    while (n > 0 && this.s.outcome === null) {
+      this.tick(CATCHUP_STEP);
+      if (collect) out.push(...this.drainEvents());
+      else this.events = [];
+      n--;
+    }
+    return out;
+  }
+
+  /** DEBIT an inter-planet shipment from this (live) colony — the sender side of a
+   *  transfer (parallel-colonies). Pools + materials clamp at zero; crew leaves the
+   *  roster (the highest ids, so the commander — lowest id — stays). A deterministic
+   *  player act, mirroring respondTrade's pool debit; ZERO rng. */
+  dispatchShipment(m: ShipmentManifest): void {
+    if (m.resources) for (const [r, amt] of Object.entries(m.resources) as [Resource, number][]) {
+      const p = this.s.pools[r];
+      p.amount = Math.max(0, p.amount - amt);
+    }
+    if (m.materials) this.s.materials.amount = Math.max(0, this.s.materials.amount - m.materials);
+    if (m.crew && m.crew > 0) { this.s.population = Math.max(0, this.s.population - m.crew); reconcileColonists(this.s); }
+  }
+
+  /** CREDIT a shipment as plain seed-state — the receiver side, applied on load BEFORE
+   *  the catch-up (like carried legacy). Resources + materials clamp to capacity (full
+   *  tanks vent the overflow); crew arrives as FRESH colonists minted from the counter
+   *  (new ids — no collision, no commander surprise). ZERO rng, so the colony stays
+   *  reproducible. */
+  creditShipment(m: ShipmentManifest): void {
+    if (m.resources) for (const [r, amt] of Object.entries(m.resources) as [Resource, number][]) {
+      const p = this.s.pools[r];
+      p.amount = Math.min(p.capacity, p.amount + amt);
+    }
+    if (m.materials) this.s.materials.amount = Math.min(this.s.materials.capacity, this.s.materials.amount + m.materials);
+    if (m.crew && m.crew > 0) { this.s.population += m.crew; reconcileColonists(this.s); }
   }
 
   /** restart the run. Founding (PTP) can hand in a new seed and world; omitting

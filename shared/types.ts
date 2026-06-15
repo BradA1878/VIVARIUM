@@ -25,6 +25,17 @@ export interface LegacyManifest {
   tech?: string;
 }
 
+/** what an inter-planet shipment carries between colonies (parallel-colonies). The
+ *  sender DEBITS it from its own pools in its tick; the receiver CREDITS it as plain
+ *  seed-state on load (capacity-clamped resources; crew as fresh headcount) — never a
+ *  live cross-colony write. Crew is a headcount (arrives at fresh ids), not specific
+ *  colonists, so there's no id-collision/commander-succession risk. */
+export interface ShipmentManifest {
+  resources?: Partial<Record<Resource, number>>;
+  materials?: number;
+  crew?: number;
+}
+
 export const RESOURCES: Resource[] = ["power", "water", "oxygen", "food"];
 
 /** A side of a footprint / a rotation step. N=0, E=1, S=2, W=3. Grid deltas:

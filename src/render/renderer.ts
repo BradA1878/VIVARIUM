@@ -6,7 +6,7 @@
    5 Hz sim split). Placement raycasting is layered on in Phase 4.
    ============================================================================ */
 import * as THREE from "three";
-import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, Snapshot } from "@shared/types";
+import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, Snapshot, World } from "@shared/types";
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { SimBridge } from "@/worker/bridge";
@@ -201,6 +201,11 @@ export class ThreeRenderer {
   private recentDestroyed = new Map<string, number>();
   // undefined until the first snapshot, so loading mid-possession doesn't ping
   private lastPossessed: number | null | undefined = undefined;
+  // the world the terrain + scene tint are currently themed for. The constructor
+  // builds the mars terrain and SceneManager defaults its sky to mars, so this
+  // starts "mars" to match — a Mars run never rebuilds; the first snapshot whose
+  // world differs (a non-mars founding, or a PTP hop) swaps the terrain + tint.
+  private lastWorld: World = "mars";
 
   constructor(canvas: HTMLCanvasElement, bridge: SimBridge, gridN: number) {
     this.bridge = bridge;
@@ -405,6 +410,9 @@ export class ThreeRenderer {
       this.scene.render();
       return;
     }
+    // re-theme terrain + sky the moment the run's world changes (a non-mars
+    // founding, or a PTP hop) — before update() so the new tint applies this frame
+    if (snap.world !== this.lastWorld) this.swapWorld(snap.world);
     this.scene.update(snap.tod, snap.weather === "dust");
     // one night level per frame drives every kit's status/window ramp plus the
     // shared door + airlock glows (ramped once here instead of per door); the
@@ -445,6 +453,34 @@ export class ThreeRenderer {
     this.stormFx.update(dt, snap);
     this.hazardFx.update(dt);
     this.scene.render();
+  }
+
+  /** re-theme the scene for a world: dispose the old terrain, build the new
+   *  world's (its seeds/palette/rock+monolith tints), and re-tint the sky/sun.
+   *  Guarded by the lastWorld check at the call site, so it fires only on a real
+   *  change. A Mars run never reaches here (lastWorld starts "mars", matching the
+   *  terrain the constructor built) — so Mars renders exactly as before. Reused
+   *  by a PTP world-hop next slice. */
+  private swapWorld(world: World): void {
+    this.lastWorld = world;
+    this.scene.scene.remove(this.terrain.group);
+    this.terrain.dispose();
+    this.terrain = new Terrain(this.grid, world);
+    this.scene.scene.add(this.terrain.group);
+    this.scene.setWorld(world);
+    // quiet swap (parallel-colonies): drop the LEAVING colony's building meshes WITHOUT
+    // the demolish-puff storm, and re-seed (seededOnce=false) so the INCOMING colony's
+    // buildings don't all pop in. The curtain masks the one-frame rebuild; this keeps the
+    // FX calm regardless of curtain timing.
+    for (const [, entry] of this.placed) {
+      const door = entry.mesh.object.getObjectByName("door");
+      if (door) entry.mesh.object.remove(door);
+      this.buildingsGroup.remove(entry.mesh.object);
+      entry.mesh.dispose();
+    }
+    this.placed.clear();
+    this.spawnFx.clear();
+    this.seededOnce = false; // the incoming colony seeds quietly, like the first frame
   }
 
   /** add meshes for new buildings, drop meshes for removed ones, update glows */

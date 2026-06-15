@@ -6,7 +6,8 @@
    only references the save slots the persistence layer holds (revisit = load that
    slot). Timestamps are stamped here on the main thread (the engine forbids Date).
    ============================================================================ */
-import type { Difficulty, Outcome } from "@shared/types";
+import type { Difficulty, Outcome, ShipmentManifest } from "@shared/types";
+import { SOL_LENGTH } from "@/engine/tuning";
 
 /** one settled world. `slotKey` is the persistence slot (loadBest(slotKey) revisits it). */
 export interface ColonyRecord {
@@ -20,12 +21,29 @@ export interface ColonyRecord {
   population: number;
   foundedAt: number;
   endedAt?: number;
+  /** wall-clock (ms) the colony's save was last current — the catch-up reads it to
+   *  compute how long the colony has been away (parallel-colonies Round 4). Stamped
+   *  main-side on every upsert; falls back to foundedAt for pre-Round-4 rows. */
+  savedAt?: number;
   legacy?: { veterans: number[]; tech?: string };
+}
+
+/** an inter-planet shipment in transit (parallel-colonies). Lives in the ledger
+ *  (main-thread, spans colonies) — never engine state. `dispatchedAt` is wall-clock;
+ *  it matures (and credits the destination on switch) after transitSols of sim-time. */
+export interface Shipment {
+  id: number;
+  fromSlot: string;
+  toSlot: string;
+  manifest: ShipmentManifest;
+  dispatchedAt: number; // wall-clock ms
+  transitSols: number;
 }
 
 export interface Ledger {
   v: 1;
   colonies: ColonyRecord[];
+  shipments: Shipment[];
 }
 
 export type LedgerStorage = Pick<Storage, "getItem" | "setItem">;
@@ -33,7 +51,7 @@ export type LedgerStorage = Pick<Storage, "getItem" | "setItem">;
 export const COLONIES_KEY = "vivarium:colonies:v1";
 
 function emptyLedger(): Ledger {
-  return { v: 1, colonies: [] };
+  return { v: 1, colonies: [], shipments: [] };
 }
 
 /** the browser's localStorage when reachable, else null (node, SSR) */
@@ -51,12 +69,21 @@ function isRecord(x: unknown): x is ColonyRecord {
   return !!x && typeof x === "object" && typeof (x as ColonyRecord).slotKey === "string";
 }
 
+/** a shipment is usable only if it can address both endpoints + carries a manifest */
+function isShipment(x: unknown): x is Shipment {
+  const s = x as Shipment;
+  return !!x && typeof x === "object"
+    && typeof s.id === "number" && typeof s.toSlot === "string" && typeof s.fromSlot === "string"
+    && typeof s.dispatchedAt === "number" && typeof s.transitSols === "number" && !!s.manifest;
+}
+
 /** rebuild a valid Ledger from anything — corrupt JSON, an old version, partial
  *  rows. Never throws; the worst case is an empty ledger. */
 function normalize(raw: unknown): Ledger {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const colonies = Array.isArray(o.colonies) ? o.colonies.filter(isRecord) : [];
-  return { v: 1, colonies };
+  const shipments = Array.isArray(o.shipments) ? o.shipments.filter(isShipment) : [];
+  return { v: 1, colonies, shipments };
 }
 
 export function loadLedger(storage?: LedgerStorage): Ledger {
@@ -85,7 +112,7 @@ export function upsertColony(rec: ColonyRecord, storage?: LedgerStorage): Ledger
   const ledger = loadLedger(storage);
   const colonies = ledger.colonies.filter((c) => c.slotKey !== rec.slotKey);
   colonies.push(rec);
-  const next: Ledger = { v: 1, colonies };
+  const next: Ledger = { ...ledger, colonies }; // preserve the shipment queue
   saveLedger(next, storage);
   return next;
 }
@@ -93,7 +120,40 @@ export function upsertColony(rec: ColonyRecord, storage?: LedgerStorage): Ledger
 /** forget a settled world's ledger row (pairs with persistence deleteSlot). */
 export function removeColony(slotKey: string, storage?: LedgerStorage): Ledger {
   const ledger = loadLedger(storage);
-  const next: Ledger = { v: 1, colonies: ledger.colonies.filter((c) => c.slotKey !== slotKey) };
+  const next: Ledger = { ...ledger, colonies: ledger.colonies.filter((c) => c.slotKey !== slotKey) };
   saveLedger(next, storage);
   return next;
+}
+
+// ---- the inter-planet shipment queue (parallel-colonies) ----------------------
+
+/** queue a shipment (id auto-assigned). Returns the new ledger. */
+export function addShipment(s: Omit<Shipment, "id">, storage?: LedgerStorage): Ledger {
+  const ledger = loadLedger(storage);
+  const id = ledger.shipments.reduce((m, x) => Math.max(m, x.id), 0) + 1;
+  const next: Ledger = { ...ledger, shipments: [...ledger.shipments, { ...s, id }] };
+  saveLedger(next, storage);
+  return next;
+}
+
+/** shipments to `toSlot` that have ARRIVED by wall-clock `now` (transitSols of sim-time
+ *  elapsed since dispatch), sorted by id for deterministic, exactly-once crediting. */
+export function maturedShipments(toSlot: string, now: number, storage?: LedgerStorage): Shipment[] {
+  return loadLedger(storage).shipments
+    .filter((s) => s.toSlot === toSlot && now >= s.dispatchedAt + s.transitSols * SOL_LENGTH * 1000)
+    .sort((a, b) => a.id - b.id);
+}
+
+/** drop shipments by id (after crediting). Returns the new ledger. */
+export function removeShipments(ids: number[], storage?: LedgerStorage): Ledger {
+  const drop = new Set(ids);
+  const ledger = loadLedger(storage);
+  const next: Ledger = { ...ledger, shipments: ledger.shipments.filter((s) => !drop.has(s.id)) };
+  saveLedger(next, storage);
+  return next;
+}
+
+/** every in-flight shipment (for the Colonies-map in-transit display) */
+export function shipmentsInTransit(storage?: LedgerStorage): Shipment[] {
+  return loadLedger(storage).shipments;
 }
