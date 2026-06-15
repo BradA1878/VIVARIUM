@@ -15,6 +15,7 @@ import Objective from "./components/Objective.vue";
 import Alerts from "./components/Alerts.vue";
 import EndScreen from "./components/EndScreen.vue";
 import StartScreen from "./components/StartScreen.vue";
+import Curtain from "./components/Curtain.vue";
 import NarratorTicker from "./components/NarratorTicker.vue";
 import LogOverlay from "./components/LogOverlay.vue";
 import Inspector from "./components/Inspector.vue";
@@ -160,6 +161,8 @@ onUnmounted(() => {
     <EndScreen v-if="!booting" />
 
     <StartScreen v-if="!booting && startScreen" />
+
+    <Curtain />
 
     <Boot v-if="booting" @done="booting = false" />
   </div>

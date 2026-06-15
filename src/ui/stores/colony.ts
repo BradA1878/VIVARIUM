@@ -70,6 +70,11 @@ function toggleLog(): void {
  *  lowered by the start() action when the player commits a difficulty. */
 export const startScreen = ref(false);
 
+/** the switch curtain (parallel-colonies): raised while goTo loads + catches up + rebuilds
+ *  a colony, lowered once it's live — masks the rebuild hitch as a calm "descent". */
+export const curtain = ref(false);
+let curtainTimer: ReturnType<typeof setTimeout> | null = null;
+
 let bridge: SimBridge | null = null;
 let renderer: ThreeRenderer | null = null;
 let council: Council | null = null;
@@ -262,6 +267,9 @@ function refreshLedgerRow(save: SaveData): void {
  *  via the switchColony command. Shared by revisit (StartScreen) and switchTo (in-game). */
 function goTo(slotKey: string, target: SaveData): void {
   if (!bridge) return;
+  curtain.value = true; // drop the curtain to mask the catch-up + world rebuild
+  if (curtainTimer) clearTimeout(curtainTimer);
+  curtainTimer = setTimeout(() => { curtain.value = false; }, 850); // lift once the new colony has rendered
   setActiveSlot(slotKey);
   council?.reset(); sentinel?.reset(); director?.reset();
   lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;

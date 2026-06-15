@@ -468,6 +468,19 @@ export class ThreeRenderer {
     this.terrain = new Terrain(this.grid, world);
     this.scene.scene.add(this.terrain.group);
     this.scene.setWorld(world);
+    // quiet swap (parallel-colonies): drop the LEAVING colony's building meshes WITHOUT
+    // the demolish-puff storm, and re-seed (seededOnce=false) so the INCOMING colony's
+    // buildings don't all pop in. The curtain masks the one-frame rebuild; this keeps the
+    // FX calm regardless of curtain timing.
+    for (const [, entry] of this.placed) {
+      const door = entry.mesh.object.getObjectByName("door");
+      if (door) entry.mesh.object.remove(door);
+      this.buildingsGroup.remove(entry.mesh.object);
+      entry.mesh.dispose();
+    }
+    this.placed.clear();
+    this.spawnFx.clear();
+    this.seededOnce = false; // the incoming colony seeds quietly, like the first frame
   }
 
   /** add meshes for new buildings, drop meshes for removed ones, update glows */
