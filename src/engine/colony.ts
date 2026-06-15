@@ -8,7 +8,7 @@ import type {
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  BASE_CAP, START_AMOUNT, GRID_N, SOL_LENGTH, START_TOD,
+  BASE_CAP, GRID_N, SOL_LENGTH, START_TOD,
   ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
   TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
@@ -32,7 +32,7 @@ import { robotViews } from "./robots";
 import {
   START_MATERIALS, MATERIALS_CAP, TRADE_FIRST, DEPOSIT_RESPAWN, UFO_FIRST, BIRTH_FIRST,
   MORALE_START, DIFFICULTY, VENT_BACKFILL_SALT, AQUIFER_BACKFILL_SALT, RESUPPLY_AMOUNT,
-  ROVER_BUILD_TIME, ROBOT_BUILD_TIME,
+  ROVER_BUILD_TIME, ROBOT_BUILD_TIME, worldProfile,
 } from "./tuning";
 
 export class Colony {
@@ -465,15 +465,16 @@ export class Colony {
 function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState {
   const N = GRID_N;
   const prof = DIFFICULTY[difficulty];
+  const wp = worldProfile(world); // world start pools (mars == START_AMOUNT)
   return {
     N,
     grid: new Int32Array(N * N),
     buildings: [],
     pools: {
-      power: { amount: START_AMOUNT.power, capacity: BASE_CAP.power },
-      water: { amount: START_AMOUNT.water, capacity: BASE_CAP.water },
-      oxygen: { amount: START_AMOUNT.oxygen, capacity: BASE_CAP.oxygen },
-      food: { amount: START_AMOUNT.food, capacity: BASE_CAP.food },
+      power: { amount: wp.startPools.power, capacity: BASE_CAP.power },
+      water: { amount: wp.startPools.water, capacity: BASE_CAP.water },
+      oxygen: { amount: wp.startPools.oxygen, capacity: BASE_CAP.oxygen },
+      food: { amount: wp.startPools.food, capacity: BASE_CAP.food },
     },
     flow: { power: 0, water: 0, oxygen: 0, food: 0 },
     materials: { amount: prof.startMaterials, capacity: MATERIALS_CAP },
