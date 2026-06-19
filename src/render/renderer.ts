@@ -10,7 +10,7 @@ import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, Snapshot, Wo
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { SimBridge } from "@/worker/bridge";
-import { PerfGovernor, STEP_HIGH, STEP_LOW } from "./perf";
+import { PerfGovernor, STEP_HIGH, STEP_LOW, snapHz } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
 import { CELL, GridSpace } from "./three/coords";
@@ -142,12 +142,29 @@ export class ThreeRenderer {
   private raf = 0;
   private running = false;
   private lastFrame = 0;
-  // frame-rate cap — the sim is slow + iso, so ~30fps is plenty and saves a lot
-  // of GPU/battery vs rendering at a 120Hz display's full rate (and lower while
-  // paused, since almost nothing animates then). The cap is the governor's fps
-  // lever: the ladder can raise it to 60 with deep headroom or hold 30 down it.
-  private lastRender = 0;
+  // frame-rate cap — render at a target fps (the governor's fps lever; FPS_PAUSED
+  // while paused, since almost nothing animates then) rather than the display's
+  // full rate, to save GPU/battery. Applied by *counting vsyncs* (rAF callbacks)
+  // and rendering every Nth — phase-locked to the display so it can't judder,
+  // unlike a wall-clock delta gate that trips a vsync early/late on jitter.
   private static readonly FPS_PAUSED = 12;
+  // vsync-phase-locked pacing: render every `stride`-th rAF callback. stride =
+  // round(refreshHz / targetFps); refreshHz is measured from rAF at startup
+  // (0 = not yet measured → stride 1 = render every frame during the warm-up).
+  private refreshHz = 0;
+  private frameCounter = 0;
+  private stride = 1;
+  private rafSamples: number[] = [];
+  private lastRafT = 0;
+  // per-frame scratch, reused to keep the render hot path allocation-free. The
+  // reconcile passes run sequentially and never nest, so they share one id set;
+  // updateAirlocks' string set coexists with the buildings pass, so it's its own.
+  private scratchSeen = new Set<number>();
+  private scratchNeeded = new Set<string>();
+  private scratchFocus = new THREE.Vector3();
+  // DEV-only pacing probe (window.__viv): null = off; when recording, holds the
+  // interval (ms) between consecutive RENDERED frames so judder is measurable.
+  private frameLog: number[] | null = null;
   // adaptive quality: the governor walks the LADDER off measured frame-BODY
   // cost; the explicit LOW/HIGH tiers pin it (setQuality), AUTO lets it drive
   private governor = new PerfGovernor();
@@ -321,6 +338,26 @@ export class ThreeRenderer {
     return this.governor.info();
   }
 
+  /** DEV-only frame-pacing probe (window.__viv): start recording rendered-frame
+   *  intervals. Pair with fpsProbeStop() after ~15s of play. */
+  fpsProbeStart(): void {
+    if (import.meta.env.DEV) this.frameLog = [];
+  }
+
+  /** DEV-only: stop the probe and return the samples plus a 1ms-bucket histogram
+   *  and the measured refreshHz/stride. A bimodal histogram (e.g. {"33":…,"42":…})
+   *  is the judder fingerprint; phase-locked pacing collapses it to one bucket. */
+  fpsProbeStop(): { ms: number[]; refreshHz: number; stride: number; hist: Record<string, number> } {
+    const ms = this.frameLog ?? [];
+    this.frameLog = null;
+    const hist: Record<string, number> = {};
+    for (const v of ms) {
+      const k = String(Math.round(v));
+      hist[k] = (hist[k] ?? 0) + 1;
+    }
+    return { ms: ms.slice(), refreshHz: this.refreshHz, stride: this.stride, hist };
+  }
+
   /** DEV-only: drive rare render FX directly (zero sim coupling) so visual
    *  verification can screenshot them without waiting for the scheduler.
    *  "ufo" toggles a scripted hover-loop at grid center; call it again to
@@ -356,15 +393,19 @@ export class ThreeRenderer {
       if (!this.running) return;
       this.raf = requestAnimationFrame(loop);
       // don't render an off-screen tab at all (belt-and-suspenders: rAF already
-      // throttles hidden tabs, but this is explicit)
+      // throttles hidden tabs, but this is explicit) — kept ABOVE the pacing
+      // logic so a hidden tab's throttled ~1Hz callbacks never skew the measure
       if (typeof document !== "undefined" && document.hidden) return;
-      // cap the frame rate — render at most the governor's step fps (FPS_PAUSED when paused)
-      const fps = this.bridge.latest?.paused ? ThreeRenderer.FPS_PAUSED : this.fpsCap;
-      const minGap = 1000 / fps - 1; // small slack so we lock cleanly to a divisor of the display rate
-      if (t - this.lastRender < minGap) return;
-      this.lastRender = t;
-      // the governor judges headroom by the frame BODY's cost: the throttle
-      // clamps the inter-frame delta to the cap, so wall-clock dt says nothing
+      // vsync-phase-locked cap: count rAF callbacks (one per vsync) and render
+      // every `stride`-th. Counting vsync events is immune to rAF timestamp
+      // jitter — unlike a wall-clock delta gate, which trips a vsync early/late
+      // and judders. Warm-up (refreshHz not yet measured) renders every frame.
+      this.measureRefresh(t);
+      this.frameCounter++;
+      this.recomputeStride();
+      if (this.frameCounter % this.stride !== 0) return;
+      // the governor judges headroom by the frame BODY's cost, measured here and
+      // independent of pacing — skipped frames simply never run the body
       const t0 = performance.now();
       this.frame();
       const t1 = performance.now();
@@ -377,6 +418,32 @@ export class ThreeRenderer {
   /** the render-loop fps cap — the governor's fps lever (pause still floors it) */
   private setFpsCap(n: number): void {
     this.fpsCap = n;
+  }
+
+  /** the frame-pacing target right now — the governor's cap, floored while paused */
+  private targetFps(): number {
+    return this.bridge.latest?.paused ? ThreeRenderer.FPS_PAUSED : this.fpsCap;
+  }
+
+  /** render every `stride`-th vsync; recomputed each frame so it tracks the
+   *  governor's cap, the pause flip, and the measured refresh rate with no extra
+   *  wiring. refreshHz 0 (warm-up) → stride 1 (render every frame). */
+  private recomputeStride(): void {
+    this.stride = this.refreshHz > 0 ? Math.max(1, Math.round(this.refreshHz / this.targetFps())) : 1;
+  }
+
+  /** estimate the display refresh rate from the first ~40 rAF gaps (median,
+   *  snapped to a standard rate) so pacing locks to the real vsync cadence. A
+   *  no-op once measured; re-armed by onResize for a monitor hot-plug/move. */
+  private measureRefresh(t: number): void {
+    if (this.refreshHz > 0) return;
+    if (this.lastRafT > 0) this.rafSamples.push(t - this.lastRafT);
+    this.lastRafT = t;
+    if (this.rafSamples.length < 41) return; // skip the first warm-up gap, keep 40
+    const sorted = this.rafSamples.slice(1).sort((a, b) => a - b);
+    const median = sorted[sorted.length >> 1];
+    this.refreshHz = snapHz(1000 / median);
+    this.rafSamples = [];
   }
 
   /** apply the governor's step to the live levers — only when it changed (each
@@ -393,12 +460,22 @@ export class ThreeRenderer {
 
   private onResize(): void {
     this.scene.resize();
+    // a resize can mean a move to a different-refresh display — re-measure so
+    // the pacing stride re-locks to the new vsync cadence
+    this.refreshHz = 0;
+    this.rafSamples = [];
+    this.lastRafT = 0;
   }
 
   private frame(): void {
     const now = performance.now();
-    let dt = this.lastFrame ? (now - this.lastFrame) / 1000 : 0.016;
+    const interval = this.lastFrame ? now - this.lastFrame : 0;
+    let dt = this.lastFrame ? interval / 1000 : 0.016;
     if (dt > 0.1) dt = 0.1;
+    if (this.frameLog && interval > 0) {
+      this.frameLog.push(interval); // rendered-frame interval (ms) for the pacing probe
+      if (this.frameLog.length > 2000) this.frameLog.shift();
+    }
     this.lastFrame = now;
 
     const snap = this.bridge.latest;
@@ -486,7 +563,8 @@ export class ThreeRenderer {
   /** add meshes for new buildings, drop meshes for removed ones, update glows */
   private reconcile(snap: Snapshot): void {
     const now = performance.now();
-    const seen = new Set<number>();
+    const seen = this.scratchSeen;
+    seen.clear();
 
     // occupancy map for corridor neighbour masks (only built if needed)
     let cellOwner: Map<string, BuildingState> | null = null;
@@ -593,7 +671,8 @@ export class ThreeRenderer {
 
   /** place a lit airlock on every building edge that abuts a corridor */
   private updateAirlocks(snap: Snapshot, ownerOf: (x: number, y: number) => BuildingState | undefined): void {
-    const needed = new Set<string>();
+    const needed = this.scratchNeeded;
+    needed.clear();
     for (const b of snap.buildings) {
       const d = DEFS[b.defId];
       if (!d || !(d.requiresPressure || d.isHub)) continue; // only sealed buildings have airlocks
@@ -625,7 +704,8 @@ export class ThreeRenderer {
    *  atan2(dx,dy) in grid space maps to group.rotation.y directly (grid
    *  +x→world +x, grid +y→world +z). */
   private reconcileColonists(snap: Snapshot, dt: number, now: number): void {
-    const seen = new Set<number>();
+    const seen = this.scratchSeen;
+    seen.clear();
     const posLerp = 1 - Math.exp(-12 * dt); // frame-rate independent smoothing
     const pulse = 0.5 + 0.5 * Math.sin(now / 400);
     // the commander (lowest living id) wears amber — re-asserted every frame,
@@ -687,7 +767,8 @@ export class ThreeRenderer {
    *  speed integrates a wheelPhase (speed / wheel-radius) so the wheels turn
    *  exactly as fast as the ground moves under them */
   private reconcileRovers(snap: Snapshot, dt: number, now: number): void {
-    const seen = new Set<number>();
+    const seen = this.scratchSeen;
+    seen.clear();
     const posLerp = 1 - Math.exp(-12 * dt);
     const pulse = 0.5 + 0.5 * Math.sin(now / 400);
 
@@ -730,7 +811,8 @@ export class ThreeRenderer {
   /** robots: same template — the speed estimate drives a track-vibration
    *  shudder instead of a walk cycle, and the eye dims while flare-stunned */
   private reconcileRobots(snap: Snapshot, dt: number, now: number): void {
-    const seen = new Set<number>();
+    const seen = this.scratchSeen;
+    seen.clear();
     const posLerp = 1 - Math.exp(-12 * dt);
     const pulse = 0.5 + 0.5 * Math.sin(now / 400);
 
@@ -790,7 +872,8 @@ export class ThreeRenderer {
 
   /** deposits: a mesh per surface node, scaled by amount/max, removed on vanish */
   private reconcileDeposits(snap: Snapshot, now: number): void {
-    const seen = new Set<number>();
+    const seen = this.scratchSeen;
+    seen.clear();
     const pulse = 0.5 + 0.5 * Math.sin(now / 600);
     for (const d of snap.deposits) {
       seen.add(d.id);
@@ -817,7 +900,8 @@ export class ThreeRenderer {
   /** geothermal vents: static fumaroles (they never move or deplete) with a
    *  per-frame ember/heat-shimmer pulse — the deposit template minus setAmount */
   private reconcileVents(snap: Snapshot, now: number): void {
-    const seen = new Set<number>();
+    const seen = this.scratchSeen;
+    seen.clear();
     const pulse = 0.5 + 0.5 * Math.sin(now / 900); // slower breath than deposits
     for (const v of snap.vents) {
       seen.add(v.id);
@@ -844,7 +928,8 @@ export class ThreeRenderer {
    *  per-frame cool pool/vapor pulse — the vent template, cooled. The phase is
    *  offset from the vents so the two terrain markers don't breathe in lockstep */
   private reconcileAquifers(snap: Snapshot, now: number): void {
-    const seen = new Set<number>();
+    const seen = this.scratchSeen;
+    seen.clear();
     const pulse = 0.5 + 0.5 * Math.sin(now / 900 + Math.PI); // counter-phase to vents
     for (const a of snap.aquifers) {
       seen.add(a.id);
@@ -1020,7 +1105,7 @@ export class ThreeRenderer {
     const col = snap.possessed != null ? this.colonists.get(snap.possessed) : undefined;
     const rec = col ?? (snap.possessed != null ? this.rovers.get(snap.possessed) : undefined);
     if (rec) {
-      targetFocus = rec.pos.clone();
+      targetFocus = this.scratchFocus.copy(rec.pos);
       targetView = col ? 5.5 : 6.5;
     } else {
       // overview: frame the colony (centroid of its buildings) so it stays
@@ -1037,7 +1122,7 @@ export class ThreeRenderer {
 
   /** world-space centroid of all placed buildings (origin if none) */
   private colonyCentroid(snap: Snapshot): THREE.Vector3 {
-    const c = new THREE.Vector3();
+    const c = this.scratchFocus.set(0, 0, 0);
     let n = 0;
     for (const b of snap.buildings) {
       const def = DEFS[b.defId];

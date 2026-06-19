@@ -21,8 +21,9 @@ export interface PerfStep {
   shadows: boolean;
 }
 
-/** the quality ladder, best first — STEP_HIGH is today's HIGH tier (and the
- *  starting step), STEP_LOW ≈ today's LOW */
+/** the quality ladder, best first — STEP_HIGH is the HIGH tier and the AUTO
+ *  start (60fps at full quality); the governor demotes down it under load — it
+ *  sheds fps first (60→30), then resolution/effects. STEP_LOW ≈ today's LOW */
 export const LADDER: readonly PerfStep[] = [
   { fps: 60, ratio: 1.5, bloom: true, shadows: true },
   { fps: 30, ratio: 1.5, bloom: true, shadows: true },
@@ -31,9 +32,30 @@ export const LADDER: readonly PerfStep[] = [
   { fps: 30, ratio: 1.0, bloom: false, shadows: false },
 ];
 
-/** ladder indices the explicit quality tiers pin to */
-export const STEP_HIGH = 1;
+/** ladder indices the explicit quality tiers pin to. AUTO starts here too
+ *  (startStep) — optimistic at 60fps, and the governor auto-demotes any machine
+ *  that can't hold it, so the adaptive behaviour is preserved, just top-down. */
+export const STEP_HIGH = 0;
 export const STEP_LOW = LADDER.length - 1;
+
+/** standard display refresh rates — a noisy rAF-measured rate snaps to the
+ *  nearest of these so the frame-pacing divisor is a clean integer */
+const COMMON_HZ = [24, 30, 60, 90, 120, 144, 165, 240] as const;
+
+/** snap a measured refresh rate (Hz) to the nearest standard panel rate, so a
+ *  jittery rAF estimate like 119.7 becomes a clean 120 for the pacing stride */
+export function snapHz(measured: number): number {
+  let best: number = COMMON_HZ[0];
+  let bestDelta = Math.abs(measured - best);
+  for (const hz of COMMON_HZ) {
+    const d = Math.abs(measured - hz);
+    if (d < bestDelta) {
+      best = hz;
+      bestDelta = d;
+    }
+  }
+  return best;
+}
 
 export interface PerfTunables {
   /** collect-only window after construction/reset — no transitions */

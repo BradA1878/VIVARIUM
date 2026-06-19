@@ -450,17 +450,18 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
 
   r.onSelect((info) => { selected.value = info; });
 
-  b.onSnapshot((s) => {
-    snapshot.value = s;
-    // the post-catch-up snapshot of a switch: diff it against the stashed pre-catch-up
-    // snapshot into the "while you were away" digest (parallel-colonies). Built here so
-    // `s` is genuinely the after-catch-up state (the report arrived one message earlier).
-    if (pendingCatchup) {
-      awayDigest.value = buildAwayDigest(pendingCatchup.before, s, pendingCatchup.events);
-      pendingCatchup = null;
-    }
-    recordSnapshot(history, s); // the run report's curves sample from here
-    sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
+  // The Director + idle banter run off the synchronous worker-message callback:
+  // a heavy decide() landing mid-frame can delay an animation frame and feed the
+  // very pacing jitter we fight elsewhere. Coalesce them onto the next animation
+  // frame, on the LATEST snapshot — both are throttled to multi-second cadences,
+  // so once-per-frame (≥ the 12.5Hz snapshot rate while visible) is equivalent.
+  let latestForAgents: Snapshot | null = null;
+  let agentRaf = 0;
+  const runAgents = () => {
+    agentRaf = 0;
+    const s = latestForAgents;
+    latestForAgents = null;
+    if (!s) return;
     // the Director observes and may throw a hazard, aimed by colony shape, the
     // memory of past deaths, and how settled the Sentinel thinks the player is
     if (settings.value.directorEnabled) {
@@ -476,6 +477,28 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     // structurally incapable of reaching the live model.
     const idle = council?.observeIdle(s, s.t, lastRealEventT);
     if (idle) pushLine(idle.line, s.sol, s.tod, idle.speaker, idle.register, idle.severity);
+  };
+  const scheduleAgents = (s: Snapshot) => {
+    latestForAgents = s;
+    if (agentRaf) return;
+    if (typeof requestAnimationFrame === "function") agentRaf = requestAnimationFrame(runAgents);
+    else runAgents(); // non-DOM (tests): no frame loop — run inline
+  };
+
+  b.onSnapshot((s) => {
+    snapshot.value = s;
+    // the post-catch-up snapshot of a switch: diff it against the stashed pre-catch-up
+    // snapshot into the "while you were away" digest (parallel-colonies). Built here so
+    // `s` is genuinely the after-catch-up state (the report arrived one message earlier).
+    if (pendingCatchup) {
+      awayDigest.value = buildAwayDigest(pendingCatchup.before, s, pendingCatchup.events);
+      pendingCatchup = null;
+    }
+    recordSnapshot(history, s); // the run report's curves sample from here
+    sentinel?.push(s, s.t); // the Watcher's eyes sample telemetry (throttled)
+    // hand the Director + idle banter to the next animation frame (see above) so
+    // they never block this worker-message callback mid-frame
+    scheduleAgents(s);
     // snapshot-derived teaching toasts (stranded pressure building, first possession)
     if (!s.outcome && hints) showHint(hints.onSnapshot(s));
   });

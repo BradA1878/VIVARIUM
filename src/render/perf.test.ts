@@ -6,7 +6,7 @@
    the pin/reset semantics the renderer builds on.
    ============================================================================ */
 import { describe, it, expect } from "vitest";
-import { PerfGovernor, LADDER, STEP_HIGH, STEP_LOW } from "./perf";
+import { PerfGovernor, LADDER, STEP_HIGH, STEP_LOW, snapHz } from "./perf";
 
 /** play frames of one cost from fromMs (inclusive) to untilMs (exclusive) at a
  *  fixed cadence; returns the next un-fed timestamp so phases chain contiguously */
@@ -20,11 +20,21 @@ describe("PerfGovernor ladder", () => {
   it("starts on the HIGH step of the documented ladder", () => {
     const g = new PerfGovernor();
     expect(g.index()).toBe(STEP_HIGH);
-    expect(g.step()).toEqual({ fps: 30, ratio: 1.5, bloom: true, shadows: true });
+    expect(g.step()).toEqual({ fps: 60, ratio: 1.5, bloom: true, shadows: true });
     expect(g.stepChanged).toBe(false);
     expect(LADDER).toHaveLength(5);
     expect(LADDER[0]).toEqual({ fps: 60, ratio: 1.5, bloom: true, shadows: true });
     expect(LADDER[STEP_LOW]).toEqual({ fps: 30, ratio: 1.0, bloom: false, shadows: false });
+  });
+
+  it("AUTO starts at 60fps but still auto-demotes when the machine can't hold it", () => {
+    const g = new PerfGovernor(); // AUTO (un-pinned): optimistic on capable hardware…
+    expect(g.step().fps).toBe(60);
+    // …but a machine that can't sustain 60 blows the 16.7ms budget — the governor
+    // must still walk the ladder down on its own (this is the machine auto-adjust)
+    feed(g, 40, 0, 6000);
+    expect(g.index()).toBeGreaterThan(STEP_HIGH);
+    expect(g.step().fps).toBe(30); // sheds fps first, keeping full visual quality
   });
 
   it("the calibration window collects without transitions", () => {
@@ -38,7 +48,7 @@ describe("PerfGovernor ladder", () => {
   });
 
   it("sustained high cost demotes exactly one step per cooldown", () => {
-    const g = new PerfGovernor();
+    const g = new PerfGovernor(LADDER, { startStep: 1 }); // mid-ladder: isolate the demote mechanics
     // neutral warm-up: 15ms sits between the promote and demote bands
     let t = feed(g, 15, 0, 4000);
     expect(g.index()).toBe(1);
@@ -60,7 +70,7 @@ describe("PerfGovernor ladder", () => {
   });
 
   it("an egregious sustained spike demotes fast", () => {
-    const g = new PerfGovernor();
+    const g = new PerfGovernor(LADDER, { startStep: 1 });
     let t = feed(g, 15, 0, 5000); // neutral, past calibration
     expect(g.index()).toBe(1);
     t = feed(g, 200, t, 5600); // EMA rockets past 1.5× budget, but not for 0.5s yet
@@ -70,7 +80,7 @@ describe("PerfGovernor ladder", () => {
   });
 
   it("sustained headroom promotes after ~10s", () => {
-    const g = new PerfGovernor();
+    const g = new PerfGovernor(LADDER, { startStep: 1 }); // start below the top so a promote is possible
     // deep headroom against step0's 16.7ms budget (40% = 6.7)
     let t = feed(g, 4, 0, 9800);
     expect(g.index()).toBe(1); // not yet — the promote sustain is ~10s
@@ -132,7 +142,7 @@ describe("PerfGovernor ladder", () => {
   });
 
   it("reset() returns to the start step and recalibrates", () => {
-    const g = new PerfGovernor();
+    const g = new PerfGovernor(LADDER, { startStep: 1 });
     let t = feed(g, 28, 0, 4000); // overload through calibration → demoted at ~3s
     expect(g.index()).toBe(2);
     g.reset();
@@ -146,7 +156,7 @@ describe("PerfGovernor ladder", () => {
   });
 
   it("info() reports the EMA, pin, and calibration state for the dev overlay", () => {
-    const g = new PerfGovernor();
+    const g = new PerfGovernor(LADDER, { startStep: 1 });
     expect(g.info().calibrating).toBe(true);
     feed(g, 10, 0, 5000); // 10ms is neutral at step1 — nothing moves
     const i = g.info();
@@ -170,5 +180,18 @@ describe("PerfGovernor ladder", () => {
     expect(g.index()).toBe(1);
     feed(g, 14, 500, 1000); // a two-step ladder still never leaves the bottom
     expect(g.index()).toBe(1);
+  });
+});
+
+describe("snapHz", () => {
+  it("snaps a jittery rAF-measured rate to the nearest standard panel rate", () => {
+    expect(snapHz(119.8)).toBe(120); // ProMotion, measured a touch low
+    expect(snapHz(60.1)).toBe(60);
+    expect(snapHz(59.6)).toBe(60);
+    expect(snapHz(58)).toBe(60); // closer to 60 than 30
+    expect(snapHz(90.3)).toBe(90);
+    expect(snapHz(144.2)).toBe(144);
+    expect(snapHz(165)).toBe(165);
+    expect(snapHz(240)).toBe(240);
   });
 });
