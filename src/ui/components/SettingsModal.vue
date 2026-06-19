@@ -187,7 +187,7 @@ const KEYS: [string, string][] = [
 }
 .settings {
   pointer-events: auto;
-  width: 380px;
+  width: min(380px, 88vw);
   max-height: 80vh;
   overflow-y: auto;
   background: var(--panel);

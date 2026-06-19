@@ -103,6 +103,7 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
 /* landed decision panel */
 .trade-panel {
   width: 248px;
+  max-width: 100%;
   background: var(--panel);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(127, 212, 232, 0.3);

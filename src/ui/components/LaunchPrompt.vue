@@ -37,6 +37,7 @@ const worldLabel = computed(() => (snapshot.value ? WORLD_META[snapshot.value.wo
   font-family: var(--mono);
   margin-top: 8px;
   width: 248px;
+  max-width: 100%;
   background: var(--panel);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(176, 130, 232, 0.45);

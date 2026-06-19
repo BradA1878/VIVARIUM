@@ -42,7 +42,7 @@ function dismiss(): void {
 <style scoped>
 .hint {
   pointer-events: auto;
-  width: 340px;
+  width: min(340px, 90vw);
   background: var(--panel);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(127, 212, 232, 0.32);

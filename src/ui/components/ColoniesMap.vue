@@ -228,6 +228,7 @@ function toggle(): void {
   pointer-events: auto;
   margin-top: 8px;
   width: 250px;
+  max-width: 100%;
   background: var(--panel);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(176, 130, 232, 0.3);

@@ -33,7 +33,17 @@
   background: var(--panel); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
   border: 1px solid var(--hair); border-radius: 3px;
 }
-.rail { padding: 14px 14px 12px; }
+.rail {
+  padding: 14px 14px 12px;
+  /* never let the rail run under the ticker on a short screen — it caps to the
+     space between the top bar and the ticker and scrolls inside its own card
+     (like the log) as a last resort. On tall screens this never engages. */
+  max-height: calc(100vh - 56px - var(--ticker-h) - 10px);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.rail::-webkit-scrollbar { width: 5px; }
+.rail::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 3px; }
 
 .clock { display: flex; gap: 13px; align-items: center; padding-bottom: 13px; border-bottom: 1px solid var(--hair2); }
 .clock-dial { flex: 0 0 auto; }
@@ -198,7 +208,7 @@
    (z-50), below the settings/hint layer (z-60) */
 .log-panel {
   position: absolute; left: 16px; bottom: calc(var(--ticker-h) + 10px);
-  width: 460px; max-height: 56vh; z-index: 55;
+  width: min(460px, calc(100vw - 32px)); max-height: 56vh; z-index: 55;
   display: flex; flex-direction: column;
   background: var(--panel); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
   border: 1px solid var(--hair); border-radius: 3px;
@@ -212,7 +222,7 @@
 .log-body::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 3px; }
 
 /* ---------- inspector + palette ---------- */
-.bottom-center { position: absolute; left: 50%; bottom: calc(var(--ticker-h) + 12px); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bottom-center { position: absolute; left: 50%; bottom: calc(var(--ticker-h) + 12px); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100vw - 24px); }
 .inspect { display: flex; align-items: center; gap: 10px; background: var(--panel); backdrop-filter: blur(9px); border: 1px solid rgba(127, 212, 232, 0.3); border-radius: 3px; padding: 6px 12px; font-size: 11px; letter-spacing: 0.08em; }
 .inspect.demo { border-color: rgba(232, 120, 79, 0.4); color: var(--rust); }
 .ins-glyph { color: var(--cyan); font-weight: 600; }
@@ -221,7 +231,7 @@
 
 .palette { background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--hair); border-radius: 4px; padding: 9px 11px; }
 .pal-title { font-size: 9px; letter-spacing: 0.28em; color: var(--dim); text-align: center; margin-bottom: 8px; }
-.pal-grid { display: flex; gap: 5px; }
+.pal-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; max-width: calc(100vw - 32px); }
 .pal-btn {
   width: 62px; height: 58px; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 5px; border: 1px solid var(--hair2); border-radius: 3px;
@@ -235,7 +245,7 @@
 .pal-btn.demo .pal-glyph { color: var(--rust); }
 .pal-btn.demo.sel { border-color: rgba(232, 120, 79, 0.55); background: rgba(232, 120, 79, 0.1); box-shadow: none; }
 
-.pal-tip { position: fixed; z-index: 50; width: 206px; background: rgba(9, 12, 15, 0.97); border: 1px solid var(--hair); border-radius: 4px; padding: 10px 11px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); pointer-events: none; }
+.pal-tip { position: fixed; z-index: 50; width: min(206px, calc(100vw - 24px)); background: rgba(9, 12, 15, 0.97); border: 1px solid var(--hair); border-radius: 4px; padding: 10px 11px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); pointer-events: none; }
 .tip-name { font-size: 12px; letter-spacing: 0.05em; color: #e6eef1; display: flex; justify-content: space-between; margin-bottom: 5px; }
 .tip-name span { color: var(--faint); font-size: 10px; }
 .tip-desc { font-family: var(--serif); font-style: italic; font-size: 12.5px; line-height: 1.4; color: var(--dim); margin-bottom: 8px; }
@@ -247,11 +257,57 @@
 .tip-staff { color: var(--dim); }
 .tip-press { color: var(--dim); border: 1px solid var(--hair); border-radius: 2px; padding: 0 4px; }
 
+/* ---------- responsive: fit smaller laptops ----------
+   The HUD is fixed-px by design; these steps shrink it into a small viewport
+   without a redesign. The build palette has 23 tiles (~1558px in one row), so
+   it wraps into centred rows as the screen narrows. Each `.pal-grid` cap pairs
+   a fixed width (sets the row count at the wide end of the range) with a
+   rail-aware `calc(100vw - …)` (guarantees the centred palette clears the side
+   rails at the narrow end). Ordered widest→narrowest so the cascade stacks — a
+   1280px screen matches the 1600 + 1480 blocks. Screens >1600px (16"/external)
+   keep the single-row palette and today's look. */
+@media (max-width: 1600px) {
+  /* 14–15": two rows (12 + 11). A definite width wraps deterministically —
+     a shrink-to-fit max-width leaves a lone tile stranded on a third row. */
+  .pal-grid { width: 800px; }
+}
+@media (max-width: 1480px) {
+  /* 12–13": three rows (8 + 8 + 7) + slimmer rails + de-crowded top bar */
+  .left-col { width: 280px; }
+  .right-col { width: 248px; }
+  .pal-grid { width: 535px; }
+  .brand-name { font-size: 18px; }
+  .brand-sub { display: none; }
+  .controls { gap: 4px; }
+  .ctl { font-size: 10.5px; padding: 5px 8px; }
+}
+@media (max-width: 1180px) {
+  /* below the target band: the width goes rail-aware so the palette always
+     clears the rails even as the row count climbs */
+  .left-col { width: 264px; }
+  .right-col { width: 236px; }
+  .pal-grid { width: min(493px, calc(100vw - 600px)); }
+  .pal-btn { width: 56px; height: 54px; }
+}
 @media (max-width: 880px) {
-  .left-col { width: 260px; }
-  .pal-btn { width: 54px; height: 52px; }
+  .left-col { width: 248px; }
+  .pal-grid { width: min(460px, calc(100vw - 568px)); }
+  .pal-btn { width: 52px; height: 50px; }
   /* the ticker tightens — the timestamp goes, the line ellipsizes; the full
      text always lives in the log */
   .ticker .term-ts { display: none; }
   .ticker .term-txt { text-overflow: ellipsis; }
+}
+/* short screens: tighten the left rail's vertical rhythm so the clock +
+   resources + crew + objective stack fits above the bottom cluster */
+@media (max-height: 820px) {
+  .rail { padding: 11px 13px 10px; }
+  .clock { gap: 11px; padding-bottom: 9px; }
+  .clock-time { font-size: 21px; }
+  .rail-res { gap: 7px; padding: 9px 0 2px; }
+  .res-nums { margin: 2px 0 4px; }
+  .res-foot { margin-top: 3px; }
+  .crew { gap: 18px; padding-top: 9px; }
+  .objective { padding-top: 9px; margin-top: 9px; }
+  .res-amt { font-size: 18px; }
 }

@@ -46,7 +46,10 @@ const tipPos = ref<{ left: number; bottom: number }>({ left: 0, bottom: 0 });
 
 function showTip(e: MouseEvent, d: BuildingDef): void {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  tipPos.value = { left: rect.left, bottom: window.innerHeight - rect.top + 8 };
+  // keep the fixed-width tooltip on-screen near the right/left edges
+  const tipW = Math.min(206, window.innerWidth - 24);
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - tipW - 8));
+  tipPos.value = { left, bottom: window.innerHeight - rect.top + 8 };
   hovered.value = d;
 }
 

@@ -26,7 +26,7 @@ const { hintToast, dismissHint } = useColony();
 <style scoped>
 .toast {
   pointer-events: auto;
-  width: 300px;
+  width: min(300px, 90vw);
   background: var(--panel);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
