@@ -9,6 +9,7 @@ import { describe, it, expect } from "vitest";
 import { Colony } from "./index";
 import type { ColonyEvent } from "@shared/types";
 import type { ColonistInstance, ColonyState } from "./state";
+import { isPiloted } from "./state";
 import { DEFS } from "./defs";
 import { kindsByNeed } from "./gather";
 import { AUTO_CARRY, DAY_START, DAY_END, GATHER_NEED_FRAC } from "./tuning";
@@ -59,7 +60,7 @@ function controlled(seed: number): { c: Colony; s: ColonyState } {
 
 /** the colonists with no job slot this tick (the gather pool) */
 function freeColonists(s: ColonyState): ColonistInstance[] {
-  return s.colonists.filter((k) => k.workUid == null && k.id !== s.possessed && k.injury <= 0);
+  return s.colonists.filter((k) => k.workUid == null && !isPiloted(s, k.id) && k.injury <= 0);
 }
 
 describe("idle colonists work the deposit field", () => {
@@ -101,7 +102,7 @@ describe("idle colonists work the deposit field", () => {
       c.tick(0.2); c.drainEvents();
       if (!(s.tod > DAY_START && s.tod < DAY_END)) continue;
       for (const k of s.colonists) {
-        if (k.workUid == null || k.id === s.possessed) continue;
+        if (k.workUid == null || isPiloted(s, k.id)) continue;
         staffedTicks++;
         expect(GATHER_STATES).not.toContain(k.state);
       }
@@ -120,7 +121,7 @@ describe("idle colonists work the deposit field", () => {
       c.tick(0.2); c.drainEvents();
       if (!(s.tod > DAY_START && s.tod < DAY_END)) continue;
       for (const k of s.colonists) {
-        if (k.workUid == null || k.id === s.possessed) continue; // staffed workers only
+        if (k.workUid == null || isPiloted(s, k.id)) continue; // staffed workers only
         if ((GATHER_STATES as readonly string[]).includes(k.state)) staffedGatherStates.add(k.state);
       }
     }

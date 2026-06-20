@@ -343,7 +343,7 @@ describe("counterplay — the planet pushes back", () => {
       N: 15, grid: new Int32Array(15 * 15), buildings: [], colonists: [],
       rovers: [], robots: [near, far],
       hazards: [{ kind: "meteor", phase: "active", tLeft: 5, activeDur: 5, intensity: 1, cadence: 0 }],
-      directorControlled: true, possessed: null,
+      directorControlled: true, pilots: [],
     } as unknown as ColonyState;
     const evs: ColonyEvent[] = [];
     // strikeCell draws x then y from the rng → both land on cell 10

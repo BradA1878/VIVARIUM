@@ -24,20 +24,24 @@ import Palette from "./components/Palette.vue";
 import TradePrompt from "./components/TradePrompt.vue";
 import LaunchPrompt from "./components/LaunchPrompt.vue";
 import ColoniesMap from "./components/ColoniesMap.vue";
+import Lobby from "./components/Lobby.vue";
 import PilotBar from "./components/PilotBar.vue";
 import FirstHint from "./components/FirstHint.vue";
 import HintToast from "./components/HintToast.vue";
 import SettingsModal from "./components/SettingsModal.vue";
-import { SimBridge } from "@/worker/bridge";
+import { SimBridge, type BridgeCore } from "@/worker/bridge";
 import { Tuning } from "@/engine";
 import type { ThreeRenderer } from "@/render/renderer";
-import { initColony, useColony, disposeColony, directorDev } from "./stores/colony";
+import { initColony, useColony, disposeColony, directorDev, setMode, setRoster, type ColonyMode } from "./stores/colony";
+import { joinNetRoom, type NetRoom } from "@/net/room";
+import { HostRelay } from "@/net/hostRelay";
+import { NetBridge } from "@/net/netBridge";
 import { useSettings } from "./stores/settings";
 import { audio } from "./audio";
 
 const canvas = ref<HTMLCanvasElement | null>(null);
 const booting = ref(true);
-const bridge = shallowRef<SimBridge | null>(null);
+const bridge = shallowRef<BridgeCore | null>(null);
 const ready = ref(false);
 let renderer: ThreeRenderer | null = null;
 
@@ -88,28 +92,75 @@ function onKeyUp(e: KeyboardEvent): void {
   if (held.has(k)) { held.delete(k); sendMove(); }
 }
 
-onMounted(async () => {
-  const b = new SimBridge();
-  bridge.value = b;
+// co-op session handles (null in solo)
+let netRoom: NetRoom | null = null;
+let hostRelay: HostRelay | null = null;
 
+/** stand up a renderer + store on a bridge (worker for solo/host, Trystero for a
+ *  guest). The bridge IS the network seam, so this path is identical either way. */
+async function boot(b: BridgeCore, m: ColonyMode): Promise<void> {
+  bridge.value = b;
   const { ThreeRenderer } = await import("@/render/renderer");
   if (!canvas.value) return;
   renderer = new ThreeRenderer(canvas.value, b, Tuning.GRID_N);
   renderer.start();
-  initColony(b, renderer);
+  initColony(b, renderer, m);
   ready.value = true;
+  if (import.meta.env.DEV) {
+    (window as unknown as { __viv: unknown }).__viv = { renderer, bridge: b, settings, updateSettings, audio, director: directorDev };
+  }
+}
+
+/** tear down the live bridge/renderer/store + any co-op session */
+function teardown(): void {
+  hostRelay?.dispose(); hostRelay = null;
+  netRoom?.leave(); netRoom = null;
+  disposeColony();
+  renderer?.dispose(); renderer = null;
+  bridge.value?.dispose(); bridge.value = null;
+  ready.value = false;
+}
+
+/** HOST: keep the live worker sim, open a room, relay it to guests, and become the
+ *  architect (localActor=null → not embodied → can build + see the overview). */
+function hostGame(code: string, name: string): void {
+  const b = bridge.value;
+  if (!b || netRoom) return;
+  netRoom = joinNetRoom(code);
+  netRoom.onRoster((r) => setRoster(r.players));
+  hostRelay = new HostRelay(netRoom, b, name);
+  b.localActor = null;
+  setMode("host");
+}
+
+/** GUEST: drop the local worker and embody an astronaut on the host's colony. */
+async function joinGame(code: string, name: string): Promise<void> {
+  teardown();
+  netRoom = joinNetRoom(code);
+  netRoom.onRoster((r) => setRoster(r.players));
+  await boot(new NetBridge(netRoom, name), "guest");
+}
+
+// Lobby panel → session lifecycle
+function onHost(p: { code: string; name: string }): void { hostGame(p.code, p.name); }
+function onJoin(p: { code: string; name: string }): void { void joinGame(p.code, p.name); }
+
+onMounted(async () => {
+  await boot(new SimBridge(), "solo");
 
   window.addEventListener("keydown", onKey);
   window.addEventListener("keyup", onKeyUp);
 
   if (import.meta.env.DEV) {
-    (window as unknown as { __viv: unknown }).__viv = { renderer, bridge: b, settings, updateSettings, audio, director: directorDev };
+    (window as unknown as { __net: unknown }).__net = { host: hostGame, join: joinGame };
   }
 });
 
 onUnmounted(() => {
   window.removeEventListener("keydown", onKey);
   window.removeEventListener("keyup", onKeyUp);
+  hostRelay?.dispose();
+  netRoom?.leave();
   disposeColony();
   renderer?.dispose();
   bridge.value?.dispose();
@@ -140,6 +191,7 @@ onUnmounted(() => {
         <TradePrompt />
         <LaunchPrompt />
         <ColoniesMap />
+        <Lobby @host="onHost" @join="onJoin" />
       </div>
 
       <NarratorTicker />

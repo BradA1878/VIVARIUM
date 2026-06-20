@@ -9,8 +9,8 @@
    (doc §0 wall). The cargo mechanics live with their siblings in gather.ts.
    ============================================================================ */
 import type { RoverView } from "@shared/types";
-import type { ColonyState, RoverInstance } from "./state";
-import { buildingFunctional, FUNC_THRESHOLD } from "./state";
+import type { ColonyState, Pilot, RoverInstance } from "./state";
+import { buildingFunctional, FUNC_THRESHOLD, isPiloted } from "./state";
 import type { Emit } from "./tick";
 import {
   ROVER_BUILD_TIME, ROVER_CAP, ROVER_HIT_RADIUS, ROVER_REPAIR_RATE,
@@ -52,9 +52,9 @@ export function updateRoverFab(s: ColonyState, dt: number, emit: Emit): void {
 /** the possessed rover: integrate the standing moveIntent at ROVER_SPEED.
  *  Too dented to function (integrity < FUNC_THRESHOLD) → immobile until
  *  self-repair crosses back over the line. */
-export function pilotRover(s: ColonyState, r: RoverInstance, dt: number): void {
+export function pilotRover(s: ColonyState, r: RoverInstance, p: Pilot, dt: number): void {
   if (r.integrity < FUNC_THRESHOLD) return;
-  const { dx, dy } = s.moveIntent;
+  const { dx, dy } = p;
   const m = Math.hypot(dx, dy);
   if (m > 0.0001) {
     r.x = clamp(r.x + (dx / m) * ROVER_SPEED * dt, 0, s.N - 1);
@@ -83,6 +83,6 @@ export function roverViews(s: ColonyState): RoverView[] {
   return s.rovers.map((r) => ({
     id: r.id, x: r.x, y: r.y, facing: r.facing,
     cargo: { ...r.cargo }, cargoTotal: cargoTotal(r.cargo),
-    integrity: r.integrity, possessed: r.id === s.possessed,
+    integrity: r.integrity, possessed: isPiloted(s, r.id),
   }));
 }

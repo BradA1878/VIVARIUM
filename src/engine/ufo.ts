@@ -8,7 +8,7 @@
    ============================================================================ */
 import type { UfoView } from "@shared/types";
 import type { ColonyState, UfoInstance } from "./state";
-import { buildingFunctional } from "./state";
+import { buildingFunctional, isPiloted, removePilot } from "./state";
 import type { Emit } from "./tick";
 import type { RNG } from "./rng";
 import { techDeflectorBoost } from "./techs";
@@ -41,12 +41,12 @@ export function abductionBlockChance(s: ColonyState): number {
 function ufoEligible(s: ColonyState): boolean {
   return s.sol >= UFO_MIN_SOL
     && s.population > UFO_MIN_POP
-    && s.colonists.some((c) => c.id !== s.possessed);
+    && s.colonists.some((c) => !isPiloted(s, c.id));
 }
 
 /** spawn a UFO in its inbound phase, locking onto a random non-possessed colonist */
 function spawnUfo(s: ColonyState, rng: RNG, emit: Emit): void {
-  const targets = s.colonists.filter((c) => c.id !== s.possessed);
+  const targets = s.colonists.filter((c) => !isPiloted(s, c.id));
   if (!targets.length) return;
   const victim = targets[Math.floor(rng.next() * targets.length)];
   s.ufo = {
@@ -65,7 +65,7 @@ function resolveAbduction(s: ColonyState, u: UfoInstance, rng: RNG, emit: Emit):
   if (s.population <= UFO_MIN_POP) return;   // floor — never the last few
   if (rng.next() < abductionBlockChance(s)) { emit({ type: "abduction_blocked" }); return; }
   s.colonists = s.colonists.filter((c) => c.id !== victim.id);
-  if (s.possessed === victim.id) s.possessed = null; // safety; we never target it
+  removePilot(s, victim.id); // safety; we never target a piloted colonist
   s.population = Math.max(0, s.population - 1);
   emit({ type: "abducted" });
   bumpMorale(s, -MORALE_BUMP.abducted);

@@ -37,7 +37,8 @@ function collector() {
 /** a minimal state carrying only what applyStrikeInjuries touches */
 function strikeState(colonists: ColonistInstance[], possessed: number | null = null): ColonyState {
   return {
-    colonists, population: colonists.length, dead: 0, possessed,
+    colonists, population: colonists.length, dead: 0,
+    pilots: possessed != null ? [{ id: possessed, dx: 0, dy: 0 }] : [],
     morale: MORALE_START,
   } as unknown as ColonyState;
 }
@@ -58,7 +59,7 @@ function healState(colonists: ColonistInstance[], buildings: BuildingState[]): C
   const N = 15;
   return {
     N, grid: new Int32Array(N * N), buildings,
-    colonists, population: colonists.length, dead: 0, possessed: null,
+    colonists, population: colonists.length, dead: 0, pilots: [],
     morale: MORALE_START,
   } as unknown as ColonyState;
 }
@@ -128,7 +129,7 @@ describe("applyStrikeInjuries", () => {
     const s = strikeState([hurt, emptyColonist(2, 12, 12)], 1);
     applyStrikeInjuries(s, 5, 5, collector().emit);
 
-    expect(s.possessed).toBeNull();
+    expect(s.pilots).toEqual([]); // the piloted victim died → released
     expect(s.population).toBe(1);
   });
 });

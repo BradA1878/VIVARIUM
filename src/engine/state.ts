@@ -162,10 +162,10 @@ export interface ColonyState {
   aquifers: AquiferInstance[];
   /** the collection depot cell — where the possessed colonist drops materials */
   depot: { gx: number; gy: number };
-  /** id of the possessed colonist, or null */
-  possessed: number | null;
-  /** the player's standing WASD direction for the possessed colonist (normalized) */
-  moveIntent: { dx: number; dy: number };
+  /** the actively-piloted actors, each carrying its player's standing WASD intent.
+   *  Empty when nobody is embodied; solo holds ≤1, multiplayer holds one per
+   *  player. An entry's id may name a colonist OR a rover (unified id space). */
+  pilots: Pilot[];
   /** seconds until the next deposit surfaces */
   depositRespawn: number;
   /** a live alien trade offer, or null */
@@ -291,6 +291,35 @@ export function emptyBuilding(
     online: false, connected: false, staffed: false, fed: false, util: 0,
     integrity: 1, faulted: 0,
   };
+}
+
+/** an actively-piloted actor + its player's standing WASD intent (ColonyState
+ *  field `pilots`). The id names a colonist OR a rover (unified id space). */
+export interface Pilot {
+  id: number;
+  dx: number;
+  dy: number;
+}
+
+/** is this actor currently piloted by a player? */
+export function isPiloted(s: ColonyState, id: number): boolean {
+  return s.pilots.some((p) => p.id === id);
+}
+
+/** the standing intent for a piloted actor, or undefined if it isn't piloted */
+export function pilotOf(s: ColonyState, id: number): Pilot | undefined {
+  return s.pilots.find((p) => p.id === id);
+}
+
+/** claim an actor for direct control (idempotent — re-claiming keeps its intent) */
+export function addPilot(s: ColonyState, id: number): void {
+  if (!s.pilots.some((p) => p.id === id)) s.pilots.push({ id, dx: 0, dy: 0 });
+}
+
+/** release an actor from direct control (no-op if it wasn't piloted) */
+export function removePilot(s: ColonyState, id: number): void {
+  const i = s.pilots.findIndex((p) => p.id === id);
+  if (i >= 0) s.pilots.splice(i, 1);
 }
 
 export const FUNC_THRESHOLD = 0.45; // below this integrity → non-functional

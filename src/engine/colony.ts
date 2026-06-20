@@ -19,8 +19,8 @@ import { planRoute } from "./route";
 import { recomputeCaps } from "./caps";
 import { spawnHazard, hazardViews, SCHED_FIRST } from "./hazards";
 import type { HazardKind } from "@shared/types";
-import type { ColonyState, SaveData } from "./state";
-import { buildingFunctional } from "./state";
+import type { ColonyState, SaveData, Pilot } from "./state";
+import { buildingFunctional, addPilot, removePilot } from "./state";
 import { emptyBuilding, emptyColonist } from "./state";
 import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed, baseCenter, freeCellNear } from "./colonists";
 import { computeUnlocks } from "./unlocks";
@@ -265,17 +265,24 @@ export class Colony {
   /** possess an actor by id (null releases) — colonists resolve first, then
    *  rovers; the unified id space (rover ids draw from the colonist counter)
    *  keeps the protocol unchanged. Resets any standing move intent. */
-  possess(id: number | null): void {
-    if (id == null) { this.s.possessed = null; this.s.moveIntent = { dx: 0, dy: 0 }; return; }
-    if (this.s.colonists.some((c) => c.id === id) || this.s.rovers.some((r) => r.id === id)) {
-      this.s.possessed = id;
-      this.s.moveIntent = { dx: 0, dy: 0 };
-    }
+  possess(id: number | null, on?: boolean): void {
+    if (id == null) { this.s.pilots = []; return; }      // release everyone (solo toggle-off)
+    if (on === false) { removePilot(this.s, id); return; } // multiplayer: release just this actor
+    const exists = this.s.colonists.some((c) => c.id === id) || this.s.rovers.some((r) => r.id === id);
+    if (!exists) return;
+    if (on === undefined) this.s.pilots = [{ id, dx: 0, dy: 0 }]; // solo: replace to a single pilot
+    else addPilot(this.s, id);                                    // multiplayer: claim, keep the others
   }
-  /** the player's standing WASD direction for the possessed colonist */
-  setMoveIntent(dx: number, dy: number): void { this.s.moveIntent = { dx, dy }; }
-  /** the player pressed P — pick up from a deposit / drop at the depot */
-  interact(): void { interactPossessed(this.s); }
+  /** set a piloted actor's standing WASD direction. With an id, just that actor;
+   *  without one, every pilot (solo has exactly one). */
+  setMoveIntent(dx: number, dy: number, id?: number): void {
+    for (const p of this.s.pilots) if (id == null || p.id === id) { p.dx = dx; p.dy = dy; }
+  }
+  /** the player pressed P — pick up / drop for one piloted actor (solo: the only one) */
+  interact(id?: number): "picked" | "dropped" | null {
+    const target = id ?? this.s.pilots[0]?.id;
+    return target == null ? null : interactPossessed(this.s, target);
+  }
   /** accept/decline a landed alien trade offer */
   respondTrade(accept: boolean): void { applyRespondTrade(this.s, accept, this.emit); }
 
@@ -350,7 +357,7 @@ export class Colony {
       rovers: roverViews(s),
       robots: robotViews(s),
       depot: { ...s.depot },
-      possessed: s.possessed,
+      possessed: s.pilots[0]?.id ?? null,
       trade: tradeView(s),
       ufo: ufoView(s),
       acquiredTech: [...s.acquiredTech],
@@ -418,7 +425,7 @@ export class Colony {
         vents: this.s.vents.map((v) => ({ ...v })),
         aquifers: this.s.aquifers.map((a) => ({ ...a })),
         depot: { ...this.s.depot },
-        moveIntent: { ...this.s.moveIntent },
+        pilots: this.s.pilots.map((p) => ({ ...p })),
         trade: this.s.trade ? { ...this.s.trade, give: { ...this.s.trade.give }, take: { ...this.s.trade.take } } : null,
         ufo: this.s.ufo ? { ...this.s.ufo } : null,
         acquiredTech: [...this.s.acquiredTech],
@@ -474,7 +481,7 @@ export class Colony {
       robotFab: st.robotFab ?? ROBOT_BUILD_TIME,
       windLevel: st.windLevel ?? 0,
       depot: st.depot ? { ...st.depot } : { gx: 6, gy: 5 },
-      moveIntent: st.moveIntent ? { ...st.moveIntent } : { dx: 0, dy: 0 },
+      pilots: loadPilots(st),
       trade: st.trade ? { ...st.trade, give: { ...st.trade.give }, take: { ...st.trade.take } } : null,
       ufo: st.ufo ? { ...st.ufo } : null,
       nextUfo: st.nextUfo ?? UFO_FIRST,
@@ -512,6 +519,17 @@ export class Colony {
   }
 }
 
+/** the piloted set for a loaded save: new saves carry `pilots`; legacy saves
+ *  carry the singular possessed+moveIntent, which migrate to a one-pilot list
+ *  (possession is session state, so this only matters for a save taken mid-pilot). */
+function loadPilots(st: ColonyState): Pilot[] {
+  if (Array.isArray(st.pilots)) return st.pilots.map((p) => ({ ...p }));
+  const leg = st as unknown as { possessed?: number | null; moveIntent?: { dx: number; dy: number } };
+  return leg.possessed != null
+    ? [{ id: leg.possessed, dx: leg.moveIntent?.dx ?? 0, dy: leg.moveIntent?.dy ?? 0 }]
+    : [];
+}
+
 function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState {
   const N = GRID_N;
   const prof = DIFFICULTY[difficulty];
@@ -537,8 +555,7 @@ function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState 
     vents: [],
     aquifers: [],
     depot: { gx: 6, gy: 5 }, // a clear collection point beside the hub (set in seedColony)
-    possessed: null,
-    moveIntent: { dx: 0, dy: 0 },
+    pilots: [],
     depositRespawn: DEPOSIT_RESPAWN,
     trade: null,
     nextTrade: TRADE_FIRST,

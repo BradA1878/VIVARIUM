@@ -16,7 +16,7 @@
 import * as THREE from "three";
 import type { Side } from "@shared/types";
 import { DEFS, doorCells, SIDE_DELTA } from "@/engine";
-import type { SimBridge } from "@/worker/bridge";
+import type { BridgeCore } from "@/worker/bridge";
 import { CELL, GridSpace } from "./coords";
 
 export interface HoverInfo {
@@ -67,7 +67,7 @@ export class PlacementController {
     private canvas: HTMLCanvasElement,
     private camera: THREE.Camera,
     private grid: GridSpace,
-    private bridge: SimBridge,
+    private bridge: BridgeCore,
   ) {
     this.tileGeo = new THREE.PlaneGeometry(CELL * 0.92, CELL * 0.92).rotateX(-Math.PI / 2);
     this.tileMat = new THREE.MeshBasicMaterial({

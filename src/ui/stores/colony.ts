@@ -7,7 +7,7 @@
 import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
 import { RESOURCES } from "@shared/types";
 import type { ColonyEvent, Difficulty, LegacyManifest, Resource, ShipmentManifest, Snapshot, World } from "@shared/types";
-import type { SimBridge } from "@/worker/bridge";
+import type { BridgeCore } from "@/worker/bridge";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo, SelectInfo } from "@/render/three/placement";
 import { Council, type Register } from "@/agent/council";
@@ -74,6 +74,16 @@ function toggleLog(): void {
  *  lowered by the start() action when the player commits a difficulty. */
 export const startScreen = ref(false);
 
+/** co-op session role. 'host' runs the authoritative sim + relays to guests and
+ *  plays as the architect; 'guest' is an astronaut on the host's colony with NO
+ *  local sim (it only renders the host's snapshots). 'solo' is the default. */
+export type ColonyMode = "solo" | "host" | "guest";
+export const mode = ref<ColonyMode>("solo");
+/** the live co-op roster (host + guests), for the lobby/HUD. Empty in solo. */
+export const roster = ref<{ peerId: string; name: string; actorId: number | null }[]>([]);
+export function setMode(m: ColonyMode): void { mode.value = m; }
+export function setRoster(players: { peerId: string; name: string; actorId: number | null }[]): void { roster.value = players; }
+
 /** the switch curtain (parallel-colonies): raised while goTo loads + catches up + rebuilds
  *  a colony, lowered once it's live — masks the rebuild hitch as a calm "descent". */
 export const curtain = ref(false);
@@ -114,7 +124,7 @@ export function dismissAwayDigest(): void { awayDigest.value = null; }
 // first (before `snapshot.value` updates), so the digest is built on the NEXT snapshot.
 let pendingCatchup: { before: Snapshot; events: ColonyEvent[] } | null = null;
 
-let bridge: SimBridge | null = null;
+let bridge: BridgeCore | null = null;
 let renderer: ThreeRenderer | null = null;
 let council: Council | null = null;
 let sentinel: Sentinel | null = null;
@@ -402,9 +412,10 @@ function routeEvent(e: ColonyEvent): void {
 }
 
 /** wire the store to the live bridge + renderer (called once from App) */
-export function initColony(b: SimBridge, r: ThreeRenderer): void {
+export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "solo"): void {
   bridge = b;
   renderer = r;
+  mode.value = m;
   council = new Council();
   sentinel = new Sentinel();
   director = new Director();
@@ -464,7 +475,9 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
     if (!s) return;
     // the Director observes and may throw a hazard, aimed by colony shape, the
     // memory of past deaths, and how settled the Sentinel thinks the player is
-    if (settings.value.directorEnabled) {
+    if (mode.value !== "guest" && settings.value.directorEnabled) {
+      // a guest's Director never throws: the host's sim is authoritative, so its
+      // Director is the only one whose triggerHazard reaches the tick.
       const strike = director?.decide(s, Math.random, { bias: directorBias, comfort: sentinel?.comfort() });
       if (strike) {
         b.triggerHazard(strike.kind, strike.intensity);
@@ -544,6 +557,11 @@ export function initColony(b: SimBridge, r: ThreeRenderer): void {
       detail: a.feature, sigma: Math.round(a.sigma * 10) / 10,
     });
   });
+
+  // A guest has no local sim: everything below (load-on-boot, the start screen,
+  // autosave) is host/solo ownership of a save. A guest just renders the host's
+  // snapshots — all the observer wiring above is already attached, so stop here.
+  if (m === "guest") { startScreen.value = false; return; }
 
   // load-on-boot: resume the saved colony if one exists (doc §5). The worker
   // already came up on a fresh seed; a save just replaces it. Don't resume into
@@ -902,5 +920,6 @@ export function useColony() {
     snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
     runHistory, runEpitaph, directorDossier, colonies, shipments, activeSlot: activeSlotRef, controls,
+    mode, roster,
   };
 }

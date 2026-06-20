@@ -15,9 +15,13 @@ export type Command =
   | { type: "route"; fromUid: number; toUid: number }
   | { type: "triggerHazard"; kind: HazardKind; intensity?: number }
   | { type: "setDirector"; value: boolean }
-  | { type: "possess"; id: number | null }
-  | { type: "moveIntent"; dx: number; dy: number }
-  | { type: "interact" }
+  // possess/release an actor. `on` is the multiplayer claim flag (true adds to the
+  // piloted set, false removes just that actor); omit it for solo replace-to-one,
+  // `id:null` releases everyone. `id` on moveIntent/interact names which piloted
+  // actor the input is for (the host stamps it per player); omit for the sole pilot.
+  | { type: "possess"; id: number | null; on?: boolean }
+  | { type: "moveIntent"; dx: number; dy: number; id?: number }
+  | { type: "interact"; id?: number }
   | { type: "respondTrade"; accept: boolean }
   | { type: "setPaused"; value: boolean }
   | { type: "setSpeed"; value: number }

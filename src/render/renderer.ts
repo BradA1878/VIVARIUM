@@ -9,7 +9,7 @@ import * as THREE from "three";
 import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, Snapshot, World } from "@shared/types";
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
-import type { SimBridge } from "@/worker/bridge";
+import type { BridgeCore } from "@/worker/bridge";
 import { PerfGovernor, STEP_HIGH, STEP_LOW, snapHz } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
@@ -133,7 +133,7 @@ export class ThreeRenderer {
   private doorSillMat = new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.7 });
   // per-frame world context handed to every kit (mutated in place — no allocs)
   private env: KitEnv = { night: 0 };
-  private bridge: SimBridge;
+  private bridge: BridgeCore;
   private placement: PlacementController;
   private atmosphere: Atmosphere;
   private stormFx: StormFx;
@@ -224,7 +224,7 @@ export class ThreeRenderer {
   // world differs (a non-mars founding, or a PTP hop) swaps the terrain + tint.
   private lastWorld: World = "mars";
 
-  constructor(canvas: HTMLCanvasElement, bridge: SimBridge, gridN: number) {
+  constructor(canvas: HTMLCanvasElement, bridge: BridgeCore, gridN: number) {
     this.bridge = bridge;
     this.scene = new SceneManager(canvas);
     this.grid = new GridSpace(gridN);

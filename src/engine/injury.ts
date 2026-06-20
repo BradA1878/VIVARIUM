@@ -6,7 +6,7 @@
    the existing strike cells, so the main rng stream is byte-identical.
    ============================================================================ */
 import type { ColonyState } from "./state";
-import { buildingFunctional } from "./state";
+import { buildingFunctional, removePilot } from "./state";
 import type { Emit } from "./tick";
 import { accessCell } from "./colonists";
 import { roleMatchCount } from "./roster";
@@ -40,7 +40,7 @@ export function applyStrikeInjuries(s: ColonyState, gx: number, gy: number, emit
     if (Math.hypot(c.x - gx, c.y - gy) > INJURY_RADIUS) continue;
     if (c.injury > 0) {
       s.colonists = s.colonists.filter((k) => k.id !== c.id);
-      if (s.possessed === c.id) s.possessed = null;
+      removePilot(s, c.id);
       s.population = Math.max(0, s.population - 1);
       s.dead += 1;
       emit({ type: "casualty", detail: "strike", n: 1 });

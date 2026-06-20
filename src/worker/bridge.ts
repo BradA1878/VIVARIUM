@@ -3,6 +3,11 @@
    agnostic (no Vue, no three) so both the renderer and the Vue store can use it.
    Exposes the latest snapshot, a snapshot/event subscription, command methods,
    and synchronous placement prediction (doc §0: observe, don't reach in).
+
+   The transport-agnostic guts live in `BridgeCore`; `SimBridge` supplies the Web
+   Worker transport. A guest's `NetBridge` (src/net/netBridge.ts) extends the SAME
+   core over a Trystero data channel — the renderer/store can't tell them apart, so
+   the worker wall doubles as the network seam (multiplayer co-op).
    ============================================================================ */
 import type { BuildingState, ColonyEvent, Difficulty, HazardKind, LegacyManifest, ShipmentManifest, Snapshot, World } from "@shared/types";
 import { DEFS, FUNC_THRESHOLD, type SaveData } from "@/engine";
@@ -16,33 +21,49 @@ type EventFn = (e: ColonyEvent) => void;
  *  events a switchColony's catch-up produced (parallel-colonies) */
 type CatchupReportFn = (before: Snapshot, events: ColonyEvent[]) => void;
 
-export class SimBridge {
-  private worker: Worker;
-  private snapshotSubs = new Set<SnapshotFn>();
-  private eventSubs = new Set<EventFn>();
-  private catchupSubs = new Set<CatchupReportFn>();
-  private saveResolvers = new Map<number, (d: SaveData) => void>();
-  private reqId = 1;
-  private occ: Set<string> | null = null;
+/** the bridge surface the renderer + store depend on, minus the transport. A
+ *  worker (`SimBridge`) and a Trystero peer (`NetBridge`) both implement it by
+ *  supplying `send` and pumping `receive` — everything else (subscriptions, the
+ *  latest-snapshot cache, the synchronous predictors) is shared and identical. */
+export abstract class BridgeCore {
+  protected snapshotSubs = new Set<SnapshotFn>();
+  protected eventSubs = new Set<EventFn>();
+  protected catchupSubs = new Set<CatchupReportFn>();
+  protected saveResolvers = new Map<number, (d: SaveData) => void>();
+  protected reqId = 1;
+  protected occ: Set<string> | null = null;
 
   /** the most recent snapshot, or null until the first arrives */
   latest: Snapshot | null = null;
   ready = false;
 
-  constructor() {
-    // Vite resolves this to a bundled ES-module worker.
-    this.worker = new Worker(new URL("./sim.worker.ts", import.meta.url), {
-      type: "module",
-    });
-    this.worker.onmessage = (e: MessageEvent<Outbound>) => this.receive(e.data);
-  }
+  /** which actor THIS client controls, used to re-derive the snapshot's scalar
+   *  `possessed` per-client so the follow-cam / build-lock / audio all see "my one
+   *  actor" (the solo shape) even when the engine pilots several at once:
+   *    • undefined → solo: leave the engine's value (pilots[0]) untouched,
+   *    • null      → architect/spectator: force null (not embodied → can build / overview),
+   *    • number    → that colonist (a guest's astronaut), if still alive.
+   *  The per-actor `view.possessed` booleans are left intact, so rings still mark
+   *  every piloted actor. */
+  localActor: number | null | undefined = undefined;
 
-  private receive(msg: Outbound): void {
+  /** push a Command across the transport (postMessage for the worker, a data
+   *  channel for a network peer) */
+  protected abstract send(cmd: Command): void;
+
+  /** feed an inbound worker/peer message into the subscriptions + caches */
+  protected receive(msg: Outbound): void {
     switch (msg.type) {
       case "ready":
         this.ready = true;
         break;
       case "snapshot":
+        if (this.localActor !== undefined) {
+          const me = this.localActor;
+          const alive = me != null
+            && (msg.snapshot.colonists.some((c) => c.id === me) || msg.snapshot.rovers.some((r) => r.id === me));
+          msg.snapshot.possessed = alive ? me : null;
+        }
         this.latest = msg.snapshot;
         this.occ = null; // invalidate placement cache
         for (const fn of this.snapshotSubs) fn(msg.snapshot);
@@ -81,7 +102,6 @@ export class SimBridge {
   }
 
   // ---- commands -------------------------------------------------------------
-  private send(cmd: Command): void { this.worker.postMessage(cmd); }
   place(defId: string, gx: number, gy: number, rot = 0): void { this.send({ type: "place", defId, gx, gy, rot }); }
   remove(gx: number, gy: number): void { this.send({ type: "remove", gx, gy }); }
   rotate(gx: number, gy: number): void { this.send({ type: "rotate", gx, gy }); }
@@ -90,12 +110,14 @@ export class SimBridge {
   route(fromUid: number, toUid: number): void { this.send({ type: "route", fromUid, toUid }); }
   triggerHazard(kind: HazardKind, intensity?: number): void { this.send({ type: "triggerHazard", kind, intensity }); }
   setDirector(value: boolean): void { this.send({ type: "setDirector", value }); }
-  /** possess a colonist by id (null releases) */
-  possess(id: number | null): void { this.send({ type: "possess", id }); }
-  /** the player's standing WASD direction for the possessed colonist */
-  moveIntent(dx: number, dy: number): void { this.send({ type: "moveIntent", dx, dy }); }
-  /** the player pressed P — pick up from a deposit / drop at the depot */
-  interact(): void { this.send({ type: "interact" }); }
+  /** possess a colonist by id. `id:null` releases all; `on` is the multiplayer
+   *  claim flag (true adds to the piloted set, false releases just this actor);
+   *  omit it for the solo replace-to-one semantics. */
+  possess(id: number | null, on?: boolean): void { this.send({ type: "possess", id, on }); }
+  /** a piloted actor's standing WASD direction; `id` names which pilot (omit for the sole one) */
+  moveIntent(dx: number, dy: number, id?: number): void { this.send({ type: "moveIntent", dx, dy, id }); }
+  /** the player pressed P — pick up from a deposit / drop at the depot (for pilot `id`) */
+  interact(id?: number): void { this.send({ type: "interact", id }); }
   /** accept/decline the landed alien trade offer */
   respondTrade(accept: boolean): void { this.send({ type: "respondTrade", accept }); }
   /** DEV-only affordance (the window.__viv / Playwright surface) — production
@@ -173,11 +195,35 @@ export class SimBridge {
     return planRoute(this.latest.buildings, this.latest.N, blocked, fromUid, toUid);
   }
 
-  dispose(): void {
-    this.worker.terminate();
+  /** drop all subscriptions + pending saves (subclasses tear down their transport) */
+  protected clearCore(): void {
     this.snapshotSubs.clear();
     this.eventSubs.clear();
     this.catchupSubs.clear();
     this.saveResolvers.clear();
+  }
+
+  abstract dispose(): void;
+}
+
+/** the default (solo / host) bridge — the authoritative engine runs in a Web Worker
+ *  on this thread, reached over postMessage. */
+export class SimBridge extends BridgeCore {
+  private worker: Worker;
+
+  constructor() {
+    super();
+    // Vite resolves this to a bundled ES-module worker.
+    this.worker = new Worker(new URL("./sim.worker.ts", import.meta.url), {
+      type: "module",
+    });
+    this.worker.onmessage = (e: MessageEvent<Outbound>) => this.receive(e.data);
+  }
+
+  protected send(cmd: Command): void { this.worker.postMessage(cmd); }
+
+  dispose(): void {
+    this.worker.terminate();
+    this.clearCore();
   }
 }

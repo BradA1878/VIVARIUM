@@ -18,7 +18,7 @@ import {
 } from "./tuning";
 import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
-import { buildingFunctional } from "./state";
+import { buildingFunctional, pilotOf } from "./state";
 import { recomputeConnectivity } from "./connectivity";
 import { updateHazards, hazardMods, type HazardMods } from "./hazards";
 import { stepColonists } from "./colonists";
@@ -313,8 +313,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // fleet's self-repair, and piloting for whichever possessed actor is a rover
   // (stepColonists already piloted a possessed colonist; ids never collide).
   updateRoverFab(s, dt, emit);
-  const rover = s.rovers.find((r) => r.id === s.possessed);
-  if (rover) pilotRover(s, rover, dt);
+  for (const r of s.rovers) { const p = pilotOf(s, r.id); if (p) pilotRover(s, r, p, dt); }
   // rung 3 — the Robotics Bay's line + the autonomous miners. Robots work sol
   // AND night and never shelter; they step through the SAME claim set the
   // colonists' pass built, so the species never thrash over a node.

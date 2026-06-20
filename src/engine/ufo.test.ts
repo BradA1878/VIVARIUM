@@ -39,7 +39,7 @@ function ufoState(o: Partial<{
     sol: o.sol ?? 5,
     population: o.population ?? colonists.length,
     colonists,
-    possessed: o.possessed ?? null,
+    pilots: o.possessed != null ? [{ id: o.possessed, dx: 0, dy: 0 }] : [],
     buildings: o.buildings ?? [],
     acquiredTech: o.acquiredTech ?? [],
   } as unknown as ColonyState;

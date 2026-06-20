@@ -78,6 +78,31 @@ describe("possession + moveIntent", () => {
     };
     expect(drive(new Colony(99))).toEqual(drive(new Colony(99)));
   });
+
+  it("pilots two colonists independently, each on its own moveIntent (multiplayer)", () => {
+    const c = new Colony(7);
+    const [a, b] = c.snapshot().colonists.map((k) => k.id);
+    const at = (id: number) => c.snapshot().colonists.find((k) => k.id === id)!;
+    const ax0 = at(a).x;
+    const by0 = at(b).y;
+
+    c.possess(a, true); // claim — additive, not a replace
+    c.possess(b, true); // both are piloted at once
+    c.setMoveIntent(1, 0, a); // A drives east
+    c.setMoveIntent(0, 1, b); // B drives south
+    run(c, 2, 0.1);
+
+    const A = at(a);
+    const B = at(b);
+    expect(A.x).toBeGreaterThan(ax0 + 1); // A obeyed its own intent
+    expect(B.y).toBeGreaterThan(by0 + 1); // B obeyed its own (independent) intent
+    expect(c.snapshot().colonists.filter((k) => k.possessed).length).toBe(2);
+
+    // releasing one leaves the other piloted
+    c.possess(a, false);
+    expect(c.snapshot().colonists.find((k) => k.id === a)!.possessed).toBe(false);
+    expect(c.snapshot().colonists.find((k) => k.id === b)!.possessed).toBe(true);
+  });
 });
 
 /** the live deposit nearest a point, optionally one kind only — auto-gatherers

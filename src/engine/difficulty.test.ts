@@ -123,7 +123,7 @@ describe("multipliers apply AFTER the draws (the rng stream never forks)", () =>
     const colonists = Array.from({ length: 6 }, (_, i) => emptyColonist(i + 1, 5, 5));
     const s = {
       difficulty: "hard", ufo: null, nextUfo: 0, ufoCounter: 1, sol: UFO_MIN_SOL,
-      population: 6, colonists, possessed: null, buildings: [], acquiredTech: [],
+      population: 6, colonists, pilots: [], buildings: [], acquiredTech: [],
     } as unknown as ColonyState;
     updateUfo(s, 0.2, rngOf(0.5), noEmit);
     expect(s.ufo).not.toBeNull(); // a visit spawned, then the gap was rescheduled
@@ -191,7 +191,7 @@ describe("Medi-Gel + Harmonizer — the rider techs", () => {
     const hurt = emptyColonist(1, 12, 12);
     hurt.injury = INJURY_RECOVERY;
     const s = {
-      colonists: [hurt], buildings: [], population: 1, possessed: null,
+      colonists: [hurt], buildings: [], population: 1, pilots: [],
       acquiredTech: ["medigel"],
     } as unknown as ColonyState;
     expect(techHealRateMult(s)).toBe(2);
@@ -211,7 +211,7 @@ describe("Medi-Gel + Harmonizer — the rider techs", () => {
     const N = 15;
     const s = {
       N, grid: new Int32Array(N * N), buildings: [mb],
-      colonists: [hurt], population: 1, possessed: null,
+      colonists: [hurt], population: 1, pilots: [],
       acquiredTech: ["medigel"],
     } as unknown as ColonyState;
     updateInjuries(s, 1, noEmit);

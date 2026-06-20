@@ -19,8 +19,8 @@ import {
   AUTO_CARRY, GATHER_DWELL, ROVER_CARGO_CAP,
   DAY_START, DAY_END, MATERIALS_CAP, INJURED_SPEED, INJURED_PILOT_FACTOR,
 } from "./tuning";
-import type { ColonistInstance, ColonyState, DepositInstance } from "./state";
-import { buildingFunctional, emptyColonist } from "./state";
+import type { ColonistInstance, ColonyState, DepositInstance, Pilot } from "./state";
+import { buildingFunctional, emptyColonist, isPiloted, pilotOf, removePilot } from "./state";
 import { idx, inBounds, cellsFor } from "./grid";
 import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
@@ -124,11 +124,11 @@ export function freeCellNear(s: ColonyState, p: Pt): Pt {
  *  highest id, and losing the possessed colonist clears possession. */
 export function reconcileColonists(s: ColonyState): void {
   while (s.colonists.length > s.population) {
-    // prefer to keep the possessed colonist alive in the UI; drop another
+    // prefer to keep a piloted colonist alive in the UI; drop another
     let victimIdx = s.colonists.length - 1;
-    if (s.colonists[victimIdx].id === s.possessed && s.colonists.length > 1) victimIdx -= 1;
+    if (isPiloted(s, s.colonists[victimIdx].id) && s.colonists.length > 1) victimIdx -= 1;
     const removed = s.colonists.splice(victimIdx, 1)[0];
-    if (removed.id === s.possessed) s.possessed = null;
+    removePilot(s, removed.id);
   }
   while (s.colonists.length < s.population) {
     const b = freeCellNear(s, baseCenter(s)); // spawn outside, not on the hub
@@ -174,8 +174,8 @@ function buildingByUid(s: ColonyState, uid: number | null): { defId: string; gx:
 
 /** the possessed colonist: just integrate the standing moveIntent. Gathering is
  *  now explicit (interactPossessed), triggered by the player pressing P. */
-function pilot(s: ColonyState, c: ColonistInstance, dt: number): void {
-  const { dx, dy } = s.moveIntent;
+function pilot(s: ColonyState, c: ColonistInstance, p: Pilot, dt: number): void {
+  const { dx, dy } = p;
   const m = Math.hypot(dx, dy);
   const speed = c.injury > 0 ? PILOT_SPEED * INJURED_PILOT_FACTOR : PILOT_SPEED;
   if (m > 0.0001) {
@@ -199,10 +199,8 @@ export function depositInReach(s: ColonyState, c: ColonistInstance): DepositInst
  *  otherwise grabs a load from the nearest in-range deposit (one kind).
  *  A ROVER: one press at the depot banks ALL its bays in the fixed kind order;
  *  otherwise it tops the bed up from the nearest deposit of ANY kind. */
-export function interactPossessed(s: ColonyState): "picked" | "dropped" | null {
-  if (s.possessed == null) return null;
-
-  const r = (s.rovers ?? []).find((x) => x.id === s.possessed);
+export function interactPossessed(s: ColonyState, id: number): "picked" | "dropped" | null {
+  const r = (s.rovers ?? []).find((x) => x.id === id);
   if (r) {
     if (cargoTotal(r.cargo) > 0) {
       const d = depotCenter(s);
@@ -216,7 +214,7 @@ export function interactPossessed(s: ColonyState): "picked" | "dropped" | null {
     return null;
   }
 
-  const c = s.colonists.find((x) => x.id === s.possessed);
+  const c = s.colonists.find((x) => x.id === id);
   if (!c) return null;
 
   // drop the whole load at the depot
@@ -254,14 +252,15 @@ export function stepColonists(s: ColonyState, dt: number): Set<number> {
   // a robot (faulted ones included: a stunned robot keeps its node)
   const claimed = new Set<number>();
   for (const c of s.colonists) {
-    if (c.id !== s.possessed && c.gatherDepositId != null) claimed.add(c.gatherDepositId);
+    if (!isPiloted(s, c.id) && c.gatherDepositId != null) claimed.add(c.gatherDepositId);
   }
   for (const r of s.robots ?? []) {
     if (r.gatherDepositId != null) claimed.add(r.gatherDepositId);
   }
 
   for (const c of s.colonists) {
-    if (c.id === s.possessed) { pilot(s, c, dt); continue; }
+    const p = pilotOf(s, c.id);
+    if (p) { pilot(s, c, p, dt); continue; }
 
     let goal: Pt;
     let arriveState: ColonistInstance["state"];
@@ -316,7 +315,7 @@ export function colonistViews(s: ColonyState): ColonistView[] {
   return s.colonists.map((c) => ({
     id: c.id, name: nameOf(c.id), role: roleOf(c.id),
     x: c.x, y: c.y, facing: c.facing, state: c.state, injury: c.injury,
-    carryKind: c.carryKind, carryAmt: c.carryAmt, possessed: c.id === s.possessed,
+    carryKind: c.carryKind, carryAmt: c.carryAmt, possessed: isPiloted(s, c.id),
   }));
 }
 
