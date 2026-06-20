@@ -33,7 +33,7 @@ import { SimBridge, type BridgeCore } from "@/worker/bridge";
 import { Tuning } from "@/engine";
 import type { ThreeRenderer } from "@/render/renderer";
 import { initColony, useColony, disposeColony, directorDev, setMode, setRoster, type ColonyMode } from "./stores/colony";
-import { joinNetRoom, type NetRoom } from "@/net/room";
+import { joinNetRoom, type NetRoom, type RosterMsg } from "@/net/room";
 import { HostRelay } from "@/net/hostRelay";
 import { NetBridge } from "@/net/netBridge";
 import { useSettings } from "./stores/settings";
@@ -45,7 +45,7 @@ const bridge = shallowRef<BridgeCore | null>(null);
 const ready = ref(false);
 let renderer: ThreeRenderer | null = null;
 
-const { snapshot, clearTool, rotate, removeSelected, controls, logOpen, toggleLog, startScreen } = useColony();
+const { snapshot, clearTool, rotate, removeSelected, controls, logOpen, toggleLog, startScreen, mode } = useColony();
 const { settings, settingsOpen, updateSettings } = useSettings();
 const storming = computed(() => snapshot.value?.weather === "dust");
 const flaring = computed(() => snapshot.value?.hazards.some((h) => h.kind === "flare" && h.phase === "active") ?? false);
@@ -121,14 +121,21 @@ function teardown(): void {
   ready.value = false;
 }
 
+/** roster → the lobby panel + the floating name tags over each astronaut */
+function applyRoster(r: RosterMsg): void {
+  setRoster(r.players);
+  const names = new Map<number, string>();
+  for (const p of r.players) if (p.actorId != null) names.set(p.actorId, p.name);
+  renderer?.setPlayerNames(names, bridge.value?.localActor ?? null);
+}
+
 /** HOST: keep the live worker sim, open a room, relay it to guests, and become the
  *  architect (localActor=null → not embodied → can build + see the overview). */
 function hostGame(code: string, name: string): void {
   const b = bridge.value;
   if (!b || netRoom) return;
   netRoom = joinNetRoom(code);
-  netRoom.onRoster((r) => setRoster(r.players));
-  hostRelay = new HostRelay(netRoom, b, name);
+  hostRelay = new HostRelay(netRoom, b, name, applyRoster); // host gets its roster locally
   b.localActor = null;
   setMode("host");
 }
@@ -137,7 +144,7 @@ function hostGame(code: string, name: string): void {
 async function joinGame(code: string, name: string): Promise<void> {
   teardown();
   netRoom = joinNetRoom(code);
-  netRoom.onRoster((r) => setRoster(r.players));
+  netRoom.onRoster(applyRoster);
   await boot(new NetBridge(netRoom, name), "guest");
 }
 
@@ -200,7 +207,8 @@ onUnmounted(() => {
       <div class="bottom-center">
         <PilotBar />
         <Inspector />
-        <Palette />
+        <!-- guests are astronauts, never architects → no build palette -->
+        <Palette v-if="mode !== 'guest'" />
       </div>
 
       <SettingsModal />

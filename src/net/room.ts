@@ -12,6 +12,7 @@
    speaks (doc §0). The hard wall is unchanged; the network is just another peer.
    ============================================================================ */
 import { joinRoom, selfId } from "trystero";
+import type { TurnServerConfig } from "trystero";
 import type { Command } from "@/worker/protocol";
 import type { ColonyEvent, Snapshot } from "@shared/types";
 
@@ -57,8 +58,11 @@ export interface NetRoom {
 /** join (or create) a Trystero room by code and return its typed channels. Both the
  *  host and each guest call this; the room itself is symmetric — role is decided by
  *  the app (who clicked Host) and announced over the `hello` channel. */
-export function joinNetRoom(roomCode: string): NetRoom {
-  const room = joinRoom({ appId: APP_ID }, roomCode);
+export function joinNetRoom(roomCode: string, turn?: TurnServerConfig[]): NetRoom {
+  // Trystero's default (Nostr) signalling + public STUN connects most peers; pass
+  // `turn` (a relay) only for the symmetric-NAT pairs that STUN can't punch through
+  // — the one spot where "no server" can leak (a cheap TURN service covers it).
+  const room = joinRoom({ appId: APP_ID, turnConfig: turn }, roomCode);
 
   // Trystero's makeAction is typed against its own DataPayload (JsonValue | Blob |
   // ArrayBuffer …). Our Commands/Snapshots are JSON-shaped but their precise TS types

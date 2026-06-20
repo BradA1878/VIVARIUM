@@ -42,7 +42,8 @@ function fakeBridge(colonistIds: number[]) {
     moveIntent: (dx, dy, id) => calls.push({ m: "moveIntent", args: [dx, dy, id] }),
     interact: (id) => calls.push({ m: "interact", args: [id] }),
   };
-  return { bridge, calls, pushSnap: (ids: number[]) => snapSub(snapOf(ids)) };
+  // mirror BridgeCore: latest updates BEFORE subscribers fire
+  return { bridge, calls, pushSnap: (ids: number[]) => { const s = snapOf(ids); bridge.latest = s; snapSub(s); } };
 }
 
 const cmd = (c: Command): Command => c;
@@ -107,6 +108,19 @@ describe("HostRelay — co-op authority", () => {
     fire.leave("A" as never);
 
     expect(calls).toContainEqual({ m: "possess", args: [1, false] });
+  });
+
+  it("re-claims a free colonist for a spectator when one arrives (spectate → re-embody)", () => {
+    const { room, fire, sent } = fakeRoom();
+    const { bridge, calls, pushSnap } = fakeBridge([1]); // only one colonist to start
+    new HostRelay(room, bridge, "Brad");
+    fire.join("A" as never); // A claims colonist 1
+    fire.join("B" as never); // B spectates — none free
+
+    pushSnap([1, 2]); // a new colonist (resupply/birth) arrives
+
+    expect(calls).toContainEqual({ m: "possess", args: [2, true] });
+    expect(sent).toContainEqual({ ch: "claim", data: { actorId: 2 }, target: "B" });
   });
 
   it("hands a colonist back to spectate (claim null) when it dies off the roster", () => {

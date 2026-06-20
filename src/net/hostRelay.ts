@@ -16,7 +16,7 @@
    ============================================================================ */
 import type { Command } from "@/worker/protocol";
 import type { ColonyEvent, Snapshot } from "@shared/types";
-import type { NetRoom } from "./room";
+import type { NetRoom, RosterMsg } from "./room";
 
 /** the slice of the bridge the relay needs (SimBridge/BridgeCore satisfies it) */
 export interface RelayBridge {
@@ -40,6 +40,9 @@ export class HostRelay {
     private room: NetRoom,
     private bridge: RelayBridge,
     private hostName: string,
+    /** the host's OWN roster sink — Trystero never echoes a broadcast back to the
+     *  sender, so the host's HUD/name-tags get the roster through this, not onRoster. */
+    private onLocalRoster?: (r: RosterMsg) => void,
   ) {
     room.onPeerJoin((peerId) => this.admit(peerId));
     room.onPeerLeave((peerId) => this.release(peerId));
@@ -84,16 +87,30 @@ export class HostRelay {
     }
   }
 
-  /** broadcast every snapshot, and hand a colonist back to spectate if it died */
+  /** broadcast every snapshot; hand a colonist back to spectate if it died, and
+   *  re-embody a spectator once a fresh colonist arrives (the chosen death rule) */
   private onSnapshot(s: Snapshot): void {
     this.room.sendSnap(s);
     const alive = new Set<number>([...s.colonists.map((c) => c.id), ...s.rovers.map((r) => r.id)]);
     let changed = false;
+    // pass 1: a piloted colonist that died/abducted → spectate
     for (const [peerId, slot] of this.players) {
       if (slot.actorId != null && !alive.has(slot.actorId)) {
-        slot.actorId = null; // their colonist is gone → spectate until one arrives
+        slot.actorId = null;
         this.room.sendClaim({ actorId: null }, peerId);
         changed = true;
+      }
+    }
+    // pass 2: a spectator gets the next free colonist (resupply/birth → re-embody)
+    for (const [peerId, slot] of this.players) {
+      if (slot.actorId == null) {
+        const fresh = this.freeColonist();
+        if (fresh != null) {
+          slot.actorId = fresh;
+          this.bridge.possess(fresh, true);
+          this.room.sendClaim({ actorId: fresh }, peerId);
+          changed = true;
+        }
       }
     }
     if (changed) this.broadcastRoster();
@@ -111,7 +128,9 @@ export class HostRelay {
 
   private broadcastRoster(): void {
     const players = [...this.players.entries()].map(([peerId, slot]) => ({ peerId, name: slot.name, actorId: slot.actorId }));
-    this.room.sendRoster({ hostId: this.room.selfId, players });
+    const msg: RosterMsg = { hostId: this.room.selfId, players };
+    this.room.sendRoster(msg);
+    this.onLocalRoster?.(msg); // the host doesn't receive its own broadcast
   }
 
   dispose(): void {

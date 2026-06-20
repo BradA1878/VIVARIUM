@@ -32,6 +32,7 @@ import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
 import { buildSupplyPod, type SupplyPodMesh } from "./three/supplypod";
 import { BubbleSystem, reactionFor } from "./three/bubbles";
+import { NameTagSystem } from "./three/nametags";
 
 interface Placed {
   mesh: KitMesh;
@@ -185,6 +186,7 @@ export class ThreeRenderer {
   private robotsGroup = new THREE.Group();
   /** reaction bubbles — pooled comic chips above colonists' heads */
   private bubbles = new BubbleSystem();
+  private nameTags = new NameTagSystem();
   private alienShip: AlienShipMesh | null = null;
   private ufo: UfoMesh | null = null;
   private depot: DepotMesh | null = null;
@@ -238,6 +240,7 @@ export class ThreeRenderer {
     this.scene.scene.add(this.roversGroup);
     this.scene.scene.add(this.robotsGroup);
     this.scene.scene.add(this.bubbles.group);
+    this.scene.scene.add(this.nameTags.group);
     this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
     this.scene.scene.add(this.placement.group);
     this.atmosphere = new Atmosphere(this.grid);
@@ -331,6 +334,11 @@ export class ThreeRenderer {
   getQuality(): "auto" | "low" | "high" {
     const p = this.governor.pinned();
     return p === STEP_HIGH ? "high" : p === STEP_LOW ? "low" : "auto";
+  }
+  /** co-op presence: the actor→callsign map (host roster) + which actor is local.
+   *  Tags float above each named astronaut; the local one reads in the green accent. */
+  setPlayerNames(names: Map<number, string>, mine: number | null): void {
+    this.nameTags.setNames(names, mine);
   }
 
   /** DEV observability — the governor's live read for window.__viv */
@@ -523,6 +531,7 @@ export class ThreeRenderer {
     this.reconcileDepot(snap, now);
     this.reconcileSupplyPod(snap, dt, now);
     this.bubbles.update(dt);
+    this.nameTags.sync(this.colonists);
     this.updateTransients(dt, now);
     this.updateCamera(snap, dt);
     this.placement.update();
@@ -1139,6 +1148,7 @@ export class ThreeRenderer {
     cancelAnimationFrame(this.raf);
     window.removeEventListener("resize", this.onResize);
     this.unsubEvents();
+    this.nameTags.dispose();
     this.placement.dispose();
     this.atmosphere.dispose();
     this.stormFx.dispose();
