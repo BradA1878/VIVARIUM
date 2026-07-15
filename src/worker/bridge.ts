@@ -13,10 +13,11 @@ import type { BuildingState, ColonyEvent, Difficulty, HazardKind, LegacyManifest
 import { DEFS, FUNC_THRESHOLD, type SaveData } from "@/engine";
 import { buildingAtPredict, canPlacePredict, canMovePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
-import type { Command, Outbound } from "./protocol";
+import type { Command, Outbound, SimErrorContext } from "./protocol";
 
 type SnapshotFn = (s: Snapshot) => void;
 type EventFn = (e: ColonyEvent) => void;
+type ErrorFn = (context: SimErrorContext, detail: string) => void;
 /** the "while you were away" digest input: the pre-catch-up snapshot + the off-screen
  *  events a switchColony's catch-up produced (parallel-colonies) */
 type CatchupReportFn = (before: Snapshot, events: ColonyEvent[]) => void;
@@ -29,6 +30,7 @@ export abstract class BridgeCore {
   protected snapshotSubs = new Set<SnapshotFn>();
   protected eventSubs = new Set<EventFn>();
   protected catchupSubs = new Set<CatchupReportFn>();
+  protected errorSubs = new Set<ErrorFn>();
   protected saveResolvers = new Map<number, (d: SaveData) => void>();
   protected reqId = 1;
   protected occ: Set<string> | null = null;
@@ -81,6 +83,9 @@ export abstract class BridgeCore {
         if (r) { r(msg.data); this.saveResolvers.delete(msg.reqId); }
         break;
       }
+      case "error":
+        for (const fn of this.errorSubs) fn(msg.context, msg.detail);
+        break;
     }
   }
 
@@ -99,6 +104,12 @@ export abstract class BridgeCore {
   onCatchupReport(fn: CatchupReportFn): () => void {
     this.catchupSubs.add(fn);
     return () => this.catchupSubs.delete(fn);
+  }
+  /** subscribe to surfaced failures (a thrown command/step, a save that wouldn't
+   *  load, a dead worker, a lost co-op host) — the boundary never wedges quietly */
+  onError(fn: ErrorFn): () => void {
+    this.errorSubs.add(fn);
+    return () => this.errorSubs.delete(fn);
   }
 
   // ---- commands -------------------------------------------------------------
@@ -200,6 +211,7 @@ export abstract class BridgeCore {
     this.snapshotSubs.clear();
     this.eventSubs.clear();
     this.catchupSubs.clear();
+    this.errorSubs.clear();
     this.saveResolvers.clear();
   }
 
@@ -218,6 +230,13 @@ export class SimBridge extends BridgeCore {
       type: "module",
     });
     this.worker.onmessage = (e: MessageEvent<Outbound>) => this.receive(e.data);
+    // a dead or unloadable worker must SURFACE, not freeze on the last frame
+    this.worker.onerror = (e: ErrorEvent) => {
+      this.receive({ type: "error", context: "worker", detail: e.message || "the sim worker crashed" });
+    };
+    this.worker.onmessageerror = () => {
+      this.receive({ type: "error", context: "worker", detail: "unserializable worker message" });
+    };
   }
 
   protected send(cmd: Command): void { this.worker.postMessage(cmd); }

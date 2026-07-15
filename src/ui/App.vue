@@ -32,7 +32,7 @@ import SettingsModal from "./components/SettingsModal.vue";
 import { SimBridge, type BridgeCore } from "@/worker/bridge";
 import { Tuning } from "@/engine";
 import type { ThreeRenderer } from "@/render/renderer";
-import { initColony, useColony, disposeColony, directorDev, setMode, setRoster, type ColonyMode } from "./stores/colony";
+import { initColony, useColony, disposeColony, directorDev, setMode, setRoster, netStatus, type ColonyMode } from "./stores/colony";
 import { joinNetRoom, type NetRoom, type RosterMsg } from "@/net/room";
 import { HostRelay } from "@/net/hostRelay";
 import { NetBridge } from "@/net/netBridge";
@@ -45,7 +45,8 @@ const bridge = shallowRef<BridgeCore | null>(null);
 const ready = ref(false);
 let renderer: ThreeRenderer | null = null;
 
-const { snapshot, clearTool, rotate, removeSelected, controls, logOpen, toggleLog, startScreen, mode } = useColony();
+const { snapshot, clearTool, rotate, removeSelected, controls, logOpen, toggleLog, startScreen, mode, simError, dismissSimError } = useColony();
+function reloadApp(): void { window.location.reload(); }
 const { settings, settingsOpen, updateSettings } = useSettings();
 const storming = computed(() => snapshot.value?.weather === "dust");
 const flaring = computed(() => snapshot.value?.hazards.some((h) => h.kind === "flare" && h.phase === "active") ?? false);
@@ -119,11 +120,13 @@ function teardown(): void {
   renderer?.dispose(); renderer = null;
   bridge.value?.dispose(); bridge.value = null;
   ready.value = false;
+  netStatus.value = "idle";
 }
 
 /** roster → the lobby panel + the floating name tags over each astronaut */
 function applyRoster(r: RosterMsg): void {
   setRoster(r.players);
+  if (netStatus.value === "connecting") netStatus.value = "connected"; // the host answered
   const names = new Map<number, string>();
   for (const p of r.players) if (p.actorId != null) names.set(p.actorId, p.name);
   renderer?.setPlayerNames(names, bridge.value?.localActor ?? null);
@@ -134,18 +137,30 @@ function applyRoster(r: RosterMsg): void {
 function hostGame(code: string, name: string): void {
   const b = bridge.value;
   if (!b || netRoom) return;
-  netRoom = joinNetRoom(code);
-  hostRelay = new HostRelay(netRoom, b, name, applyRoster); // host gets its roster locally
-  b.localActor = null;
-  setMode("host");
+  try {
+    netRoom = joinNetRoom(code);
+    hostRelay = new HostRelay(netRoom, b, name, applyRoster); // host gets its roster locally
+    b.localActor = null;
+    setMode("host");
+  } catch (err) {
+    console.error("[vivarium] hosting failed:", err);
+    netRoom?.leave(); netRoom = null; hostRelay = null;
+  }
 }
 
 /** GUEST: drop the local worker and embody an astronaut on the host's colony. */
 async function joinGame(code: string, name: string): Promise<void> {
   teardown();
-  netRoom = joinNetRoom(code);
-  netRoom.onRoster(applyRoster);
-  await boot(new NetBridge(netRoom, name), "guest");
+  netStatus.value = "connecting"; // NetBridge's join window reports a timeout if nobody answers
+  try {
+    netRoom = joinNetRoom(code);
+    netRoom.onRoster(applyRoster);
+    await boot(new NetBridge(netRoom, name), "guest");
+  } catch (err) {
+    console.error("[vivarium] join failed:", err);
+    netStatus.value = "failed";
+    netRoom?.leave(); netRoom = null;
+  }
 }
 
 // Lobby panel → session lifecycle
@@ -166,11 +181,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener("keydown", onKey);
   window.removeEventListener("keyup", onKeyUp);
-  hostRelay?.dispose();
-  netRoom?.leave();
-  disposeColony();
-  renderer?.dispose();
-  bridge.value?.dispose();
+  teardown();
 });
 </script>
 
@@ -180,6 +191,13 @@ onUnmounted(() => {
     <div class="vignette"></div>
     <div class="storm-veil" :class="{ on: storming }"></div>
     <div class="flare-veil" :class="{ on: flaring }"></div>
+
+    <!-- surfaced sim/transport failures — the boundary never wedges quietly -->
+    <div v-if="simError" class="sim-error">
+      <span class="se-msg">{{ simError }}</span>
+      <button class="se-btn" @click="reloadApp">RELOAD</button>
+      <button class="se-btn se-dim" @click="dismissSimError">DISMISS</button>
+    </div>
 
     <div class="hud" v-if="ready && !startScreen">
       <TopBar />
@@ -242,4 +260,41 @@ onUnmounted(() => {
   pointer-events: none;
   z-index: 60;
 }
+
+/* the failure banner — top-center, above everything, deliberately plain */
+.sim-error {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(620px, 92vw);
+  padding: 9px 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: #f0c9c0;
+  background: rgba(40, 14, 10, 0.88);
+  border: 1px solid rgba(224, 122, 95, 0.55);
+  border-radius: 4px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+.se-btn {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  padding: 4px 9px;
+  border-radius: 3px;
+  color: #f0c9c0;
+  border: 1px solid rgba(224, 122, 95, 0.55);
+  background: rgba(224, 122, 95, 0.1);
+  white-space: nowrap;
+}
+.se-btn:hover { background: rgba(224, 122, 95, 0.22); }
+.se-dim { opacity: 0.7; }
 </style>

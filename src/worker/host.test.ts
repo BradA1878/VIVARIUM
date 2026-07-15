@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { SimHost } from "./host";
 import type { Outbound } from "./protocol";
-import { Colony } from "@/engine";
+import { Colony, type SaveData } from "@/engine";
 import { emptyBuilding, type ColonyState } from "@/engine/state";
 
 function snapsIn(msgs: Outbound[]): Outbound[] {
@@ -192,6 +192,45 @@ describe("SimHost", () => {
     const saved = (host.applyCommand({ type: "save", reqId: 2 })
       .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
     expect(saved.state.materials.amount).toBe(mat0 + 50); // the shipment was credited on load (no catch-up at steps 0)
+  });
+
+  // ---- the resilience boundary: corrupt saves must not wedge the sim ----
+
+  it("a corrupt load reports an error and keeps serving instead of wedging", () => {
+    const host = new SimHost(1);
+    const bad = { version: 1, seed: 1, rngState: 1, envRngState: 1, state: { oops: true } };
+    const out = host.applyCommand({ type: "load", data: bad as unknown as SaveData });
+    const err = out.find((m) => m.type === "error") as Extract<Outbound, { type: "error" }>;
+    expect(err).toBeTruthy();
+    expect(err.context).toBe("load");
+    // still paints, still gated (the start screen is the recovery path), still steps
+    expect(snapsIn(out).length).toBe(1);
+    const t0 = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
+    expect(() => { for (let i = 0; i < 10; i++) host.step(0.05); }).not.toThrow();
+    const t1 = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
+    expect(t1).toBe(t0); // the start gate held — the failed load did not begin a run
+  });
+
+  it("a corrupt switchColony keeps the LIVE colony instead of losing it", () => {
+    const host = new SimHost(3);
+    host.applyCommand({ type: "start" });
+    for (let i = 0; i < 10; i++) host.step(0.05);
+    const liveT = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
+
+    const bad = { version: 1, seed: 1, rngState: 1, envRngState: 1, state: null };
+    const out = host.applyCommand({
+      type: "switchColony",
+      save: bad as unknown as SaveData,
+      steps: 100, director: true, credits: [],
+    });
+    const err = out.find((m) => m.type === "error") as Extract<Outbound, { type: "error" }>;
+    expect(err).toBeTruthy();
+    // the live world survived and still ticks
+    const snap = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    expect(snap.world).toBe("mars");
+    expect(snap.t).toBeGreaterThanOrEqual(liveT);
+    for (let i = 0; i < 10; i++) host.step(0.05);
+    expect((host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t).toBeGreaterThan(liveT);
   });
 
   it("launchPtp ends the run as expansion when a pod is built", () => {

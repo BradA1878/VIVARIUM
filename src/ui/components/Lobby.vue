@@ -7,11 +7,21 @@
    which owns the renderer/bridge; this panel just collects a callsign + code and
    emits — the HUD observes, it never reaches across the wall.
    ============================================================================ */
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { useColony } from "../stores/colony";
 import { audio } from "../audio";
 
-const { mode, roster } = useColony();
+const { mode, roster, netStatus } = useColony();
+
+/** the guest panel's empty-roster line tracks the connection, not a blind wait */
+const waitingText = computed(() => {
+  switch (netStatus.value) {
+    case "connecting": return "Connecting to the host…";
+    case "failed": return "No host answered — check the code and try again.";
+    case "host-left": return "Host disconnected. Rejoin with the same code, or reload for solo.";
+    default: return "Waiting for players to join…";
+  }
+});
 const emit = defineEmits<{
   host: [payload: { code: string; name: string }];
   join: [payload: { code: string; name: string }];
@@ -64,7 +74,7 @@ const roleLabel = (actorId: number | null): string => (actorId == null ? "specta
           <span class="rr-name">{{ p.name }}</span>
           <span class="rr-role">{{ roleLabel(p.actorId) }}</span>
         </div>
-        <div v-if="!roster.length" class="roster-empty">Waiting for players to join&hellip;</div>
+        <div v-if="!roster.length" class="roster-empty" :class="{ warn: netStatus === 'failed' || netStatus === 'host-left' }">{{ waitingText }}</div>
       </div>
     </template>
   </div>
@@ -163,4 +173,5 @@ const roleLabel = (actorId: number | null): string => (actorId == null ? "specta
 .rr-name { color: #e6eef1; letter-spacing: 0.04em; }
 .rr-role { color: var(--dim); font-size: 9px; font-variant-numeric: tabular-nums; }
 .roster-empty { font-family: var(--mono); font-size: 9.5px; color: var(--faint); padding: 4px 2px; }
+.roster-empty.warn { color: #e07a5f; }
 </style>

@@ -84,6 +84,17 @@ export const roster = ref<{ peerId: string; name: string; actorId: number | null
 export function setMode(m: ColonyMode): void { mode.value = m; }
 export function setRoster(players: { peerId: string; name: string; actorId: number | null }[]): void { roster.value = players; }
 
+/** guest-side connection state, for the lobby's status line: joining →
+ *  'connecting'; a roster lands → 'connected'; no host inside the join window →
+ *  'failed'; the host vanished mid-session → 'host-left'. Solo/host sit on 'idle'. */
+export type NetStatus = "idle" | "connecting" | "connected" | "failed" | "host-left";
+export const netStatus = ref<NetStatus>("idle");
+
+/** a surfaced simulation/transport failure (worker crash, corrupt save, lost
+ *  host) — rendered as a dismissible banner. null = all clear. */
+export const simError = ref<string | null>(null);
+export function dismissSimError(): void { simError.value = null; }
+
 /** the switch curtain (parallel-colonies): raised while goTo loads + catches up + rebuilds
  *  a colony, lowered once it's live — masks the rebuild hitch as a calm "descent". */
 export const curtain = ref(false);
@@ -442,6 +453,32 @@ export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "sol
   // snapshot lands next, and the onSnapshot handler below builds the digest off it.
   // The events ride this stream ONLY — they never reach the council/narrator path.
   b.onCatchupReport((before, events) => { pendingCatchup = { before, events }; });
+
+  // surfaced failures — the boundary never wedges quietly (worker crash, corrupt
+  // save, a lost co-op host). Log for the console, banner for the player.
+  b.onError((context, detail) => {
+    console.error(`[vivarium] sim error (${context}): ${detail}`);
+    if (context === "net-lost") {
+      netStatus.value = "host-left";
+      simError.value = "The host disconnected — the colony is frozen. Rejoin with the same code, or reload to play solo.";
+      return;
+    }
+    if (context === "net-timeout") {
+      if (netStatus.value === "connecting") netStatus.value = "failed";
+      simError.value = "No host answered that room code. Check the code and try again.";
+      return;
+    }
+    if (context === "load") {
+      if (detail.startsWith("switchColony")) {
+        simError.value = "That colony's save failed to load — staying on the current world.";
+      } else {
+        simError.value = "The saved colony failed to load (it was left in place). Starting fresh.";
+        startScreen.value = true;
+      }
+      return;
+    }
+    simError.value = `The simulation hit an error (${context}): ${detail}`;
+  });
 
   // settings → live subsystems: quality, the director toggle, and the audio
   // gains apply the moment they change.
@@ -920,6 +957,6 @@ export function useColony() {
     snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
     runHistory, runEpitaph, directorDossier, colonies, shipments, activeSlot: activeSlotRef, controls,
-    mode, roster,
+    mode, roster, netStatus, simError, dismissSimError,
   };
 }

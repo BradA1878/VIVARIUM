@@ -46,12 +46,20 @@ export type Command =
   // destination). Deterministic, mirrors respondTrade's pool debit.
   | { type: "dispatchShipment"; manifest: ShipmentManifest };
 
+/** where a surfaced failure came from: a thrown command, the step loop, a save
+ *  that wouldn't load, the Worker itself dying, or (guest-side) the co-op
+ *  session losing its host / never finding one. */
+export type SimErrorContext = "command" | "step" | "load" | "worker" | "net-lost" | "net-timeout";
+
 // ---- worker → main thread ----------------------------------------------------
 export type Outbound =
   | { type: "ready" }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "events"; events: ColonyEvent[] }
   | { type: "saved"; reqId: number; data: SaveData }
+  // a failure the player must SEE instead of a silent freeze: the shell/host
+  // catch, post this, and keep serving (doc: the boundary never wedges quietly)
+  | { type: "error"; context: SimErrorContext; detail: string }
   // the "while you were away" digest (parallel-colonies): a switchColony's catch-up
   // ran real hazards/casualties off-screen — this carries the pre-catch-up snapshot
   // and the accumulated events so the store can diff them into a digest. It goes ONLY

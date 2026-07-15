@@ -43,12 +43,32 @@ export class SimHost {
       case "setSpeed": this.colony.setSpeed(cmd.value); break;
       case "forceStorm": this.colony.forceStorm(); break;
       case "reset": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world, cmd.legacy); break; // in-game restart / PTP founding — stays running
-      case "load": this.colony = Colony.load(cmd.data); this.started = true; break; // a resumed save ticks at once
+      case "load": // a resumed save ticks at once; a corrupt one reports + leaves the
+        // fresh boot colony gated (the start screen is the recovery path) instead of wedging
+        try {
+          this.colony = Colony.load(cmd.data);
+          this.started = true;
+        } catch (err) {
+          return [
+            { type: "error", context: "load", detail: err instanceof Error ? err.message : String(err) },
+            { type: "snapshot", snapshot: this.colony.snapshot() },
+          ];
+        }
+        break;
       case "start": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world, cmd.legacy); this.started = true; break; // fresh game / founding on seed+world+difficulty+legacy
       case "launchPtp": this.colony.launchPtp(); break; // end the run as expansion (the store founds the next world)
       case "dispatchShipment": this.colony.dispatchShipment(cmd.manifest); break; // debit the sender (the store queues it for the destination)
       case "switchColony": { // parallel-colonies: load a settled world, catch it up, resume live
-        this.colony = Colony.load(cmd.save);
+        let next: Colony;
+        try {
+          next = Colony.load(cmd.save); // a corrupt away-slot must NOT cost the live colony
+        } catch (err) {
+          return [
+            { type: "error", context: "load", detail: `switchColony: ${err instanceof Error ? err.message : String(err)}` },
+            { type: "snapshot", snapshot: this.colony.snapshot() },
+          ];
+        }
+        this.colony = next;
         const before = this.colony.snapshot(); // the colony AS SAVED, before any credit/catch-up — the digest diffs it
         for (const credit of cmd.credits) this.colony.creditShipment(credit); // matured shipments arrive as seed-state, before the catch-up
         this.colony.setDirector(false);        // catch-up runs the engine scheduler (the main-thread Director isn't in the fast-forward)

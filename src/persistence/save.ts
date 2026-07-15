@@ -37,10 +37,23 @@ export function encode(save: SaveData): string {
   return JSON.stringify(toJSON(save));
 }
 
+/** the shapes Colony.load dereferences UNCONDITIONALLY — everything else it
+ *  backfills (legacy saves), so guarding more than this would reject loadable
+ *  saves, and guarding less lets a truncated save throw inside the worker. */
+function loadable(state: SaveJSON["state"]): boolean {
+  if (!state || typeof state !== "object") return false;
+  if (typeof state.N !== "number" || typeof state.t !== "number") return false;
+  if (!Array.isArray(state.grid) || !Array.isArray(state.buildings)) return false;
+  const pools = state.pools as Partial<Record<string, unknown>> | undefined;
+  if (!pools || typeof pools !== "object") return false;
+  for (const k of ["power", "water", "oxygen", "food"]) if (!pools[k]) return false;
+  return true;
+}
+
 export function decode(text: string): SaveData | null {
   try {
     const json = JSON.parse(text) as SaveJSON;
-    if (!json || json.version !== 1 || !json.state) return null;
+    if (!json || json.version !== 1 || !loadable(json.state)) return null;
     return fromJSON(json);
   } catch {
     return null;
