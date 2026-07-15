@@ -27,6 +27,7 @@ export const SEV: Record<EventType, number> = {
   unlock: 2, // a gated def opens for placement
   rover_ready: 2, // the Rover Bay rolls one out
   robot_ready: 2, robot_destroyed: 3, // the Robotics Bay's fleet (loss is the Watcher's)
+  fabricator_ready: 2, fabricator_stalled: 2, // the lineage grows / holds at zero (once per episode)
   morale_low: 3, morale_recovered: 1, // the colony's mood (latched, like brownout)
   colonist_injured: 2, colonist_recovered: 1, // strike wounds + the medbay loop
   idle: 0, // agent-originated (council banter); never competes with a real beat
@@ -143,6 +144,15 @@ export const LINES: Partial<Record<EventType | "boot", Bank>> = {
   robot_ready: [
     "Mining robot online. Rolling out from the bay. It gathers without rest.",
     "Robot fabricated. One more set of hands that does not breathe. Assigned to gathering.",
+  ],
+  fabricator_ready: [
+    "Fabricator cycle complete. The copy is on adjacent ground, running its own countdown.",
+    "Replication logged. The lineage built one more of itself. I am watching the materials ledger.",
+    "New fabricator online, built by its parent. Nobody lifted a tool. Demolish is the off switch.",
+  ],
+  fabricator_stalled: [
+    "Fabricator holding at zero: {detail}. The cycle resumes the moment that clears.",
+    "Replication stalled: {detail}. The finished copy waits. It is patient. I am watching.",
   ],
   morale_low: [
     "Morale below threshold. Work speed measurably down. They need a quiet sol.",

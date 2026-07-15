@@ -99,6 +99,7 @@ export const EVENT_CUES: Partial<Record<EventType, (e: ColonyEvent) => CueId | n
   unlock: () => "unlockChime",
   rover_ready: () => "roverReady",
   robot_ready: () => "robotReady",
+  fabricator_ready: () => "robotReady", // reuse the fab-line sting; stalls stay silent (ticker + HUD carry them)
   robot_destroyed: () => "robotLost",
 };
 

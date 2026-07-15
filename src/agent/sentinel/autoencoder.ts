@@ -15,7 +15,7 @@ export class Autoencoder {
   private model: tfNS.LayersModel | null = null;
   private loading: Promise<void> | null = null;
 
-  /** lazy-load tf + build the model (8 → 4 → 2 → 4 → 8 dense bottleneck) */
+  /** lazy-load tf + build the model (FEATURE_DIM → 6 → 3 → 6 → FEATURE_DIM dense bottleneck) */
   async ensure(): Promise<boolean> {
     if (this.model) return true;
     if (!this.loading) {

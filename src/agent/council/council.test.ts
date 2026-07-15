@@ -139,8 +139,8 @@ describe("the new event banks", () => {
     expect(council.bootLine().line).toBe(bootLines()[0]);
   });
 
-  it("speaks to every homeostasis event — unlock, the rover, and the robots", () => {
-    for (const type of ["unlock", "rover_ready", "robot_ready", "robot_destroyed"] as const) {
+  it("speaks to every homeostasis event — unlock, the rover, the robots, and the lineage", () => {
+    for (const type of ["unlock", "rover_ready", "robot_ready", "robot_destroyed", "fabricator_ready", "fabricator_stalled"] as const) {
       const council = new Council();
       const u = council.observe(ev(type, 10, { defId: "windturbine", detail: "Wind Turbine", gx: 4, gy: 4 }), null, 10);
       expect(u, type).toBeTruthy();
@@ -148,6 +148,9 @@ describe("the new event banks", () => {
     // the unlock line carries the schematic's display name through {detail}
     const a = new Council().observe(ev("unlock", 10, { defId: "windturbine", detail: "Wind Turbine" }), null, 10);
     expect(a!.line).toContain("Wind Turbine");
+    // the stall line carries its reason through {detail} — the once-per-episode narration
+    const f = new Council().observe(ev("fabricator_stalled", 10, { detail: "no clear ground", gx: 4, gy: 4 }), null, 10);
+    expect(f!.line).toContain("no clear ground");
     // a scrapped robot is the Watcher's diagnosis (the engine sends no cause detail)
     const b = new Council().observe(ev("robot_destroyed", 10, { gx: 4, gy: 4 }), null, 10);
     expect(b!.register).toBe("watcher");

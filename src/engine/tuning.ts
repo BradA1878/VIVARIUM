@@ -166,6 +166,17 @@ export const ROBOT_CARRY = 30;       // units hauled per trip (one kind, like ha
 export const ROBOT_FLARE_FAULT = 12; // seconds a flare's activation stuns the fleet
 export const ROBOT_HIT_RADIUS = 1.6; // cells: a strike this close DESTROYS a robot
 
+/** the Fabricator — rung 4: a building that builds a copy of ITSELF on a
+ *  per-instance countdown (BuildingState.replicateT), so growth compounds:
+ *  1 → 2 → 4 → 8. The fee is the target def's own matCost, drawn at
+ *  COMPLETION (holds at zero, the robot idiom). It self-limits on the finite
+ *  grid and brownout shedding (priority 10 — first shed); the cap below is the
+ *  hard colony-wide valve, a renderer/snapshot-payload guard as much as a
+ *  balance knob (every instance is one more mesh and one more snapshot row). */
+export const FAB_BUILD_S = 70;      // countdown seconds per replication cycle
+export const FAB_MAT_COST = 22;     // materials per copy = the def's matCost (single-sourced)
+export const FAB_MAX_LINEAGE = 50;  // hard colony-wide cap — countdowns freeze at it
+
 /** the seeded deposit field (uses a SEPARATE env-rng so the main hazard/arrival
  *  stream is byte-for-byte unchanged) */
 export const DEPOSIT_COUNT = 11;      // deposits scattered at colony start (more, for the bigger map)

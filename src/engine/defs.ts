@@ -8,6 +8,7 @@
    life support. (Doc §2.4 pass 3, §4.4.)
    ============================================================================ */
 import type { BuildingDef } from "@shared/types";
+import { FAB_BUILD_S, FAB_MAT_COST } from "./tuning";
 
 export const DEFS: Record<string, BuildingDef> = {
   hub: {
@@ -161,7 +162,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 40,
     staffing: 0, consumes: { power: 6 }, produces: {}, producesMat: 0.35,
     requiresPressure: false, priority: 15,
-    desc: "Regolith in, materials out. First thing shed when power runs short.",
+    desc: "Regolith in, materials out. Shed early when power runs short.",
   },
   roverbay: {
     id: "roverbay", name: "Rover Bay", glyph: "RVR",
@@ -179,6 +180,15 @@ export const DEFS: Record<string, BuildingDef> = {
     requiresPressure: false, priority: 20, door: 2,
     desc: "Prints autonomous mining robots that work the field sol and night. Wants an engineer on the line.",
   },
+  fabricator: {
+    id: "fabricator", name: "Fabricator", glyph: "FAB",
+    foot: [1, 1], h: 16, color: "#54604a",
+    cost: { power: 0 }, matCost: FAB_MAT_COST,
+    staffing: 0, consumes: { power: 1.5 }, produces: {},
+    requiresPressure: false, priority: 10,
+    replicates: { targetDefId: "fabricator", buildS: FAB_BUILD_S },
+    desc: "Builds a copy of itself on open ground, forever. First shed in a brownout. Demolish is the off switch.",
+  },
   ptp: {
     id: "ptp", name: "Transport Pod", glyph: "PTP",
     foot: [2, 2], h: 30, color: "#5a4a6e",
@@ -195,5 +205,5 @@ export const ORDER: string[] = [
   "extractor", "awg", "aquifer", "reclaimer",
   "electrolysis", "greenhouse", "medbay", "cistern", "o2tank", "deflector",
   "windturbine", "geothermal", "reactor", "printer", "roverbay", "roboticsbay",
-  "ptp",
+  "fabricator", "ptp",
 ];

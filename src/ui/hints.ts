@@ -29,7 +29,7 @@ export type HintId =
   // unlock event maps mechanically (and stays one-shot via the seen-set)
   | "unlock_windturbine" | "unlock_geothermal" | "unlock_reactor"
   | "unlock_printer" | "unlock_roverbay" | "unlock_roboticsbay"
-  | "unlock_awg" | "unlock_aquifer" | "unlock_reclaimer";
+  | "unlock_awg" | "unlock_aquifer" | "unlock_reclaimer" | "unlock_fabricator";
 
 export interface Hint {
   id: HintId;
@@ -108,6 +108,11 @@ export const HINTS: Record<HintId, Hint> = {
     id: "unlock_reclaimer",
     title: "NEW SCHEMATIC: WATER RECLAIMER",
     body: "Recycles greywater, returning a slice of every drop the colony draws. It can't start from empty, but it stretches every source you have.",
+  },
+  unlock_fabricator: {
+    id: "unlock_fabricator",
+    title: "NEW SCHEMATIC: FABRICATOR",
+    body: "A machine that builds a copy of itself, forever, while materials and ground hold out. It grows without you — demolish is the off switch.",
   },
 };
 

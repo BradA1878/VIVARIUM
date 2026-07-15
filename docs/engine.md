@@ -105,7 +105,9 @@ ordering. The passes, in order:
    Bay's fabrication line and the fleet's self-repair (`rover.ts`), piloting for
    a possessed rover, then the Robotics Bay's line and the autonomous miners
    (`robots.ts`), which step through the **same claim set** the colonists' pass
-   built.
+   built, then the Fabricator lineage (`fabricator.ts`) — per-instance
+   replication countdowns that place a copy of the def on adjacent ground
+   (fee at completion, hold at zero, `FAB_MAX_LINEAGE` freeze; zero RNG).
 10. **Abundance unlocks** (pass 7d) — evaluate the un-latched gates and latch
     any that pass, just before the campaign verdict (see *Abundance unlocks*
     below).
@@ -213,6 +215,19 @@ Three rungs, one shared brain — all of it RNG-free.
   fleet for 12 s; a meteor/quake strike within 1.6 cells **scraps a robot
   outright** (`robot_destroyed`) — robots are the cheap, brittle rung where the
   rover is expensive and tough.
+- **The Fabricator** (`fabricator.ts`) — rung 4: an unstaffed building whose
+  def carries `replicates: { targetDefId, buildS }` pointed at **itself**. Each
+  instance runs its own countdown (`BuildingState.replicateT` — per-instance,
+  unlike the colony-scalar `roverFab`/`robotFab`), and on completion places a
+  copy in the first free N/E/S/W neighbor seat through an **unmodified
+  `canPlace`**, paying the target def's own `matCost` at completion (the two
+  affordability checks agree by construction). Every copy immediately runs its
+  own clock — 1 → 2 → 4 → 8 — throttled by what already exists: brownouts shed
+  it **first** (priority 10), the materials ledger starves it, the finite grid
+  boxes it in, and `FAB_MAX_LINEAGE` freezes every countdown at the valve. A
+  blocked completion holds at zero and narrates **once per stall episode**
+  (`fabricator_stalled`, edge-triggered with no stored flag); `remove` is the
+  player's kill switch.
 
 Two unification tricks hold the ladder together. **The unified actor id
 space**: rover *and* robot ids draw from `s.colonistCounter`, so every

@@ -99,6 +99,14 @@ describe("GATES — the truth table, by state injection", () => {
     expect(GATES.roboticsbay(gateState({ population: 10, materials: mat(199) }))).toBe(false);
     expect(GATES.roboticsbay(gateState({ population: 9, materials: mat(200) }))).toBe(false);
   });
+
+  it("fabricator: a roboticsbay exists AND materials ≥ 250", () => {
+    const bayBuilt = () => [{ defId: "roboticsbay" } as BuildingState];
+    expect(GATES.fabricator(gateState())).toBe(false);
+    expect(GATES.fabricator(gateState({ buildings: bayBuilt(), materials: mat(249) }))).toBe(false);
+    expect(GATES.fabricator(gateState({ materials: mat(250) }))).toBe(false); // rich, but no bay
+    expect(GATES.fabricator(gateState({ buildings: bayBuilt(), materials: mat(250) }))).toBe(true);
+  });
 });
 
 // ---- the latch ------------------------------------------------------------------

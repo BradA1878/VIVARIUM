@@ -8,6 +8,9 @@
                    on the def's door side and a shallow ramp out of it
      roboticsbay — a gantry: four corner posts under a top frame, with a tool
                    block hanging from the crossbeam over the work floor
+     fabricator  — the self-replicator: twin extruder towers over an emissive
+                   core, with a front gauge that FILLS with replication
+                   progress (status.fill) instead of chasing
 
    Local door convention: def.door = 2 (S) is local +Z before rotation; the
    renderer turns the whole group by the building's rot, so the garage door and
@@ -20,7 +23,7 @@ import { disposeObject } from "./contract";
 import { statusGlow, applyGlow } from "../materials";
 
 interface FacilitySpec {
-  kind: "printer" | "roverbay" | "roboticsbay";
+  kind: "printer" | "roverbay" | "roboticsbay" | "fabricator";
   /** body metal hex */
   metal: string;
 }
@@ -31,6 +34,8 @@ function specFor(id: string): FacilitySpec {
       return { kind: "printer", metal: "#8a7f94" }; // violet-grey fabricator
     case "roverbay":
       return { kind: "roverbay", metal: "#76828e" }; // garage blue-grey
+    case "fabricator":
+      return { kind: "fabricator", metal: "#7d8a6e" }; // moss — the lineage's livery
     case "roboticsbay":
     default:
       return { kind: "roboticsbay", metal: "#8c8470" }; // workshop tan
@@ -98,6 +103,30 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
     ramp.rotation.x = 0.1; // tips down toward the apron
     ramp.receiveShadow = true;
     group.add(ramp);
+  } else if (spec.kind === "fabricator") {
+    // --- self-replicator: twin extruder towers over an emissive core, front
+    // gauge segments that FILL with replication progress (see setStatus) ------
+    const bodyW = w * 0.72, bodyH = cell * 0.42, bodyD = d * 0.72;
+    box(new THREE.BoxGeometry(bodyW, bodyH, bodyD), metalMat, 0, bodyH / 2, 0); // plinth
+    const towerGeo = new THREE.BoxGeometry(cell * 0.14, cell * 0.62, cell * 0.14);
+    box(towerGeo, trimMat, -bodyW * 0.32, bodyH + cell * 0.31, -bodyD * 0.18);
+    box(towerGeo, trimMat, bodyW * 0.32, bodyH + cell * 0.31, -bodyD * 0.18);
+    box(new THREE.BoxGeometry(bodyW * 0.78, cell * 0.07, cell * 0.14), trimMat, 0, bodyH + cell * 0.58, -bodyD * 0.18); // gantry beam
+    // the core — where the copy takes shape; shares the beacon glow material
+    const core = new THREE.Mesh(new THREE.BoxGeometry(cell * 0.26, cell * 0.26, cell * 0.26), lightMat);
+    core.position.set(0, bodyH + cell * 0.24, -bodyD * 0.18);
+    core.rotation.y = Math.PI / 4;
+    core.castShadow = true;
+    group.add(core);
+    // the front (+Z) gauge: 4 segments that light up as the countdown runs down
+    const segGeo = new THREE.BoxGeometry(bodyW * 0.16, cell * 0.05, cell * 0.02);
+    for (let i = 0; i < 4; i++) {
+      const segMat = materials.glow();
+      barMats.push(segMat);
+      const seg = new THREE.Mesh(segGeo, segMat);
+      seg.position.set((i - 1.5) * bodyW * 0.22, bodyH * 0.6, bodyD / 2 + 0.012);
+      group.add(seg);
+    }
   } else {
     // --- robotics gantry: 4 corner posts + a top frame + a hanging tool block -
     const spanW = w * 0.74, spanD = d * 0.74, postH = cell * 0.8;
@@ -120,9 +149,10 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
     box(new THREE.BoxGeometry(spanW * 0.9, cell * 0.04, spanD * 0.9), trimMat, 0, cell * 0.02, 0, false); // work floor
   }
 
-  // a small shared status beacon for the two variants whose "screen" is dim
-  // geometry otherwise (the printer's bars double as its beacon)
-  if (spec.kind !== "printer") {
+  // a small shared status beacon for the variants whose "screen" is dim
+  // geometry otherwise (the printer's bars double as its beacon; the
+  // fabricator's core cube already rides lightMat)
+  if (spec.kind !== "printer" && spec.kind !== "fabricator") {
     const beacon = new THREE.Mesh(new THREE.SphereGeometry(cell * 0.04, 10, 8), lightMat);
     beacon.position.set(-w * 0.32, spec.kind === "roverbay" ? cell * 0.66 : cell * 0.86, -d * 0.3);
     group.add(beacon);
@@ -133,10 +163,18 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
     const color = statusGlow(status.alive, status.hurt);
     const intensity = (0.35 + 0.55 * pulse) * (status.alive ? 1 + 1.2 * night : 1);
     applyGlow(lightMat, color, intensity);
-    // the printer's bar segments chase left→right while alive, freeze dim when not
+    // the printer's bar segments chase left→right while alive, freeze dim when
+    // not; the fabricator's are a GAUGE — they light steadily as status.fill
+    // (replication progress) climbs, so a yard of staggered countdowns reads
     for (let i = 0; i < barMats.length; i++) {
-      const phase = (pulse + i / barMats.length) % 1;
-      const seg = status.alive ? 0.35 + 0.9 * phase : 0.12;
+      let seg: number;
+      if (spec.kind === "fabricator") {
+        const lit = (status.fill ?? 0) * barMats.length > i;
+        seg = !status.alive ? 0.12 : lit ? 1.15 : 0.22;
+      } else {
+        const phase = (pulse + i / barMats.length) % 1;
+        seg = status.alive ? 0.35 + 0.9 * phase : 0.12;
+      }
       applyGlow(barMats[i], color, seg);
     }
   }

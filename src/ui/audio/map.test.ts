@@ -133,6 +133,7 @@ describe("EVENT_CUES", () => {
     ["unlock", "unlockChime"],
     ["rover_ready", "roverReady"],
     ["robot_ready", "robotReady"],
+    ["fabricator_ready", "robotReady"], // the fab-line sting, reused
     ["robot_destroyed", "robotLost"],
   ];
 
@@ -147,7 +148,7 @@ describe("EVENT_CUES", () => {
     // wind bed; idle banter is council prose, never a sting.
     for (const t of ["build", "dawn", "dusk", "new_sol", "storm_in", "storm_clear",
       "strike", "building_damaged", "crit_clear", "trade_left",
-      "ufo_left", "boot", "anomaly", "idle"] as EventType[]) {
+      "ufo_left", "boot", "anomaly", "idle", "fabricator_stalled"] as EventType[]) {
       expect(EVENT_CUES[t]).toBeUndefined();
     }
   });

@@ -36,6 +36,7 @@ const UNLOCK_HINTS: Record<string, string> = {
   awg: "sol 5, or population 6",
   aquifer: "sol 8 — must sit on an aquifer site",
   reclaimer: "population 6, or build a Hydroponics Unit",
+  fabricator: "build a Robotics Bay + 250 materials",
 };
 
 /** piloting locks construction — every tile disables while possessing */

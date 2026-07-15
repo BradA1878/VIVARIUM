@@ -618,7 +618,13 @@ export class ThreeRenderer {
 
       const st = buildingStatus(b);
       const pulse = 0.5 + 0.5 * Math.sin(now / 700 + b.uid);
-      const fill = b.defId === "battery" ? snap.pools.power.amount / snap.pools.power.capacity : undefined;
+      // per-building progress channel: battery charge, or a replicator's cycle
+      // (generic off def.replicates — works for any future replicating def)
+      const rep = DEFS[b.defId]?.replicates;
+      const fill = b.defId === "battery"
+        ? snap.pools.power.amount / snap.pools.power.capacity
+        : rep ? 1 - (b.replicateT ?? rep.buildS) / rep.buildS
+        : undefined;
       entry.mesh.setStatus({ ...st, fill }, pulse, this.env);
 
       // corridors orient to neighbours: an arm toward each adjacent corridor or

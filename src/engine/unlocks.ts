@@ -25,6 +25,11 @@ export const GATES: Record<string, (s: ColonyState) => boolean> = {
   roboticsbay: (s) =>
     s.buildings.some((b) => b.defId === "reactor") ||
     (s.population >= 10 && s.materials.amount >= 200),
+  // the self-replicator sits one rung past the robot shop: a built Robotics Bay
+  // plus a stockpile deep enough to survive the lineage's compounding fees
+  // (thresholds are starting guesses — tune by playtest, like the ptp gate's)
+  fabricator: (s) =>
+    s.buildings.some((b) => b.defId === "roboticsbay") && s.materials.amount >= 250,
   awg: (s) => s.sol >= 5 || s.population >= 6,
   aquifer: (s) => s.sol >= 8,
   // a mid-game efficiency unlock: once the colony has grown, OR you've built the

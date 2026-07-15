@@ -69,6 +69,7 @@ const EVENT_LABEL: Partial<Record<EventType, [string, string]>> = {
   abducted: ["abduction", "abductions"],
   birth: ["birth", "births"],
   building_destroyed: ["building lost", "buildings lost"],
+  fabricator_ready: ["fabricator self-built", "fabricators self-built"],
   trade_done: ["trade", "trades"],
   resupply: ["resupply", "resupplies"],
   arrival: ["arrival", "arrivals"],
