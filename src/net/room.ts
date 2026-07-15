@@ -68,6 +68,12 @@ export function joinNetRoom(roomCode: string, turn?: TurnServerConfig[]): NetRoo
   // ArrayBuffer …). Our Commands/Snapshots are JSON-shaped but their precise TS types
   // aren't structurally assignable to JsonValue's index signature, so we cast at this
   // single boundary and keep the public surface fully typed.
+  //
+  // DELIBERATE TRUST MODEL: inbound peer data is cast, not runtime-validated —
+  // co-op is a friends-only room joined by a shared code, and the host relay
+  // only ever acts on a guest's moveIntent/interact anyway (hostRelay.ts drops
+  // the rest). If rooms ever become public/hostile, this is the boundary that
+  // needs schema validation, not the engine (which only sees typed Commands).
   const cmd = room.makeAction("cmd");
   const snap = room.makeAction("snap");
   const evt = room.makeAction("evt");

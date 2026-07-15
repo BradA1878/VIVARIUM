@@ -1,0 +1,24 @@
+# Typecheck + test + build on every push/PR to main. The suite is the contract:
+# vue-tsc over src/shared/server, the full vitest run (incl. the engine
+# determinism tests), and a production build.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

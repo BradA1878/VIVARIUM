@@ -12,6 +12,10 @@ npm-debug.log*
 .vite/
 coverage/
 
-# playwright / screenshots
+# playwright / screenshots (root-level images are always QA screenshots —
+# a stray `git add -A` must not commit them)
 .playwright-mcp/
 phase*-scene*.png
+/*.png
+/*.jpeg
+/*.jpg

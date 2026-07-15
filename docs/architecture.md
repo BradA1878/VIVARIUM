@@ -75,14 +75,47 @@ worker (sim.worker.ts → SimHost → Colony)              main thread
 
 **Commands (main → worker):** `place`, `remove`, `rotate`, `move`, `route`,
 `triggerHazard`, `setDirector`, `possess`, `moveIntent`, `interact`,
-`respondTrade`, `setPaused`, `setSpeed`, `forceStorm`, `reset` (optionally
-carrying the next run's difficulty), `load`, `save`, `start`.
+`respondTrade`, `setPaused`, `setSpeed`, `forceStorm`, `reset`/`start`
+(optionally carrying the next run's difficulty + the PTP founding seed/world/
+legacy), `load`, `save`, `launchPtp`, `switchColony`, `dispatchShipment`.
 
-**Outbound (worker → main):** `ready`, `snapshot`, `events`, `saved`.
+**Outbound (worker → main):** `ready`, `snapshot`, `events`, `saved`,
+`catchupReport` (the "while you were away" digest input — deliberately not
+routed through the event stream), and `error` — a surfaced failure (a thrown
+command/step, a save that wouldn't load, a dead worker, a lost co-op host).
+The boundary never wedges silently: the worker shell try/catches and posts,
+`SimHost` survives a corrupt `load`/`switchColony` without losing the live
+colony, and the store renders the error as a dismissible banner.
 
 To add a player or agent action, the path is always the same: **add a `Command`
 in `protocol.ts`, handle it in `host.ts`, expose it on `bridge.ts`.** The worker
 is authoritative.
+
+## The bridge is the network seam (co-op)
+
+`BridgeCore` (`src/worker/bridge.ts`) holds everything the renderer and store
+depend on minus the transport: the snapshot/event/error subscriptions, the
+latest-snapshot cache, the synchronous predictors, and the per-client
+`possessed` re-derivation (`localActor` — the architect sees `null` and can
+build; a guest sees its own claimed astronaut). `SimBridge` supplies the Web
+Worker transport (solo and the co-op host); a guest's `NetBridge`
+(`src/net/netBridge.ts`) supplies a Trystero data channel to the host instead —
+no worker runs on a guest. The host's `HostRelay` (`src/net/hostRelay.ts`) is
+the authority boundary: it claims a free colonist per guest, attributes each
+guest's input to it, drops build commands from astronauts, and broadcasts
+snapshots/events. Session failures ride the same error channel: `NetBridge`
+reports a lost host (`net-lost`) and a join nobody answers (`net-timeout`).
+`src/net/` is main-thread only — the engine never knows the network exists.
+
+## Multi-world and persistence (main-thread meta state)
+
+Slot-keyed saves, the Colonies ledger, and the inter-planet shipment queue live
+in `src/persistence/` — deliberately **not** engine state. Founding seeds and
+away-colony catch-up step counts are computed main-side (`src/ui/founding.ts`)
+and handed to the engine as plain data; switching to a settled world replays the
+real seeded tick (`Colony.fastForward`, chunking-invariant), and matured
+shipments are credited as seed-state on switch — never a live cross-colony
+write. CLAUDE.md's multi-world bullet carries the full contract.
 
 ## The prediction seam
 
