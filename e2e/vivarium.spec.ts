@@ -151,11 +151,11 @@ test("small screens explain the viewport requirement and recover in landscape", 
   await page.goto("/");
   await page.locator(".boot").click();
 
-  await expect(page.getByRole("heading", { name: /wider console required/i })).toBeVisible();
-  await expect(page.getByText(/colony save remains intact/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /field console/i })).toBeVisible();
+  await expect(page.getByText(/joining one works right here/i)).toBeVisible();
 
   await page.setViewportSize({ width: 800, height: 600 });
-  await expect(page.getByRole("heading", { name: /wider console required/i })).toBeHidden();
+  await expect(page.getByRole("heading", { name: /field console/i })).toBeHidden();
   const begin = page.getByRole("button", { name: "BEGIN" });
   await begin.scrollIntoViewIfNeeded();
   await expect(begin).toBeInViewport();

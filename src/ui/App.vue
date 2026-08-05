@@ -351,7 +351,7 @@ onUnmounted(() => {
 
     <Boot v-if="booting" @done="booting = false" />
 
-    <ViewportGate v-if="!booting" />
+    <ViewportGate v-if="!booting" @join="onJoin" />
   </div>
 </template>
 
