@@ -118,7 +118,19 @@ There are 50 test files (556 tests), weighted toward the guarantees that matter:
 
 The Playwright suite in `e2e/` exercises the real WebGL app at desktop and phone
 sizes, including the field guide, safe reset flow, keyboard focus, viewport gate,
-horizontal overflow, and WCAG A/AA serious-or-critical Axe findings.
+horizontal overflow, and WCAG A/AA serious-or-critical Axe findings. The touch
+specs cover the two-step tap-to-place contract and the Field Console's offline
+paths (join form, `?join=` prefill, the no-host `failed` state).
+
+Phone-astronaut check (tier 2): a phone-sized guest joins through the Field
+Console (the ViewportGate's join fork; `?join=CODE` prefills). Emulated: two
+Playwright contexts — desktop host via `__net.host`, guest at 412×915 with
+`hasTouch` joining through the UI; the guest's `.vitals` strip appears, the
+gate lifts when the roster lands (`connecting → connected`), and its touch
+quad moves its colonist on the HOST's `bridge.latest`. Real device:
+`npm run dev -- --host` + a phone on the same LAN pointed at
+`http://<mac-ip>:5180/?join=<code>`. Trystero signalling needs internet, so
+the live loop never runs in CI — only the offline console paths do.
 
 Rare or scheduled events are tested by **state injection**, never by waiting:
 set the timer/sol so the event is due *now* (the `ufo.test.ts` pattern, reused
