@@ -12,6 +12,13 @@
      auto-route corridors door→door; clicking empty hand-lays a single corridor.
    - select (no tool): click a placed building to select it, then click an empty
      cell to move it, R to rotate, Del to remove. Right-click / Esc deselects.
+
+   Touch: a tap fires no pointermove and its pointerleave lands BEFORE the
+   click, so the hover model never sees it — taps resolve their own cell from
+   the click event instead. Mutating actions (place / demolish / move /
+   route-commit / hand-lay) take two taps: the first aims the ghost, a repeat
+   tap on the same cell commits. Select and route-source picking stay one-tap.
+   A touch drag paints the aim like mouse hover; the lift no longer clears it.
    ============================================================================ */
 import * as THREE from "three";
 import type { Side } from "@shared/types";
@@ -139,10 +146,24 @@ export class PlacementController {
     this.ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
     this.hasPointer = true;
   }
-  private onLeave(): void { this.hasPointer = false; this.hover = null; }
+  /** a touch lift always fires pointerleave — only a real mouse exit clears the aim */
+  private onLeave(e: PointerEvent): void {
+    if (e.pointerType !== "mouse") return;
+    this.hasPointer = false;
+    this.hover = null;
+  }
 
-  private onClick(): void {
+  private onClick(e: MouseEvent): void {
     if (this.bridge.latest?.possessed != null) return; // piloting locks construction (place/demolish/route/select/move)
+    const pt = (e as PointerEvent).pointerType;
+    if (pt === "touch" || pt === "pen") {
+      this.onMove(e as PointerEvent); // no pointermove preceded the tap — adopt its point as the cursor
+      const cell = this.cellAtNdc();
+      if (!cell) { this.hover = null; return; }
+      const aimed = this.hover != null && this.hover.gx === cell.gx && this.hover.gy === cell.gy;
+      this.hover = cell;
+      if (!aimed && this.clickMutates(cell)) return; // first tap on this cell: aim the ghost only
+    }
     if (!this.hover) return;
     const { gx, gy } = this.hover;
     if (!this.tool) { this.onSelectClick(gx, gy); return; }
@@ -170,6 +191,18 @@ export class PlacementController {
     }
   }
 
+  /** would a click at this cell issue a colony-mutating command? Touch gates
+   *  these behind a repeat tap on the same cell; non-mutating clicks (select a
+   *  building, pick a route source) stay one-tap. Mirrors onClick's dispatch. */
+  private clickMutates(cell: { gx: number; gy: number }): boolean {
+    if (!this.tool) return this.selectedUid != null && !this.bridge.buildingAt(cell.gx, cell.gy); // move attempt
+    if (this.tool.kind !== "route") return true; // place + demolish always mutate
+    const b = this.bridge.buildingAt(cell.gx, cell.gy);
+    if (!b) return true; // empty ground hand-lays a corridor
+    if (DEFS[b.defId]?.door == null) return false; // a non-door building is a no-op click
+    return this.routeSource != null && this.routeSource !== b.uid; // door→door commit
+  }
+
   private onContext(e: MouseEvent): void {
     e.preventDefault();
     if (this.selectedUid != null) { this.setSelected(null); return; }
@@ -177,16 +210,18 @@ export class PlacementController {
     this.clearTool();
   }
 
+  /** raycast the current ndc onto the ground plane → grid cell (null off-grid) */
+  private cellAtNdc(): { gx: number; gy: number } | null {
+    this.ray.setFromCamera(this.ndc, this.camera);
+    const hit = new THREE.Vector3();
+    if (!this.ray.ray.intersectPlane(this.plane, hit)) return null;
+    const { gx, gy } = this.grid.worldToCell(hit);
+    return this.grid.inBounds(gx, gy) ? { gx, gy } : null;
+  }
+
   // ---- per-frame ------------------------------------------------------------
   update(): void {
-    if (this.hasPointer) {
-      this.ray.setFromCamera(this.ndc, this.camera);
-      const hit = new THREE.Vector3();
-      if (this.ray.ray.intersectPlane(this.plane, hit)) {
-        const { gx, gy } = this.grid.worldToCell(hit);
-        this.hover = this.grid.inBounds(gx, gy) ? { gx, gy } : null;
-      } else this.hover = null;
-    }
+    if (this.hasPointer) this.hover = this.cellAtNdc();
 
     this.emitHover();
     this.arrow.visible = false;

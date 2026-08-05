@@ -17,13 +17,15 @@ const hoverHasDoor = computed(() => hoverDef.value?.door != null);
 
 <template>
   <div v-if="demolish && capabilities.canBuild" class="inspect demo">
-    <span>DEMOLISH — click a structure to remove · right-click or Cancel to stop</span>
+    <span class="hint-mouse">DEMOLISH — click a structure to remove · right-click or Cancel to stop</span>
+    <span class="hint-touch">DEMOLISH — tap a structure to mark · tap again to remove</span>
     <button class="inspect-touch" type="button" @click="clearTool">CANCEL</button>
   </div>
   <div v-else-if="selectedDef && capabilities.canBuild" class="inspect">
     <span class="ins-glyph">{{ selectedDef.glyph }}</span>
     <span class="ins-name">SELECTED {{ selectedDef.name.toUpperCase() }}</span>
-    <span class="ins-hint">click a cell to move{{ selectedDef.door != null ? " · R rotate" : "" }} · Del remove · right-click or Drop to release</span>
+    <span class="ins-hint hint-mouse">click a cell to move{{ selectedDef.door != null ? " · R rotate" : "" }} · Del remove · right-click or Drop to release</span>
+    <span class="ins-hint hint-touch">tap a cell to aim the move · tap again to move</span>
     <span class="inspect-actions">
       <button v-if="selectedDef.door != null" class="inspect-touch" type="button" @click="rotate">ROTATE</button>
       <button class="inspect-touch" type="button" @click="clearTool">DROP</button>
@@ -32,13 +34,15 @@ const hoverHasDoor = computed(() => hoverDef.value?.door != null);
   <div v-else-if="linking && capabilities.canBuild" class="inspect">
     <span class="ins-glyph">===</span>
     <span class="ins-name">LINK</span>
-    <span class="ins-hint">click two sealed buildings to route a corridor · click ground for one · right-click or Cancel to stop</span>
+    <span class="ins-hint hint-mouse">click two sealed buildings to route a corridor · click ground for one · right-click or Cancel to stop</span>
+    <span class="ins-hint hint-touch">tap one sealed building, tap a second twice to route · tap ground twice for one</span>
     <button class="inspect-touch" type="button" @click="clearTool">CANCEL</button>
   </div>
   <div v-else-if="toolDef && capabilities.canBuild" class="inspect">
     <span class="ins-glyph">{{ toolDef.glyph }}</span>
     <span class="ins-name">PLACING {{ toolDef.name.toUpperCase() }}</span>
-    <span class="ins-hint">click to place{{ toolDef.door != null ? " · R to rotate the door" : "" }} · right-click or Cancel to stop</span>
+    <span class="ins-hint hint-mouse">click to place{{ toolDef.door != null ? " · R to rotate the door" : "" }} · right-click or Cancel to stop</span>
+    <span class="ins-hint hint-touch">tap to aim · tap the aim again to place</span>
     <span class="inspect-actions">
       <button v-if="toolDef.door != null" class="inspect-touch" type="button" @click="rotate">ROTATE</button>
       <button class="inspect-touch" type="button" @click="clearTool">CANCEL</button>
@@ -52,6 +56,15 @@ const hoverHasDoor = computed(() => hoverDef.value?.door != null);
 </template>
 
 <style scoped>
+/* hint copy swaps on the PRIMARY pointer only — a mouse user in a narrow
+   window keeps the click/right-click wording (the buttons below stay width-
+   gated: they are harmless extras for a mouse, wrong words are not) */
+.hint-touch { display: none; }
+@media (pointer: coarse) {
+  .hint-mouse { display: none; }
+  .hint-touch { display: inline; }
+}
+
 .inspect-touch { display: none; }
 @media (pointer: coarse), (max-width: 900px) {
   .inspect-actions { display: inline-flex; gap: 5px; }

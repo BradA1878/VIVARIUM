@@ -70,6 +70,9 @@ button:disabled { cursor: not-allowed; }
   width: 100%;
   height: 100%;
   display: block;
+  /* the canvas owns its gestures — no browser pan/zoom, and no double-tap
+     zoom hijacking the two-step tap-to-place */
+  touch-action: none;
 }
 .vignette {
   position: absolute;
@@ -117,10 +120,14 @@ button:disabled { cursor: not-allowed; }
   64% { opacity: 0.2; }
 }
 
-/* The HUD is a pointer-events:none overlay; only the controls opt back in. */
+/* The HUD is a pointer-events:none overlay; only the controls opt back in.
+   The safe-area insets pull every absolutely-anchored HUD child clear of
+   device cutouts and the home indicator (env() is 0 elsewhere) while the
+   canvas underneath stays full-bleed. */
 .hud {
   position: absolute;
-  inset: 0;
+  inset: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+    env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   pointer-events: none;
   z-index: 5;
 }
