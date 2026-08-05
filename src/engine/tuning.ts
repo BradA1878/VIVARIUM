@@ -2,7 +2,7 @@
    Tuning knobs — the balance lives here, never in the engine logic (doc §2.1).
    These are the values the prototype settled on (doc §4.4).
    ============================================================================ */
-import type { Difficulty, HazardKind, Resource, World } from "@shared/types";
+import type { DepositKind, Difficulty, HazardKind, Resource, World } from "@shared/types";
 
 /** Per-colonist life-support demand, per second (doc §4.4). */
 export const PERSON: Record<"oxygen" | "water" | "food", number> = {
@@ -87,15 +87,29 @@ export const RESUPPLY_AMOUNT: Record<Resource, number> = {
  *  ×(1+BIAS)). Pure arithmetic, zero rng. */
 export const RESUPPLY_BIAS = 1;
 
-/** Campaign arc — the launch-window deadline (doc §2.5). Reach self-sufficiency
- *  before Earth's window closes, or the colony is stranded. */
+/** Campaign arc — the launch-window deadline (doc §2.5). Establish a buffered,
+ *  hazard-proven settlement before Earth's window closes, or the colony is
+ *  stranded. The first self-sufficient outpost is a milestone, not the ending. */
 export const DEADLINE_SOL = 22; // the launch window closes at the start of this sol
 // (widened from 12 once the explore/gather/trade layer landed — a run needs room
 // to go mining and deal with the traders, not just race survival)
-export const TARGET_POP = 8; // colonists required to count as a real settlement
-/** seconds of sustained non-negative net on all life support (excluding resupply)
- *  with the target population, to be judged self-sufficient */
-export const SELF_SUFFICIENCY_GOAL = 45;
+/** the early outpost milestone: enough people and time to prove the starter loop */
+export const SETTLEMENT_POP = 8;
+export const SETTLEMENT_SUSTAIN_GOAL = 45;
+/** the actual campaign objective: a larger settlement must remain independently
+ *  sustainable for a complete sol, through day/night rather than one sunny beat */
+export const TARGET_POP = 12;
+export const SELF_SUFFICIENCY_GOAL = SOL_LENGTH;
+/** a completed full-sol proof is accepted only while every survival buffer can
+ *  cover this many seconds of current crew demand. Power has no per-person demand,
+ *  so it uses an absolute floor. These are reserve floors, not capacity fractions:
+ *  acquiring an alien capacity upgrade must never make a healthy colony less ready. */
+export const SUSTAIN_RESERVE_SECONDS = 20;
+export const SUSTAIN_POWER_RESERVE = 30;
+/** arrivals require a smaller post-arrival cushion for a sustained interval — no
+ *  more admitting four people because one sampled tick happened to be positive. */
+export const ARRIVAL_READY_GOAL = 20;
+export const ARRIVAL_RESERVE_SECONDS = 15;
 
 /** brownout latch thresholds */
 export const BROWNOUT_DEFICIT = -0.2;
@@ -128,13 +142,15 @@ export const DEPOT_RADIUS = 1.5;   // cells: how close to the depot to drop a lo
 export const AUTO_CARRY = 12;     // units an auto-gatherer hauls per trip
 export const GATHER_DWELL = 1.2;  // seconds spent mining at the node per pickup
 
-/** staffed workers man their stations until a gatherable pool (food/water/the
- *  materials bank) falls below this fill fraction — then the WHOLE colony pitches
- *  in on resource runs, drifting back once supplies recover. Staffing is a
- *  headcount in the tick (engine/tick.ts), so a worker out on a haul never
- *  unstaffs its building; only the role-match efficiency bonus pauses. Pure
- *  derivation of pool state — zero RNG — so pitch-in stays deterministic. */
-export const GATHER_NEED_FRAC = 0.85;
+/** idle-colonist auto-gather thresholds by deposit kind. Survival stores are kept
+ *  comfortably buffered; ore stops much earlier than the old universal 85% quota,
+ *  but high enough to unlock the reactor tier. Staffed/piloted colonists never
+ *  auto-gather: hauling now consumes real labor. */
+export const GATHER_NEED_FRAC: Record<DepositKind, number> = {
+  cache: 0.65,
+  ice: 0.65,
+  ore: 0.55,
+};
 
 /** the rover — rung 2 of the automation ladder. One drivable bulk hauler,
  *  fabricated by the Rover Bay on a colony countdown that PAUSES while the bay

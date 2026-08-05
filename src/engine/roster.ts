@@ -49,7 +49,11 @@ export const BUILDING_ROLE: Record<string, ColonistRole> = {
 export function roleMatchCount(s: ColonyState, uid: number, defId: string): number {
   let n = 0;
   for (const c of s.colonists) {
-    if (c.injury > 0) continue;
+    if (
+      c.injury > 0 || c.carryAmt > 0 ||
+      c.state === "gathering" || c.state === "mining" || c.state === "hauling" ||
+      (s.pilots ?? []).some((p) => p.id === c.id)
+    ) continue;
     if (c.workUid === uid && BUILDING_ROLE[defId] === roleOf(c.id)) n += 1;
   }
   return n;

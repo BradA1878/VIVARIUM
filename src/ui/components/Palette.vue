@@ -82,6 +82,9 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
         :key="d.id"
         :class="['pal-btn', { sel: tool === d.id && !demolish, poor: !locked(d) && !affordable(d), lock: locked(d) }]"
         :disabled="piloting || locked(d) || !affordable(d)"
+        type="button"
+        :aria-pressed="tool === d.id && !demolish"
+        :aria-label="`${d.name}, ${costOf(d)} materials${locked(d) ? ', locked' : !affordable(d) ? ', not enough materials' : ''}`"
         @click="pick(d.id)"
         @mouseenter="showTip($event, d)"
         @mouseleave="hideTip"
@@ -93,6 +96,8 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
       <button
         :class="['pal-btn', 'demo', { sel: demolish }]"
         :disabled="piloting"
+        type="button"
+        :aria-pressed="demolish"
         @click="toggleDemolish()"
       >
         <span class="pal-glyph">&#10005;</span>

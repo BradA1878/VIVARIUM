@@ -110,7 +110,12 @@ export function updateHazards(s: ColonyState, dt: number, rng: RNG, emit: Emit):
       continue;
     }
     applyActive(s, h, dt, rng, emit);
-    if (h.tLeft <= 0) emit({ type: "hazard_end", kind: h.kind, detail: h.kind });
+    if (h.tLeft <= 0) {
+      // Completing an ACTIVE hazard is campaign evidence: the colony has proved
+      // its buffers under pressure, not merely balanced one calm sampled tick.
+      s.hazardsSurvived = (s.hazardsSurvived ?? 0) + 1;
+      emit({ type: "hazard_end", kind: h.kind, detail: h.kind });
+    }
     else keep.push(h);
   }
   s.hazards = keep;

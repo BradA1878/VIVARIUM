@@ -8,14 +8,14 @@
   --void: #07090b;
   --void2: #0b0e12;
   --ink: #c3d0d6;
-  --dim: #6a7a82;
-  --faint: #3a464c;
+  --dim: #98a8af;
+  --faint: #74858d;
   --cyan: #7fd4e8;
   --rust: #c8794f;
   --crit: #e8784f;
-  --panel: rgba(12, 16, 20, 0.74);
-  --hair: rgba(127, 212, 232, 0.12);
-  --hair2: rgba(127, 212, 232, 0.06);
+  --panel: rgba(12, 16, 20, 0.8);
+  --hair: rgba(127, 212, 232, 0.2);
+  --hair2: rgba(127, 212, 232, 0.1);
   --mono: "IBM Plex Mono", ui-monospace, monospace;
   --serif: "Newsreader", Georgia, serif;
   --ticker-h: 40px;
@@ -35,6 +35,7 @@ html,
 body {
   background: #000;
   overflow: hidden;
+  color-scheme: dark;
 }
 body {
   font-family: var(--mono);
@@ -48,6 +49,11 @@ button {
   background: none;
   border: none;
   cursor: pointer;
+}
+button:disabled { cursor: not-allowed; }
+:focus-visible {
+  outline: 2px solid #a7e7f2 !important;
+  outline-offset: 3px;
 }
 ::selection {
   background: rgba(127, 212, 232, 0.25);
@@ -215,4 +221,17 @@ button {
   50% {
     opacity: 0.62;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .storm-veil.on { animation: none; opacity: 0.82; }
+  .flare-veil.on { animation: none; opacity: 0.24; }
 }

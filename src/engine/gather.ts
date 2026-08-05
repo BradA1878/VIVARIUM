@@ -49,12 +49,17 @@ export interface GatherOpts {
   carryCap: number;
   /** seconds spent mining at the node before the load comes free */
   dwell: number;
+  /** only start a fresh trip for pools below their tuned need threshold */
+  respectNeed?: boolean;
 }
 
-/** add a banked load to its pool (ore → the materials currency) */
-function addToPool(s: ColonyState, target: Resource | "materials", amt: number): void {
+/** add a banked load to its pool (ore → the materials currency), returning
+ *  the post-capacity amount that actually entered the bank */
+function addToPool(s: ColonyState, target: Resource | "materials", amt: number): number {
   const p = target === "materials" ? s.materials : s.pools[target];
+  const before = p.amount;
   p.amount = Math.min(p.capacity, p.amount + amt);
+  return p.amount - before;
 }
 
 /** the collection depot's cell center */
@@ -108,13 +113,16 @@ export function pickupFromDeposit(
   return amt;
 }
 
-/** bank the whole load into its pool (via DEPOSIT_YIELD) and empty the hands */
-export function dropCarryAtDepot(s: ColonyState, agent: CarryAgent): void {
+/** bank the whole load into its pool (via DEPOSIT_YIELD), empty the hands, and
+ *  return the amount that actually fit after the destination capacity clamp */
+export function dropCarryAtDepot(s: ColonyState, agent: CarryAgent): number {
+  let banked = 0;
   if (agent.carryAmt > 0 && agent.carryKind) {
-    addToPool(s, DEPOSIT_YIELD[agent.carryKind], agent.carryAmt);
+    banked = addToPool(s, DEPOSIT_YIELD[agent.carryKind], agent.carryAmt);
   }
   agent.carryAmt = 0;
   agent.carryKind = null;
+  return banked;
 }
 
 // ---- multi-kind cargo (the rover's bays — kinds stack side by side) ---------
@@ -147,12 +155,17 @@ export function pickupIntoCargo(
  *  emptying the bed — one press at the depot clears the whole load */
 export function dropCargoAtDepot(
   s: ColonyState, cargo: Partial<Record<DepositKind, number>>,
-): void {
+): Partial<Record<DepositKind, number>> {
+  const banked: Partial<Record<DepositKind, number>> = {};
   for (const k of CARGO_KINDS) {
     const amt = cargo[k] ?? 0;
-    if (amt > 0) addToPool(s, DEPOSIT_YIELD[k], amt);
+    if (amt > 0) {
+      const accepted = addToPool(s, DEPOSIT_YIELD[k], amt);
+      if (accepted > 0) banked[k] = accepted;
+    }
     delete cargo[k];
   }
+  return banked;
 }
 
 /** route around buildings toward a goal: one waypoint of BFS path per tick */
@@ -183,16 +196,18 @@ export function kindsByNeed(s: ColonyState): DepositKind[] {
   return [...NEED_TIE_ORDER].sort((a, b) => fill(a) - fill(b));
 }
 
-/** does the colony need hands on resource runs right now? True when any
- *  gatherable kind's destination pool sits below GATHER_NEED_FRAC. While true,
- *  staffed workers pitch in on gathering (stepColonists); when supplies recover
- *  they drift back to their stations. Pure — a derivation of pool state, zero
- *  RNG — so the pitch-in decision replays identically. */
+/** whether this deposit kind's destination pool is below its tuned threshold */
+function kindNeedsGather(s: ColonyState, kind: DepositKind): boolean {
+  const p = poolFor(s, kind);
+  const fill = p.capacity > 0 ? p.amount / p.capacity : 1;
+  return fill < GATHER_NEED_FRAC[kind];
+}
+
+/** does the colony need an IDLE pair of hands on a resource run right now?
+ *  Pure — a derivation of pool state, zero RNG — so it replays identically. */
 export function colonyNeedsGather(s: ColonyState): boolean {
   for (const k of NEED_TIE_ORDER) {
-    const p = poolFor(s, k);
-    const fill = p.capacity > 0 ? p.amount / p.capacity : 1;
-    if (fill < GATHER_NEED_FRAC) return true;
+    if (kindNeedsGather(s, k)) return true;
   }
   return false;
 }
@@ -232,15 +247,21 @@ function claimNearestOfKind(
  *  has no live node of one; within a kind the pick is the nearest by
  *  distance-squared (tie → lowest id), unclaimed preferred, sharing the
  *  nearest when every node of the kind is claimed. */
-function gatherTarget(s: ColonyState, a: GatherAgent, claimed: Set<number>): DepositInstance | null {
+function gatherTarget(
+  s: ColonyState, a: GatherAgent, claimed: Set<number>, respectNeed: boolean,
+): DepositInstance | null {
   if (a.gatherDepositId != null) {
     const cur = s.deposits.find((d) => d.id === a.gatherDepositId && d.amount > 0);
-    if (cur) return cur;
+    // A partly-filled load stays kind-locked and may finish at its node. An
+    // empty-handed need-aware worker releases a now-comfortable pool instead of
+    // mining it forever merely because some *other* resource is still scarce.
+    if (cur && (!respectNeed || a.carryAmt > 0 || kindNeedsGather(s, cur.kind))) return cur;
     a.gatherDepositId = null;
     a.gatherT = 0;
   }
   if (a.carryKind) return claimNearestOfKind(s, a, claimed, a.carryKind);
   for (const kind of kindsByNeed(s)) {
+    if (respectNeed && !kindNeedsGather(s, kind)) continue;
     const pick = claimNearestOfKind(s, a, claimed, kind);
     if (pick) return pick;
   }
@@ -270,7 +291,7 @@ export function stepGatherer(
   // full hands → bank the load (the sticky claim survives for the return trip)
   if (a.carryAmt >= opts.carryCap - 1e-9) return haulToDepot(s, a, dt, opts);
 
-  const dep = gatherTarget(s, a, claimed);
+  const dep = gatherTarget(s, a, claimed, opts.respectNeed === true);
   if (dep) {
     if (Math.hypot(dep.gx - a.x, dep.gy - a.y) <= PICKUP_RADIUS) {
       a.state = "mining";

@@ -12,11 +12,11 @@ const { hintToast, dismissHint } = useColony();
 
 <template>
   <transition name="toast">
-    <div v-if="hintToast" class="toast" :key="hintToast.id">
+    <div v-if="hintToast" class="toast" :key="hintToast.id" role="status" aria-live="polite">
       <div class="toast-head">
         <span class="toast-dot" />
         <span class="toast-title">{{ hintToast.title }}</span>
-        <button class="toast-x" title="Dismiss" @click="dismissHint">✕</button>
+        <button class="toast-x" type="button" title="Dismiss" aria-label="Dismiss hint" @click="dismissHint">✕</button>
       </div>
       <p class="toast-body">{{ hintToast.body }}</p>
     </div>

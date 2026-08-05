@@ -98,9 +98,16 @@ const items = computed<AlertItem[]>(() => {
 </script>
 
 <template>
-  <div v-if="s && items.length" class="alerts">
+  <div
+    v-if="s && items.length"
+    class="alerts"
+    role="status"
+    aria-live="polite"
+    aria-atomic="false"
+    aria-relevant="additions text"
+  >
     <div v-for="it in items" :key="it.k" :class="'alert sev' + it.sev">
-      <span class="alert-bar" />
+      <span class="alert-bar" aria-hidden="true" />
       <div>
         <div class="alert-txt">{{ it.txt }}</div>
         <div class="alert-sub">{{ it.sub }}</div>

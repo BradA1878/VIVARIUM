@@ -22,6 +22,7 @@ export const SEV: Record<EventType, number> = {
   hazard_warn: 3, hazard_start: 2, hazard_end: 1,
   strike: 0, building_damaged: 2, building_destroyed: 4,
   traders_inbound: 3, trade_done: 2, trade_left: 1, // first contact
+  cargo_picked: 0, cargo_unloaded: 0, // direct player feedback renders over the actor
   ufo_inbound: 4, abducted: 5, abduction_blocked: 3, ufo_left: 1, // the abductor
   birth: 2, // the colony grows from within
   unlock: 2, // a gated def opens for placement

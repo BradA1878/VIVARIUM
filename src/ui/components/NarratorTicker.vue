@@ -21,7 +21,7 @@ import { computed, ref, watch } from "vue";
 import { useColony } from "@/ui/stores/colony";
 import TypedText from "./TypedText.vue";
 
-const { messages, toggleLog } = useColony();
+const { messages, logOpen, toggleLog } = useColony();
 
 /** the line on the bar — always the newest message */
 const latest = computed(() => (messages.value.length > 0 ? messages.value[messages.value.length - 1] : null));
@@ -38,9 +38,13 @@ function onAnimEnd(e: AnimationEvent): void {
 </script>
 
 <template>
-  <div
+  <button
     class="ticker"
     :class="[{ crit }, latest ? 'voice-' + latest.register : '']"
+    type="button"
+    aria-controls="council-log"
+    :aria-expanded="logOpen"
+    aria-label="Open council log"
     @click="toggleLog"
     @animationend="onAnimEnd"
   >
@@ -51,5 +55,5 @@ function onAnimEnd(e: AnimationEvent): void {
     </template>
     <span v-else class="ticker-quiet" />
     <span class="ticker-chip">L ▸ LOG</span>
-  </div>
+  </button>
 </template>

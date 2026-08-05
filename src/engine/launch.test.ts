@@ -22,14 +22,19 @@ function gateState(over: Partial<ColonyState> = {}): ColonyState {
 const reactorBuilt = () => [{ defId: "reactor" }] as ColonyState["buildings"];
 
 describe("PTP gate", () => {
-  it("needs a reactor built AND population/materials past the reactor tier", () => {
+  it("needs the outpost milestone, reactor, and population 12", () => {
     expect(GATES.ptp(gateState())).toBe(false);
-    // a reactor alone isn't enough — it's the prize past a thriving colony
-    expect(GATES.ptp(gateState({ buildings: reactorBuilt() }))).toBe(false);
-    // pop/materials without a reactor isn't enough either
-    expect(GATES.ptp(gateState({ population: 12, materials: { amount: 300, capacity: 400 } }))).toBe(false);
+    // a reactor alone isn't enough — the early self-sufficiency milestone matters
+    expect(GATES.ptp(gateState({ buildings: reactorBuilt(), settlementEstablished: false }))).toBe(false);
+    // milestone/population without a reactor isn't enough either
     expect(GATES.ptp(gateState({
-      buildings: reactorBuilt(), population: 12, materials: { amount: 300, capacity: 400 },
+      settlementEstablished: true, population: 12, materials: { amount: 200, capacity: 400 },
+    }))).toBe(false);
+    // The schematic opens before affordability; the pod's placement cost still
+    // enforces 200 materials and the proof-sol becomes a visible savings runway.
+    expect(GATES.ptp(gateState({
+      settlementEstablished: true, buildings: reactorBuilt(), population: 12,
+      materials: { amount: 0, capacity: 400 },
     }))).toBe(true);
   });
 });

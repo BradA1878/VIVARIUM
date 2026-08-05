@@ -10,7 +10,7 @@ import { useColony } from "../stores/colony";
 import { fmt } from "../format";
 import { TECH_DEFS } from "@/engine";
 
-const { snapshot, controls } = useColony();
+const { snapshot, controls, capabilities } = useColony();
 
 const trade = computed(() => snapshot.value?.trade ?? null);
 
@@ -38,7 +38,7 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
     <span class="trade-mark">&#9672;</span> TRADERS INBOUND
   </div>
 
-  <div v-else-if="trade && trade.phase === 'landed'" class="trade trade-panel">
+  <div v-else-if="trade && trade.phase === 'landed'" class="trade trade-panel" role="status" aria-live="polite">
     <div class="trade-title">ALIEN TRADERS</div>
     <div class="trade-offer">
       <div class="trade-side give" :class="{ tech: giveTech }">
@@ -54,19 +54,21 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
     </div>
     <div v-if="giveTech" class="trade-tech-desc">{{ giveTech.desc }}</div>
     <div class="trade-countdown">offer closes in {{ fmt(Math.round(trade.deadline)) }}s</div>
-    <div class="trade-actions">
+    <div v-if="capabilities.canRespondTrade" class="trade-actions">
       <button
         class="trade-btn accept"
+        type="button"
         :disabled="!canAfford"
         @click="controls.respondTrade(true)"
       >
         Accept
       </button>
-      <button class="trade-btn decline" @click="controls.respondTrade(false)">
+      <button class="trade-btn decline" type="button" @click="controls.respondTrade(false)">
         Decline
       </button>
     </div>
-    <div v-if="!canAfford" class="trade-cant">
+    <div v-else class="trade-observer">The architect decides this offer.</div>
+    <div v-if="capabilities.canRespondTrade && !canAfford" class="trade-cant">
       can't afford &mdash; need {{ fmt(trade.take.amount) }} {{ trade.take.res }} ({{ fmt(have) }} on hand)
     </div>
   </div>
@@ -197,5 +199,15 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--crit);
+}
+.trade-observer {
+  padding: 7px 8px;
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  color: var(--dim);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
 }
 </style>

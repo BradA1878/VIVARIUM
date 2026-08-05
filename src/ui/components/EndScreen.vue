@@ -13,7 +13,7 @@ import { RES } from "@/ui/resources";
 import { destinationsFrom, WORLD_META } from "@/ui/founding";
 import Sparkline from "./Sparkline.vue";
 
-const { snapshot, controls, runHistory, runEpitaph, directorDossier, colonies } = useColony();
+const { snapshot, controls, capabilities, runHistory, runEpitaph, directorDossier, colonies } = useColony();
 const { settings, updateSettings } = useSettings();
 
 const s = computed(() => snapshot.value);
@@ -188,13 +188,14 @@ const runDiff = computed(
       </div>
 
       <!-- expansion: choose where the work continues; otherwise the next-run controls -->
-      <div v-if="isExpansion" class="end-worlds">
+      <div v-if="isExpansion && capabilities.canManageColonies" class="end-worlds">
         <div class="end-sec-title">CHOOSE THE NEXT WORLD</div>
         <div class="world-cards">
           <button
             v-for="w in destinations"
             :key="w"
             class="world-card"
+            type="button"
             @click="controls.foundNext(w)"
           >
             <div class="world-name">{{ META[w].label }}</div>
@@ -203,7 +204,8 @@ const runDiff = computed(
           </button>
         </div>
       </div>
-      <template v-else>
+      <div v-else-if="isExpansion" class="end-observer">The architect is choosing the next world.</div>
+      <template v-else-if="capabilities.canManageSimulation">
         <div class="end-next">
           <span class="end-next-label">NEXT RUN</span>
           <button
@@ -211,13 +213,16 @@ const runDiff = computed(
             :key="d.value"
             class="end-diff"
             :class="{ on: settings.nextDifficulty === d.value }"
+            type="button"
+            :aria-pressed="settings.nextDifficulty === d.value"
             @click="updateSettings({ nextDifficulty: d.value })"
           >
             {{ d.label }}
           </button>
         </div>
-        <button class="end-btn" @click="controls.replay()">BEGIN AGAIN</button>
+        <button class="end-btn" type="button" @click="controls.replay()">BEGIN AGAIN</button>
       </template>
+      <div v-else class="end-observer">The architect controls the next run.</div>
     </div>
   </div>
 </template>
@@ -306,6 +311,7 @@ const runDiff = computed(
 }
 .end-diff:hover { color: var(--ink); border-color: rgba(127, 212, 232, 0.4); }
 .end-diff.on { color: var(--cyan); border-color: rgba(127, 212, 232, 0.5); background: rgba(127, 212, 232, 0.1); }
+.end-observer { margin: 14px 0; color: var(--dim); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
 
 /* expansion — the planet-hop's own accent (purple, matching the launch prompt) */
 .endscreen.expansion .end-mark { color: #c7a6f2; }

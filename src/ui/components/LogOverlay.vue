@@ -26,10 +26,10 @@ watch(logOpen, (open) => {
 </script>
 
 <template>
-  <div v-if="logOpen" class="log-panel">
+  <section v-if="logOpen" id="council-log" class="log-panel" role="region" aria-labelledby="council-log-title">
     <div class="log-head">
-      <span class="log-title">THE COUNCIL — LOG</span>
-      <button class="log-x" title="Close (Esc)" @click="toggleLog">✕</button>
+      <h2 id="council-log-title" class="log-title">THE COUNCIL — LOG</h2>
+      <button class="log-x" type="button" title="Close (Esc)" aria-label="Close council log" @click="toggleLog">✕</button>
     </div>
     <div ref="body" class="log-body">
       <div v-for="m in messages" :key="m.id" class="term-line" :class="'voice-' + m.register">
@@ -38,5 +38,5 @@ watch(logOpen, (open) => {
         <span class="term-txt">{{ m.text }}</span>
       </div>
     </div>
-  </div>
+  </section>
 </template>

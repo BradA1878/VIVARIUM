@@ -21,7 +21,7 @@ storage `caps` it adds, and pressure/door requirements.
 | Battery Bank | BAT | Stores power (+120 cap) — the buffer through the dark | — |
 | Ice Extractor | H2O | Power in, water out | −5 power → +4 water |
 | Electrolysis | O2 | Splits water for oxygen; served first | −7 power, −2.5 water → +5 O₂ |
-| Hydroponics | GRO | Food + a little oxygen; needs 2 workers; shed early in a brownout | −6 power, −3 water → +5 food, +2 O₂ |
+| Hydroponics | GRO | Food + a little oxygen; needs 1 worker; shed early in a brownout | −6 power, −3 water → +5 food, +0.4 O₂ |
 | Med-Bay | MED | Triage for strike wounds; needs 1 worker; heals fastest at its door, under a medic | −4 power |
 | Water Cistern | CIS | Holds water (+160 cap) | — |
 | Oxygen Tank | TNK | Reserve oxygen (+130 cap) | — |

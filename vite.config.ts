@@ -45,6 +45,9 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    sourcemap: true,
+    // Public Easter-egg deployments should not ship ~20 MB of readable source
+    // maps. Error-reporting builds can opt into an unreferenced map with
+    // VIV_SOURCEMAP=true and upload it privately.
+    sourcemap: process.env.VIV_SOURCEMAP === "true" ? "hidden" : false,
   },
 });

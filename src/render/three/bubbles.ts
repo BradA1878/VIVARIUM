@@ -10,14 +10,15 @@
    canvas work. Sprites always face the camera; materials are plain unlit
    sprites with texture values ≤ 1.0, so they sit safely under the bloom
    threshold (no blowout). Noise rules live here: max 4 concurrent, a 6s
-   per-colonist cooldown, and the possessed colonist never bubbles (the player
-   IS that colonist — narrating them is noise).
+   per-colonist cooldown, and the possessed colonist never emits ambient
+   chatter (the player IS that colonist — narrating them is noise). Explicit
+   pickup/unload feedback is exempt: it confirms the player's own action.
 
    Render-layer only; all DOM/canvas work happens inside methods, never at
    import time (node-test safety).
    ============================================================================ */
 import * as THREE from "three";
-import type { ColonistAct } from "@shared/types";
+import type { ColonistAct, ColonyEvent, DepositKind } from "@shared/types";
 
 export type BubbleTone = "cyan" | "rust";
 
@@ -35,9 +36,55 @@ export function reactionFor(state: ColonistAct, night: number): [string, BubbleT
   }
 }
 
+const DIRECT_KIND_ORDER: DepositKind[] = ["ice", "ore", "cache"];
+
+function compactAmount(amount: number): string {
+  const rounded = Math.round(amount * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function payloadSummary(
+  cargo: Partial<Record<DepositKind, number>> | undefined,
+): { total: number; kind: DepositKind | "cargo" } | null {
+  let total = 0;
+  let onlyKind: DepositKind | null = null;
+  let kinds = 0;
+  for (const kind of DIRECT_KIND_ORDER) {
+    const amount = cargo?.[kind] ?? 0;
+    if (amount <= 0) continue;
+    total += amount;
+    onlyKind = kind;
+    kinds += 1;
+  }
+  if (total <= 0) return null;
+  return { total, kind: kinds === 1 && onlyKind ? onlyKind : "cargo" };
+}
+
+/** Short, deterministic copy for the player's direct cargo action. This is
+ *  pure so the event-to-copy contract remains testable without a DOM/WebGL
+ *  scene. `banked` wins for unloads because pools may clamp at capacity. */
+export function directActionReaction(e: ColonyEvent): [string, BubbleTone] | null {
+  if (e.type === "cargo_picked") {
+    const picked = payloadSummary(e.cargo);
+    return picked ? [`+${compactAmount(picked.total)} ${picked.kind}`, "cyan"] : null;
+  }
+  if (e.type !== "cargo_unloaded") return null;
+
+  const banked = payloadSummary(e.banked);
+  if (banked) return [`banked ${compactAmount(banked.total)} ${banked.kind}`, "cyan"];
+  const unloaded = payloadSummary(e.cargo);
+  return unloaded ? [`unloaded ${compactAmount(unloaded.total)} ${unloaded.kind}`, "cyan"] : null;
+}
+
 // ---- noise rules -------------------------------------------------------------
 const MAX_CONCURRENT = 4;
 const COOLDOWN_MS = 6000;
+
+export interface BubbleSpawnOptions {
+  /** Player-command confirmation: allowed on the possessed actor and does not
+   *  consume or wait on the ambient-chatter cooldown. */
+  directAction?: boolean;
+}
 
 // ---- lifetime / motion ---------------------------------------------------------
 const LIFE = 2.5; // seconds on screen
@@ -94,7 +141,8 @@ export class BubbleSystem {
     this.group.name = "bubbles";
   }
 
-  /** the piloted colonist never bubbles — the renderer re-asserts this each frame */
+  /** ambient chatter is suppressed on the piloted actor; direct-action
+   *  confirmations opt out at spawn time */
   setPossessed(id: number | null): void {
     this.possessed = id;
   }
@@ -102,24 +150,34 @@ export class BubbleSystem {
   /** could `id` show a chip right now? Event-word picks ask BEFORE choosing a
    *  speaker, so a colony-level call ("storm!", "taken!") lands on a colonist
    *  who is actually free instead of being swallowed by one on cooldown. */
-  available(id: number, now: number): boolean {
-    if (id === this.possessed) return false;
+  available(id: number, now: number, opts: BubbleSpawnOptions = {}): boolean {
+    if (!opts.directAction && id === this.possessed) return false;
     if (this.live.length >= MAX_CONCURRENT) return false;
+    if (opts.directAction) return true;
     const last = this.lastAt.get(id);
     return last === undefined || now - last >= COOLDOWN_MS;
   }
 
   /** show a chip above `anchor` for colonist `id` — subject to the noise rules
    *  (change-only triggering is the CALLER's job; it knows the prior state). */
-  spawn(id: number, anchor: THREE.Vector3, text: string, tone: BubbleTone, now: number): void {
-    if (id === this.possessed) return;
+  spawn(
+    id: number,
+    anchor: THREE.Vector3,
+    text: string,
+    tone: BubbleTone,
+    now: number,
+    opts: BubbleSpawnOptions = {},
+  ): void {
+    if (!opts.directAction && id === this.possessed) return;
     if (this.live.length >= MAX_CONCURRENT) return; // skip extras, don't queue
-    const last = this.lastAt.get(id);
-    if (last !== undefined && now - last < COOLDOWN_MS) return;
-    this.lastAt.set(id, now);
-    // keep the cooldown map tiny — expired entries are dead weight
-    if (this.lastAt.size > 64) {
-      for (const [k, t] of this.lastAt) if (now - t >= COOLDOWN_MS) this.lastAt.delete(k);
+    if (!opts.directAction) {
+      const last = this.lastAt.get(id);
+      if (last !== undefined && now - last < COOLDOWN_MS) return;
+      this.lastAt.set(id, now);
+      // keep the cooldown map tiny — expired entries are dead weight
+      if (this.lastAt.size > 64) {
+        for (const [k, t] of this.lastAt) if (now - t >= COOLDOWN_MS) this.lastAt.delete(k);
+      }
     }
 
     const tex = this.chip(text, tone);

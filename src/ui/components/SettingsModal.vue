@@ -6,12 +6,17 @@
    applies quality/director live, the narrator gate reads narratorLive per event,
    and nextDifficulty takes hold on the next reset.
    ============================================================================ */
-import { ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { useSettings } from "@/ui/stores/settings";
+import { useColony } from "@/ui/stores/colony";
 import { liveNarratorHealthy } from "@/agent/client";
 import type { Difficulty } from "@shared/types";
 
 const { settings, settingsOpen, updateSettings } = useSettings();
+const { mode, capabilities } = useColony();
+const panel = ref<HTMLElement | null>(null);
+const closeButton = ref<HTMLButtonElement | null>(null);
+let restoreFocus: HTMLElement | null = null;
 
 // the live narrator needs the Hono backend; without the opt-in flag the client
 // never calls it, so the toggle renders disabled rather than lying
@@ -24,6 +29,63 @@ const narratorHealthy = ref(true);
 watch(settingsOpen, (open) => {
   if (open) narratorHealthy.value = liveNarratorHealthy();
 }, { immediate: true });
+
+const FOCUSABLE = [
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "a[href]",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+watch(settingsOpen, async (open) => {
+  if (open) {
+    restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    await nextTick();
+    closeButton.value?.focus();
+    return;
+  }
+  const target = restoreFocus;
+  restoreFocus = null;
+  await nextTick();
+  if (target?.isConnected) target.focus();
+});
+
+function closeModal(): void {
+  settingsOpen.value = false;
+}
+
+function onDialogKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    closeModal();
+    return;
+  }
+  if (e.key !== "Tab" || !panel.value) return;
+  const focusable = [...panel.value.querySelectorAll<HTMLElement>(FOCUSABLE)];
+  if (focusable.length === 0) {
+    e.preventDefault();
+    panel.value.focus();
+    return;
+  }
+  const first = focusable[0]!;
+  const last = focusable[focusable.length - 1]!;
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
+onBeforeUnmount(() => {
+  const target = restoreFocus;
+  restoreFocus = null;
+  if (target?.isConnected) target.focus();
+});
 
 type VolKey = "master" | "sfx" | "ambient";
 const VOLS: VolKey[] = ["master", "sfx", "ambient"];
@@ -42,24 +104,38 @@ const DIFFS: { value: Difficulty; label: string }[] = [
 
 // the real bindings, as bound in App.vue onKey
 const KEYS: [string, string][] = [
-  ["F", "possess / release the nearest colonist"],
+  ["F", "pilot / release the commander · board a nearby rover"],
   ["WASD / arrows", "walk while piloting (camera-aligned)"],
-  ["P / E", "pick up at a deposit · drop at the depot"],
+  ["P / E", "pick up at a deposit · unload at the depot"],
   ["Space", "pause / resume"],
   ["R", "rotate the ghost or selected building"],
-  ["Del", "remove the selected building"],
+  ["Del / Backspace", "remove the selected building"],
+  ["L", "open / close the council log"],
   ["Esc", "cancel tool · close this panel"],
-  ["corridor", "click a building, the corridor tile, then another to link"],
+  ["corridor", "select Corridor, then choose two sealed building doors"],
 ];
 </script>
 
 <template>
-  <div v-if="settingsOpen" class="settings-layer">
-    <div class="settings">
+  <div
+    v-if="settingsOpen"
+    class="settings-layer"
+    data-shortcuts="off"
+    @pointerdown.self="closeModal"
+    @keydown="onDialogKey"
+  >
+    <div
+      ref="panel"
+      class="settings"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-title"
+      tabindex="-1"
+    >
       <div class="set-head">
-        <span class="set-brand">SETTINGS</span>
+        <h2 id="settings-title" class="set-brand">SETTINGS</h2>
         <span class="set-sub">console preferences</span>
-        <button class="set-x" title="Close (Esc)" @click="settingsOpen = false">✕</button>
+        <button ref="closeButton" class="set-x" type="button" title="Close (Esc)" aria-label="Close settings" @click="closeModal">✕</button>
       </div>
 
       <section class="set-sec">
@@ -74,6 +150,7 @@ const KEYS: [string, string][] = [
             step="0.05"
             :value="settings.audio[k]"
             :disabled="settings.audio.muted"
+            :aria-label="`${k} volume`"
             @input="setVol(k, $event)"
           />
           <span class="set-val">{{ Math.round(settings.audio[k] * 100) }}%</span>
@@ -83,6 +160,8 @@ const KEYS: [string, string][] = [
           <button
             class="set-toggle"
             :class="{ on: settings.audio.muted }"
+            type="button"
+            :aria-pressed="settings.audio.muted"
             @click="updateSettings({ audio: { muted: !settings.audio.muted } })"
           >
             {{ settings.audio.muted ? "ON" : "OFF" }}
@@ -100,6 +179,8 @@ const KEYS: [string, string][] = [
               :key="q"
               class="set-seg-btn"
               :class="{ on: settings.graphics.quality === q }"
+              type="button"
+              :aria-pressed="settings.graphics.quality === q"
               @click="updateSettings({ graphics: { quality: q } })"
             >
               {{ q.toUpperCase() }}
@@ -116,7 +197,9 @@ const KEYS: [string, string][] = [
           <button
             class="set-toggle"
             :class="{ on: liveAvailable && settings.narratorLive }"
+            type="button"
             :disabled="!liveAvailable"
+            :aria-pressed="liveAvailable && settings.narratorLive"
             @click="updateSettings({ narratorLive: !settings.narratorLive })"
           >
             {{ settings.narratorLive ? "ON" : "OFF" }}
@@ -135,12 +218,17 @@ const KEYS: [string, string][] = [
           <button
             class="set-toggle"
             :class="{ on: settings.directorEnabled }"
+            type="button"
+            :disabled="!capabilities.canManageSimulation"
+            :aria-pressed="settings.directorEnabled"
             @click="updateSettings({ directorEnabled: !settings.directorEnabled })"
           >
             {{ settings.directorEnabled ? "ON" : "OFF" }}
           </button>
         </div>
-        <p class="set-note">the planet adapts to you</p>
+        <p class="set-note">
+          {{ mode === "guest" ? "the host controls this run; your preference remains for solo play" : "the planet adapts to you" }}
+        </p>
       </section>
 
       <section class="set-sec">
@@ -151,6 +239,8 @@ const KEYS: [string, string][] = [
             :key="d.value"
             class="set-chip"
             :class="{ on: settings.nextDifficulty === d.value }"
+            type="button"
+            :aria-pressed="settings.nextDifficulty === d.value"
             @click="updateSettings({ nextDifficulty: d.value })"
           >
             {{ d.label }}
@@ -182,14 +272,17 @@ const KEYS: [string, string][] = [
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
+  pointer-events: auto;
   z-index: 60;
+  padding: 18px;
+  background: rgba(3, 5, 7, 0.48);
 }
 .settings {
   pointer-events: auto;
-  width: min(380px, 88vw);
-  max-height: 80vh;
+  width: min(400px, 100%);
+  max-height: calc(100dvh - 36px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--panel);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -202,7 +295,7 @@ const KEYS: [string, string][] = [
 }
 
 .set-head { display: flex; align-items: baseline; gap: 9px; margin-bottom: 12px; }
-.set-brand { font-size: 14px; letter-spacing: 0.26em; color: #e6eef1; }
+.set-brand { margin: 0; font-size: 14px; font-weight: 500; letter-spacing: 0.26em; color: #e6eef1; }
 .set-sub { flex: 1; font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
 .set-x { font-size: 11px; color: var(--dim); padding: 2px 5px; border-radius: 3px; transition: 0.14s; }
 .set-x:hover { color: var(--ink); background: rgba(127, 212, 232, 0.1); }
@@ -251,6 +344,7 @@ const KEYS: [string, string][] = [
   cursor: pointer;
 }
 .set-range:disabled { opacity: 0.35; }
+.set-range:focus-visible { outline-offset: 5px; }
 .set-range:disabled::-webkit-slider-thumb { cursor: default; box-shadow: none; background: var(--dim); }
 .set-range:disabled::-moz-range-thumb { cursor: default; background: var(--dim); }
 
@@ -289,4 +383,12 @@ const KEYS: [string, string][] = [
 .set-keys td { padding: 3px 0; font-size: 10px; line-height: 1.45; vertical-align: top; }
 .set-key { width: 96px; color: var(--cyan); letter-spacing: 0.08em; white-space: nowrap; padding-right: 10px; }
 .set-what { color: var(--dim); }
+
+@media (max-height: 680px), (max-width: 520px) {
+  .settings-layer { align-items: flex-start; padding: 8px; }
+  .settings { width: 100%; max-height: calc(100dvh - 16px); padding: 14px; }
+  .set-row { gap: 8px; }
+  .set-label { width: 74px; }
+  .set-keys td { font-size: 10.5px; }
+}
 </style>

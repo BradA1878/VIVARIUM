@@ -5,7 +5,7 @@
    handing a colonist back to spectate when it dies.
    ============================================================================ */
 import { describe, it, expect } from "vitest";
-import type { Snapshot } from "@shared/types";
+import type { ColonyEvent, Snapshot } from "@shared/types";
 import type { Command } from "@/worker/protocol";
 import { HostRelay, type RelayBridge } from "./hostRelay";
 import type { NetRoom } from "./room";
@@ -20,6 +20,7 @@ function fakeRoom() {
     sendCmd: send("cmd"), onCmd: on("cmd"),
     sendSnap: send("snap"), onSnap: on("snap"),
     sendEvt: send("evt"), onEvt: on("evt"),
+    sendFrame: send("frame"), onFrame: on("frame"),
     sendHello: send("hello"), onHello: on("hello"),
     sendClaim: send("claim") as NetRoom["sendClaim"], onClaim: on("claim"),
     sendRoster: send("roster"), onRoster: on("roster"),
@@ -30,25 +31,42 @@ function fakeRoom() {
 }
 
 function fakeBridge(colonistIds: number[]) {
-  let snapSub: (s: Snapshot) => void = () => {};
+  let frameSub: (s: Snapshot, events: ColonyEvent[]) => void = () => {};
   const calls: { m: string; args: unknown[] }[] = [];
   const snapOf = (ids: number[]): Snapshot =>
     ({ colonists: ids.map((id) => ({ id })), rovers: [] } as unknown as Snapshot);
   const bridge: RelayBridge = {
     latest: snapOf(colonistIds),
-    onSnapshot: (fn) => { snapSub = fn; return () => {}; },
-    onEvent: () => () => {},
+    onFrame: (fn) => { frameSub = fn; return () => {}; },
     possess: (id, on) => calls.push({ m: "possess", args: [id, on] }),
     moveIntent: (dx, dy, id) => calls.push({ m: "moveIntent", args: [dx, dy, id] }),
     interact: (id) => calls.push({ m: "interact", args: [id] }),
   };
   // mirror BridgeCore: latest updates BEFORE subscribers fire
-  return { bridge, calls, pushSnap: (ids: number[]) => { const s = snapOf(ids); bridge.latest = s; snapSub(s); } };
+  const pushFrame = (ids: number[], events: ColonyEvent[] = []) => {
+    const s = snapOf(ids);
+    bridge.latest = s;
+    frameSub(s, events);
+  };
+  return { bridge, calls, pushSnap: (ids: number[]) => pushFrame(ids), pushFrame };
 }
 
 const cmd = (c: Command): Command => c;
 
 describe("HostRelay — co-op authority", () => {
+  it("relays snapshot + events over one atomic frame channel", () => {
+    const { room, sent } = fakeRoom();
+    const { bridge, pushFrame } = fakeBridge([1]);
+    new HostRelay(room, bridge, "Brad");
+    const event = { type: "new_sol", t: 150, sol: 2, tod: 0 } as ColonyEvent;
+
+    pushFrame([1], [event]);
+
+    const relayed = sent.filter((m) => m.ch === "frame").at(-1);
+    expect(relayed).toBeTruthy();
+    expect((relayed!.data as { events: ColonyEvent[] }).events).toEqual([event]);
+  });
+
   it("assigns the lowest free colonist on join, possesses it, and claims it for the peer", () => {
     const { room, fire, sent } = fakeRoom();
     const { bridge, calls } = fakeBridge([3, 1, 2]);

@@ -378,6 +378,12 @@ export interface Snapshot {
   deadlineSol: number;
   /** colonists required to count as a settlement */
   targetPop: number;
+  /** seconds accrued toward the population-8 starter-loop milestone */
+  settlementSustainableFor: number;
+  /** the nonterminal outpost milestone has latched */
+  settlementEstablished: boolean;
+  /** completed active hazards the colony has survived */
+  hazardsSurvived: number;
   /** seconds of sustained self-sufficiency accrued so far */
   selfSufficientFor: number;
   /** seconds of sustained self-sufficiency needed to win */
@@ -429,6 +435,9 @@ export type EventType =
   | "traders_inbound"
   | "trade_done"
   | "trade_left"
+  /** a player-directed suit/rover cargo transfer (actor + exact cargo payload) */
+  | "cargo_picked"
+  | "cargo_unloaded"
   /** the evil UFO — a rare hostile abductor */
   | "ufo_inbound"
   | "abducted"
@@ -479,6 +488,11 @@ export interface ColonyEvent {
   pop?: number;
   /** colonist id for colonist_injured / colonist_recovered */
   id?: number;
+  /** direct cargo interaction actor + deposit-kind quantities */
+  actorKind?: "colonist" | "rover";
+  cargo?: Partial<Record<DepositKind, number>>;
+  /** cargo_unloaded: the post-capacity amount that actually entered each bank */
+  banked?: Partial<Record<DepositKind, number>>;
   /** free-text detail (e.g. the Sentinel's anomalous feature, or a hazard kind) */
   detail?: string;
   /** anomaly magnitude in standard deviations above learned-normal */

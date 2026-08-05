@@ -5,29 +5,25 @@
    lives here and never ships to the client.
    ============================================================================ */
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { narrate } from "./routes/narrate";
-import { persistence } from "./routes/save";
-import { NARRATOR_MODEL } from "./mxf/claude";
+import { app } from "./app";
 import { liveAvailable } from "./mxf/claude";
-import { mongoAvailable } from "./db/mongo";
-
-const app = new Hono();
-
-app.get("/api/health", async (c) =>
-  c.json({
-    ok: true,
-    liveNarrator: liveAvailable(),
-    model: NARRATOR_MODEL,
-    mongo: await mongoAvailable(),
-  }),
-);
-
-app.route("/api", narrate);
-app.route("/api", persistence);
 
 const port = Number(process.env.PORT) || 8787;
-serve({ fetch: app.fetch, port });
+const server = serve({ fetch: app.fetch, port });
 console.log(`[vivarium] agent server on :${port}  ·  live narrator: ${liveAvailable() ? "on" : "off (no ANTHROPIC_API_KEY)"}`);
 
-export { app };
+let closing = false;
+function shutdown(signal: NodeJS.Signals): void {
+  if (closing) return;
+  closing = true;
+  console.log(`[vivarium] ${signal} — closing agent server`);
+  server.close((err) => {
+    if (err) {
+      console.error("[vivarium] graceful shutdown failed:", err);
+      process.exitCode = 1;
+    }
+  });
+}
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => shutdown("SIGTERM"));

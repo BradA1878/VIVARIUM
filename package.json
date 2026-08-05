@@ -10,9 +10,13 @@
     "build:egg": "VIV_BASE=/vivarium/ npm run build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "typecheck": "vue-tsc --noEmit",
-    "server": "tsx watch --env-file-if-exists=.env server/index.ts"
+    "server": "npm run server:dev",
+    "server:dev": "tsx watch --env-file-if-exists=.env server/index.ts",
+    "server:build": "vite build --config vite.server.config.ts",
+    "server:start": "node --env-file-if-exists=.env dist-server/index.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
@@ -25,6 +29,8 @@
     "vue": "^3.5.12"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.19.20",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-vue": "^5.1.4",

@@ -11,7 +11,7 @@ import { useColony } from "../stores/colony";
 import { buildingFunctional } from "@/engine";
 import { WORLD_META } from "../founding";
 
-const { snapshot, controls } = useColony();
+const { snapshot, controls, capabilities } = useColony();
 
 /** a working pod is built and the run hasn't ended — the launch is available */
 const ready = computed(() => {
@@ -27,7 +27,8 @@ const worldLabel = computed(() => (snapshot.value ? WORLD_META[snapshot.value.wo
   <div v-if="ready" class="launch">
     <div class="launch-title">&#9650; TRANSPORT POD READY</div>
     <div class="launch-sub">Leave {{ worldLabel }} and found a colony on a new world.</div>
-    <button class="launch-btn" @click="controls.launch()">LAUNCH &#9656;</button>
+    <button v-if="capabilities.canManageColonies" class="launch-btn" type="button" @click="controls.launch()">LAUNCH &#9656;</button>
+    <div v-else class="launch-observer">The architect controls launch.</div>
   </div>
 </template>
 
@@ -70,4 +71,14 @@ const worldLabel = computed(() => (snapshot.value ? WORLD_META[snapshot.value.wo
   transition: 0.14s;
 }
 .launch-btn:hover { background: rgba(176, 130, 232, 0.2); color: #ddc8fb; }
+.launch-observer {
+  padding: 7px 8px;
+  color: var(--dim);
+  border: 1px solid rgba(176, 130, 232, 0.3);
+  border-radius: 3px;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
 </style>

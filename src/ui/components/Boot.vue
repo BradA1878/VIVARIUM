@@ -31,7 +31,13 @@ onUnmounted(() => timers.forEach(clearTimeout));
 </script>
 
 <template>
-  <div class="boot" :class="{ out: leaving }" @click="finish">
+  <button
+    class="boot"
+    :class="{ out: leaving }"
+    type="button"
+    aria-label="Enter VIVARIUM"
+    @click="finish"
+  >
     <div class="boot-inner">
       <div class="boot-mark">VIVARIUM</div>
       <div class="boot-log">
@@ -41,5 +47,5 @@ onUnmounted(() => timers.forEach(clearTimeout));
       </div>
       <div class="boot-hint">click to enter</div>
     </div>
-  </div>
+  </button>
 </template>

@@ -230,9 +230,11 @@ describe("multi-kind cargo", () => {
     r.x = s.depot.gx;
     r.y = s.depot.gy;
     s.pools.water.amount = 5; // room to see the credit land
+    s.materials.amount = 5;
 
     const before = c.snapshot();
-    c.interact(); // ONE press banks every bay
+    expect(c.interact()).toBe("dropped"); // ONE press banks every bay
+    const events = c.drainEvents();
     const after = c.snapshot();
 
     expect(after.rovers[0].cargoTotal).toBe(0);
@@ -241,6 +243,15 @@ describe("multi-kind cargo", () => {
       Math.min(before.pools.water.capacity, before.pools.water.amount + 30), 4);
     expect(after.materials.amount).toBeCloseTo(
       Math.min(before.materials.capacity, before.materials.amount + 20), 4);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "cargo_unloaded",
+        id: r.id,
+        actorKind: "rover",
+        cargo: { ice: 30, ore: 20 },
+        banked: { ice: 30, ore: 20 },
+      }),
+    ]);
   });
 });
 

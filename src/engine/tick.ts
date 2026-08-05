@@ -11,18 +11,21 @@ import { DEFS } from "./defs";
 import {
   PERSON, DAY_START, DAY_END,
   ARRIVAL_BATCH, ARRIVAL_GAP_MIN, ARRIVAL_GAP_SPAN, ARRIVAL_RETRY,
+  ARRIVAL_READY_GOAL, ARRIVAL_RESERVE_SECONDS,
   BROWNOUT_DEFICIT, BROWNOUT_LOW, BROWNOUT_RECOVER_FRAC,
   RESUPPLY_GAP, RESUPPLY_WINDOW, RESUPPLY_AMOUNT, RESUPPLY_BIAS,
   BIRTH_MIN_POP, BIRTH_GAP_MIN, BIRTH_GAP_SPAN, BIRTH_RETRY,
   ROLE_BONUS, MORALE_BUMP, worldProfile,
+  SETTLEMENT_POP, SETTLEMENT_SUSTAIN_GOAL,
+  SUSTAIN_RESERVE_SECONDS, SUSTAIN_POWER_RESERVE,
 } from "./tuning";
 import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
 import { buildingFunctional, pilotOf } from "./state";
 import { recomputeConnectivity } from "./connectivity";
 import { updateHazards, hazardMods, type HazardMods } from "./hazards";
-import { stepColonists } from "./colonists";
-import { updateInjuries, injuredCount } from "./injury";
+import { availableColonistLabor, stepColonists } from "./colonists";
+import { updateInjuries } from "./injury";
 import { pilotRover, updateRoverFab } from "./rover";
 import { stepRobots, updateRobotFab } from "./robots";
 import { updateFabricatorReplication } from "./fabricator";
@@ -123,8 +126,9 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
 
   recomputeConnectivity(s);
 
-  // labor pool = housed population, less the wounded (triage pulls them off shift)
-  s.labor = Math.max(0, s.population - injuredCount(s));
+  // Embodied work is exclusive: wounded, piloted, and actively gathering
+  // colonists are off shift and cannot simultaneously staff a recipe.
+  s.labor = availableColonistLabor(s);
   s.laborUsed = 0;
 
   const net: Record<Resource, number> = { power: 0, water: 0, oxygen: 0, food: 0 };
@@ -280,14 +284,24 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // 6b. Morale — continuous drivers + the latched low/recovered thresholds -----
   updateMorale(s, dt, emit);
 
-  // 7. Arrivals — only on a real surplus with housing --------------------------
+  // 7. Arrivals — only after a sustained POST-arrival surplus and reserve floor
   s.nextArrival -= dt;
+  const arrivalPop = s.population + ARRIVAL_BATCH;
+  const arrivalRoom = arrivalPop <= s.housing;
+  const arrivalMargin =
+    net.power >= 0 &&
+    net.oxygen >= PERSON.oxygen * techDemandMult(s, "oxygen") * ARRIVAL_BATCH &&
+    net.water >= PERSON.water * techDemandMult(s, "water") * ARRIVAL_BATCH &&
+    net.food >= PERSON.food * techDemandMult(s, "food") * ARRIVAL_BATCH;
+  const arrivalBuffered = survivalReserves(s, arrivalPop, ARRIVAL_RESERVE_SECONDS);
+  s.arrivalReadyFor = s.arrivalsLeft > 0 && arrivalRoom && arrivalMargin && arrivalBuffered
+    ? s.arrivalReadyFor + dt
+    : 0;
   if (s.arrivalsLeft > 0 && s.nextArrival <= 0) {
-    const surplus = net.oxygen > 0 && net.food > 0 && net.water > 0;
-    const room = s.population + ARRIVAL_BATCH <= s.housing;
-    if (surplus && room && s.population > 0) {
+    if (s.arrivalReadyFor >= ARRIVAL_READY_GOAL && s.population > 0) {
       s.population += ARRIVAL_BATCH;
       s.arrivalsLeft -= 1;
+      s.arrivalReadyFor = 0;
       s.nextArrival = ARRIVAL_GAP_MIN + rng.next() * ARRIVAL_GAP_SPAN;
       emit({ type: "arrival", n: ARRIVAL_BATCH, pop: s.population });
       bumpMorale(s, MORALE_BUMP.arrival);
@@ -328,32 +342,91 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // proves itself (pure derivations over the resolved state, zero rng draws)
   updateUnlocks(s, emit);
 
-  // 8. Campaign — the launch-window arc (doc §2.5) -----------------------------
+  // 8. Campaign — outpost milestone → proven settlement (doc §2.5) ------------
   if (s.outcome === null) {
-    // self-sufficiency: producing at least what we consume on all life support
-    // (net excludes resupply by design), with a real settlement's population
-    const balanced =
-      s.population >= s.targetPop &&
-      net.oxygen >= 0 && net.water >= 0 && net.food >= 0 && net.power >= 0;
-    s.selfSufficientFor = balanced ? s.selfSufficientFor + dt : 0;
+    const calm = s.timers.oxygen == null && s.timers.water == null && s.timers.food == null;
+    const balanced = net.oxygen >= 0 && net.water >= 0 && net.food >= 0 && net.power >= 0;
+
+    // Population eight and 45 healthy seconds prove the starter loop, but this
+    // only latches progression. It deliberately does NOT pause or end the run.
+    const outpostReady = s.population >= SETTLEMENT_POP && balanced && calm;
+    s.settlementSustainableFor = outpostReady
+      ? Math.min(SETTLEMENT_SUSTAIN_GOAL, s.settlementSustainableFor + dt)
+      : 0;
+    if (!s.settlementEstablished && s.settlementSustainableFor >= SETTLEMENT_SUSTAIN_GOAL) {
+      s.settlementEstablished = true;
+      // Reuse the typed progression event: it already reaches the ticker,
+      // narrator, history, and unlock chime. The synthetic defId is unknown to
+      // the palette-hint table, so it creates no bogus build card.
+      emit({
+        type: "unlock",
+        defId: "settlement",
+        detail: "Settlement Protocol — outpost self-sufficient; full-sol proof unlocked",
+      });
+    }
+
+    // The real ending asks the advanced loop to hold: population twelve, a
+    // working reactor, meaningful stores, and a full sol of positive flow.
+    // A completed active hazard is independent evidence those buffers were
+    // tested under pressure. This leaves a generous window to build/launch PTP.
+    const reactorOnline = s.buildings.some((b) =>
+      b.defId === "reactor" && b.online && b.staffed && b.fed && b.util > 0 && buildingFunctional(b));
+    const buffered = survivalReserves(s, s.population, SUSTAIN_RESERVE_SECONDS)
+      && s.pools.power.amount >= SUSTAIN_POWER_RESERVE;
+    const terminalReady =
+      s.settlementEstablished && s.population >= s.targetPop && reactorOnline && calm
+      && s.unlocked.includes("ptp");
+    if (terminalReady) {
+      // Integrate the full resource ledger over one complete sol. Solar may be
+      // negative at night and positive by day; batteries exist precisely to
+      // bridge that cycle, so every instantaneous tick need not be positive.
+      if (s.selfSufficientFor < s.selfSufficiencyGoal) {
+        s.selfSufficientFor = Math.min(s.selfSufficiencyGoal, s.selfSufficientFor + dt);
+        for (const k of RESOURCES) s.selfSufficiencyBalance[k] += net[k] * dt;
+      }
+    } else {
+      resetSufficiencyProof(s);
+    }
 
     if (s.selfSufficientFor >= s.selfSufficiencyGoal) {
-      s.outcome = "victory";
-      s.outcomeReason = "self-sufficient";
-      s.paused = true;
-      emit({ type: "victory" });
-    } else if (s.population <= 0) {
+      const fullSolPositive = RESOURCES.every((k) => s.selfSufficiencyBalance[k] >= -1e-6);
+      if (!fullSolPositive) resetSufficiencyProof(s);
+      else if (s.hazardsSurvived > 0 && buffered) {
+        s.outcome = "victory";
+        s.outcomeReason = "self-sufficient";
+        s.paused = true;
+        emit({ type: "victory" });
+      }
+    }
+
+    if (s.outcome === null && s.population <= 0) {
       s.outcome = "defeat";
       s.outcomeReason = "colony";
       s.paused = true;
       emit({ type: "defeat", detail: "colony" });
-    } else if (s.sol >= s.deadlineSol) {
+    } else if (s.outcome === null && s.sol >= s.deadlineSol) {
       s.outcome = "defeat";
       s.outcomeReason = "window";
       s.paused = true;
       emit({ type: "defeat", detail: "window" });
     }
   }
+}
+
+function resetSufficiencyProof(s: ColonyState): void {
+  s.selfSufficientFor = 0;
+  for (const k of RESOURCES) s.selfSufficiencyBalance[k] = 0;
+}
+
+/** Does each life-support store cover `seconds` of demand for `population`?
+ *  Tech multipliers are honored. External delivery is irrelevant: this reads
+ *  only physical buffers, while the accompanying flow checks exclude resupply. */
+function survivalReserves(s: ColonyState, population: number, seconds: number): boolean {
+  for (const k of ["oxygen", "water", "food"] as const) {
+    const demand = PERSON[k] * techDemandMult(s, k) * population * seconds;
+    if (s.pools[k].amount + 1e-9 < demand) return false;
+  }
+  return true;
 }
 
 /** a rare in-colony birth: the settlement grows from within when it's thriving —

@@ -80,4 +80,22 @@ describe("colonies ledger", () => {
     expect(shipmentsInTransit(st)).toHaveLength(1);
     expect(maturedShipments("b", now, st)).toHaveLength(0); // the matured one is gone
   });
+
+  it("drops persisted and newly-added shipments with invalid or empty manifests", () => {
+    const st = fakeStorage();
+    st.setItem(COLONIES_KEY, JSON.stringify({
+      v: 1,
+      colonies: [],
+      shipments: [
+        { id: 1, fromSlot: "a", toSlot: "b", manifest: { materials: -5 }, dispatchedAt: 1, transitSols: 1 },
+        { id: 2, fromSlot: "a", toSlot: "b", manifest: {}, dispatchedAt: 1, transitSols: 1 },
+        { id: 3, fromSlot: "a", toSlot: "b", manifest: { materials: 5 }, dispatchedAt: 1, transitSols: 1 },
+      ],
+    }));
+    expect(loadLedger(st).shipments.map((s) => s.id)).toEqual([3]);
+
+    addShipment({ fromSlot: "a", toSlot: "b", manifest: { resources: { water: Number.NaN } }, dispatchedAt: 1, transitSols: 1 }, st);
+    addShipment({ fromSlot: "a", toSlot: "b", manifest: {}, dispatchedAt: 1, transitSols: 1 }, st);
+    expect(loadLedger(st).shipments.map((s) => s.id)).toEqual([3]);
+  });
 });

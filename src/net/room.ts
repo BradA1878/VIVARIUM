@@ -31,6 +31,10 @@ export interface RosterMsg {
   players: { peerId: string; name: string; actorId: number | null }[];
 }
 
+/** Authoritative host state and the events produced by that exact state update.
+ *  One channel preserves ordering across WebRTC implementations/actions. */
+export interface NetFrameMsg { snapshot: Snapshot; events: ColonyEvent[] }
+
 /** this peer's stable per-session id (Trystero) */
 export const SELF_ID: string = selfId;
 
@@ -44,6 +48,8 @@ export interface NetRoom {
   onSnap(fn: (snap: Snapshot, peerId: string) => void): void;
   sendEvt(evt: ColonyEvent, target?: string): void;
   onEvt(fn: (evt: ColonyEvent, peerId: string) => void): void;
+  sendFrame(frame: NetFrameMsg, target?: string): void;
+  onFrame(fn: (frame: NetFrameMsg, peerId: string) => void): void;
   sendHello(hello: HelloMsg, target?: string): void;
   onHello(fn: (hello: HelloMsg, peerId: string) => void): void;
   sendClaim(claim: ClaimMsg, target: string): void;
@@ -77,6 +83,7 @@ export function joinNetRoom(roomCode: string, turn?: TurnServerConfig[]): NetRoo
   const cmd = room.makeAction("cmd");
   const snap = room.makeAction("snap");
   const evt = room.makeAction("evt");
+  const frame = room.makeAction("frame");
   const hello = room.makeAction("hello");
   const claim = room.makeAction("claim");
   const roster = room.makeAction("roster");
@@ -94,6 +101,8 @@ export function joinNetRoom(roomCode: string, turn?: TurnServerConfig[]): NetRoo
     onSnap: (fn) => { snap.onMessage = (d, ctx) => fn(d as unknown as Snapshot, ctx.peerId); },
     sendEvt: (e, target) => fire(evt.send, e, target),
     onEvt: (fn) => { evt.onMessage = (d, ctx) => fn(d as unknown as ColonyEvent, ctx.peerId); },
+    sendFrame: (f, target) => fire(frame.send, f, target),
+    onFrame: (fn) => { frame.onMessage = (d, ctx) => fn(d as unknown as NetFrameMsg, ctx.peerId); },
     sendHello: (h, target) => fire(hello.send, h, target),
     onHello: (fn) => { hello.onMessage = (d, ctx) => fn(d as unknown as HelloMsg, ctx.peerId); },
     sendClaim: (c, target) => fire(claim.send, c, target),

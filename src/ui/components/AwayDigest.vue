@@ -69,7 +69,7 @@ const swings = computed<string[]>(() => {
           :class="{ up: chip.startsWith('+'), down: chip.startsWith('−') }"
         >{{ chip }}</span>
       </div>
-      <button class="away-btn" @click="dismissAwayDigest">CARRY ON</button>
+      <button class="away-btn" type="button" @click="dismissAwayDigest">CARRY ON</button>
     </div>
   </div>
 </template>

@@ -45,12 +45,20 @@ export class Autoencoder {
   }
 
   /** train a few epochs on the recent window to (re)learn what normal looks like */
-  async train(window: number[][], epochs = 12): Promise<void> {
+  async train(window: number[][], epochs = 8): Promise<void> {
     if (!this.tf || !this.model || window.length < 8) return;
     const tf = this.tf;
     const xs = tf.tensor2d(window);
     try {
-      await this.model.fit(xs, xs, { epochs, batchSize: 16, shuffle: true, verbose: 0 });
+      await this.model.fit(xs, xs, {
+        epochs,
+        batchSize: 32,
+        shuffle: true,
+        verbose: 0,
+        // Never monopolize an animation frame while the player is piloting or
+        // placing a building. Training is advisory; responsiveness is not.
+        yieldEvery: "batch",
+      });
     } catch {
       /* training hiccup — keep the previous weights */
     } finally {

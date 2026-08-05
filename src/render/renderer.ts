@@ -31,7 +31,7 @@ import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
 import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
 import { buildSupplyPod, type SupplyPodMesh } from "./three/supplypod";
-import { BubbleSystem, reactionFor } from "./three/bubbles";
+import { BubbleSystem, directActionReaction, reactionFor } from "./three/bubbles";
 import { NameTagSystem } from "./three/nametags";
 
 interface Placed {
@@ -267,7 +267,19 @@ export class ThreeRenderer {
     if (e.type === "building_destroyed" && e.gx !== undefined && e.gy !== undefined) {
       this.recentDestroyed.set(`${e.gx},${e.gy}`, performance.now());
     }
-    if (e.type === "abducted" && this.ufo) {
+    const directAction = directActionReaction(e);
+    if (directAction && e.id !== undefined) {
+      const rec = e.actorKind === "rover"
+        ? this.rovers.get(e.id)
+        : e.actorKind === "colonist"
+          ? this.colonists.get(e.id)
+          : this.colonists.get(e.id) ?? this.rovers.get(e.id);
+      if (rec) {
+        this.bubbles.spawn(
+          e.id, rec.pos, directAction[0], directAction[1], performance.now(), { directAction: true },
+        );
+      }
+    } else if (e.type === "abducted" && this.ufo) {
       this.hazardFx.flash(this.ufo.object.position, UFO_RED);
       this.bubbleNearestWitness(this.ufo.object.position, "taken!");
     } else if (e.type === "abduction_blocked" && this.ufo) {

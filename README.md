@@ -83,10 +83,11 @@ shared/          the neutral vocabulary spoken across the wall (types.ts)
 - **The Director.** A non-deterministic antagonist that watches the colony and picks
   the hazard that presses your weakest seam, escalating over the sols — yet stays
   outside the wall, proposing hazards via a `Command` the deterministic engine logs.
-- **The campaign.** Earth's launch window closes at the start of **Sol 22**. Grow to
-  a real settlement — the target population, self-sustaining on all life support
-  without resupply for a sustained stretch — before then, and you win. Let the window
-  close, or lose everyone, and the watch ends.
+- **The campaign.** Earth's launch window closes at the start of **Sol 22**.
+  First stabilize an eight-person outpost; then prove a twelve-person settlement
+  across a full sol with a working reactor, reserves, and a survived hazard. The
+  Transport Pod opens an optional expansion ending. Let the window close, or lose
+  everyone, and the watch ends.
 
 For how it all plays, see [docs/gameplay.md](docs/gameplay.md).
 

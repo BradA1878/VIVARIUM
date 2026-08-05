@@ -17,10 +17,21 @@ import type { Command, Outbound, SimErrorContext } from "./protocol";
 
 type SnapshotFn = (s: Snapshot) => void;
 type EventFn = (e: ColonyEvent) => void;
+type FrameFn = (s: Snapshot, events: ColonyEvent[]) => void;
 type ErrorFn = (context: SimErrorContext, detail: string) => void;
 /** the "while you were away" digest input: the pre-catch-up snapshot + the off-screen
  *  events a switchColony's catch-up produced (parallel-colonies) */
 type CatchupReportFn = (before: Snapshot, events: ColonyEvent[]) => void;
+
+interface Pending<T> {
+  resolve(value: T): void;
+  reject(reason: Error): void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** A dead worker/transport must not leave UI workflows awaiting forever. Normal
+ *  worker operations complete in milliseconds; catch-up is capped at three sols. */
+export const BRIDGE_REQUEST_TIMEOUT_MS = 8_000;
 
 /** the bridge surface the renderer + store depend on, minus the transport. A
  *  worker (`SimBridge`) and a Trystero peer (`NetBridge`) both implement it by
@@ -29,11 +40,16 @@ type CatchupReportFn = (before: Snapshot, events: ColonyEvent[]) => void;
 export abstract class BridgeCore {
   protected snapshotSubs = new Set<SnapshotFn>();
   protected eventSubs = new Set<EventFn>();
+  protected frameSubs = new Set<FrameFn>();
   protected catchupSubs = new Set<CatchupReportFn>();
   protected errorSubs = new Set<ErrorFn>();
-  protected saveResolvers = new Map<number, (d: SaveData) => void>();
+  protected saveResolvers = new Map<number, Pending<SaveData>>();
+  protected loadResolvers = new Map<number, Pending<Snapshot>>();
+  protected switchResolvers = new Map<number, Pending<Snapshot>>();
+  protected shipmentResolvers = new Map<number, Pending<ShipmentManifest>>();
   protected reqId = 1;
   protected occ: Set<string> | null = null;
+  private disposed = false;
 
   /** the most recent snapshot, or null until the first arrives */
   latest: Snapshot | null = null;
@@ -53,24 +69,92 @@ export abstract class BridgeCore {
    *  channel for a network peer) */
   protected abstract send(cmd: Command): void;
 
+  /** Install a snapshot before any event subscriber runs. This ordering is the
+   *  observer contract used by the store, renderer, audio, and agent layers. */
+  private publishSnapshot(next: Snapshot): void {
+    if (this.localActor !== undefined) {
+      const me = this.localActor;
+      const alive = me != null
+        && (next.colonists.some((c) => c.id === me) || next.rovers.some((r) => r.id === me));
+      next.possessed = alive ? me : null;
+    }
+    this.latest = next;
+    this.occ = null;
+    for (const fn of this.snapshotSubs) fn(next);
+  }
+
+  private publishFrame(next: Snapshot, events: ColonyEvent[]): void {
+    this.publishSnapshot(next);
+    for (const fn of this.frameSubs) fn(next, events);
+    for (const e of events) for (const fn of this.eventSubs) fn(e);
+  }
+
+  private settle<T>(pending: Map<number, Pending<T>>, reqId: number, value: T): void {
+    const request = pending.get(reqId);
+    if (!request) return;
+    pending.delete(reqId);
+    clearTimeout(request.timer);
+    request.resolve(value);
+  }
+
+  private reject<T>(pending: Map<number, Pending<T>>, reqId: number, detail: string): void {
+    const request = pending.get(reqId);
+    if (!request) return;
+    pending.delete(reqId);
+    clearTimeout(request.timer);
+    request.reject(new Error(detail));
+  }
+
+  private request<T>(pending: Map<number, Pending<T>>, label: string, command: (reqId: number) => Command): Promise<T> {
+    if (this.disposed) return Promise.reject(new Error(`simulation bridge disposed during ${label}`));
+    const reqId = this.reqId++;
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(reqId);
+        reject(new Error(`${label} timed out after ${BRIDGE_REQUEST_TIMEOUT_MS}ms`));
+      }, BRIDGE_REQUEST_TIMEOUT_MS);
+      pending.set(reqId, { resolve, reject, timer });
+      try {
+        this.send(command(reqId));
+      } catch (err) {
+        pending.delete(reqId);
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  }
+
+  private failPending(detail: string): void {
+    const error = new Error(detail);
+    const fail = <T>(pending: Map<number, Pending<T>>): void => {
+      for (const request of pending.values()) {
+        clearTimeout(request.timer);
+        request.reject(error);
+      }
+      pending.clear();
+    };
+    fail(this.saveResolvers);
+    fail(this.loadResolvers);
+    fail(this.switchResolvers);
+    fail(this.shipmentResolvers);
+  }
+
   /** feed an inbound worker/peer message into the subscriptions + caches */
   protected receive(msg: Outbound): void {
     switch (msg.type) {
       case "ready":
         this.ready = true;
         break;
+      case "frame":
+        this.publishFrame(msg.snapshot, msg.events);
+        break;
       case "snapshot":
-        if (this.localActor !== undefined) {
-          const me = this.localActor;
-          const alive = me != null
-            && (msg.snapshot.colonists.some((c) => c.id === me) || msg.snapshot.rovers.some((r) => r.id === me));
-          msg.snapshot.possessed = alive ? me : null;
-        }
-        this.latest = msg.snapshot;
-        this.occ = null; // invalidate placement cache
-        for (const fn of this.snapshotSubs) fn(msg.snapshot);
+        this.publishFrame(msg.snapshot, []);
         break;
       case "events":
+        // Legacy/separate event messages still preserve the observer contract as
+        // long as a snapshot preceded them (all current host command replies do).
+        if (this.latest) for (const fn of this.frameSubs) fn(this.latest, msg.events);
         for (const e of msg.events) for (const fn of this.eventSubs) fn(e);
         break;
       case "catchupReport":
@@ -79,11 +163,43 @@ export abstract class BridgeCore {
         for (const fn of this.catchupSubs) fn(msg.before, msg.events);
         break;
       case "saved": {
-        const r = this.saveResolvers.get(msg.reqId);
-        if (r) { r(msg.data); this.saveResolvers.delete(msg.reqId); }
+        this.settle(this.saveResolvers, msg.reqId, msg.data);
+        break;
+      }
+      case "loaded": {
+        this.publishFrame(msg.snapshot, []);
+        if (msg.ok) this.settle(this.loadResolvers, msg.reqId, msg.snapshot);
+        else {
+          for (const fn of this.errorSubs) fn("load", msg.detail);
+          this.reject(this.loadResolvers, msg.reqId, msg.detail);
+        }
+        break;
+      }
+      case "switched": {
+        if (msg.ok) {
+          // Preserve digest ordering inside the same message: report first, then
+          // install the post-catch-up state, then resolve the transaction.
+          for (const fn of this.catchupSubs) fn(msg.before, msg.events);
+          this.publishFrame(msg.snapshot, []);
+          this.settle(this.switchResolvers, msg.reqId, msg.snapshot);
+        } else {
+          this.publishFrame(msg.snapshot, []);
+          for (const fn of this.errorSubs) fn("load", msg.detail);
+          this.reject(this.switchResolvers, msg.reqId, msg.detail);
+        }
+        break;
+      }
+      case "shipmentDispatched": {
+        this.publishFrame(msg.snapshot, []);
+        if (msg.ok) this.settle(this.shipmentResolvers, msg.reqId, msg.manifest);
+        else {
+          for (const fn of this.errorSubs) fn("command", msg.detail);
+          this.reject(this.shipmentResolvers, msg.reqId, msg.detail);
+        }
         break;
       }
       case "error":
+        if (msg.context === "worker" || msg.context === "net-lost") this.failPending(msg.detail);
         for (const fn of this.errorSubs) fn(msg.context, msg.detail);
         break;
     }
@@ -98,6 +214,13 @@ export abstract class BridgeCore {
   onEvent(fn: EventFn): () => void {
     this.eventSubs.add(fn);
     return () => this.eventSubs.delete(fn);
+  }
+  /** subscribe to transport-atomic state + events. Used by the host relay so a
+   *  guest receives the same matching frame rather than racing two data channels. */
+  onFrame(fn: FrameFn): () => void {
+    this.frameSubs.add(fn);
+    if (this.latest) fn(this.latest, []);
+    return () => this.frameSubs.delete(fn);
   }
   /** subscribe to a switchColony's catch-up report (the "while you were away" digest
    *  input) — the pre-catch-up snapshot + the off-screen events (parallel-colonies) */
@@ -166,17 +289,19 @@ export abstract class BridgeCore {
   launchPtp(): void { this.send({ type: "launchPtp" }); }
   /** switch the live colony to another settled world: load it, fast-forward `steps`
    *  catch-up sub-steps, resume live (parallel-colonies) */
-  switchColony(save: SaveData, steps: number, director: boolean, credits: ShipmentManifest[]): void { this.send({ type: "switchColony", save, steps, director, credits }); }
+  switchColony(save: SaveData, steps: number, director: boolean, credits: ShipmentManifest[]): Promise<Snapshot> {
+    return this.request(this.switchResolvers, "colony switch", (reqId) => ({ type: "switchColony", reqId, save, steps, director, credits }));
+  }
   /** debit an inter-planet shipment from the live colony (the store queues it for the destination) */
-  dispatchShipment(manifest: ShipmentManifest): void { this.send({ type: "dispatchShipment", manifest }); }
-  load(data: SaveData): void { this.send({ type: "load", data }); }
+  dispatchShipment(manifest: ShipmentManifest): Promise<ShipmentManifest> {
+    return this.request(this.shipmentResolvers, "shipment dispatch", (reqId) => ({ type: "dispatchShipment", reqId, manifest }));
+  }
+  load(data: SaveData): Promise<Snapshot> {
+    return this.request(this.loadResolvers, "colony load", (reqId) => ({ type: "load", reqId, data }));
+  }
 
   save(): Promise<SaveData> {
-    const reqId = this.reqId++;
-    return new Promise<SaveData>((resolve) => {
-      this.saveResolvers.set(reqId, resolve);
-      this.send({ type: "save", reqId });
-    });
+    return this.request(this.saveResolvers, "colony save", (reqId) => ({ type: "save", reqId }));
   }
 
   // ---- synchronous prediction for the renderer (UI feedback only) -----------
@@ -208,11 +333,13 @@ export abstract class BridgeCore {
 
   /** drop all subscriptions + pending saves (subclasses tear down their transport) */
   protected clearCore(): void {
+    this.disposed = true;
+    this.failPending("simulation bridge disposed");
     this.snapshotSubs.clear();
     this.eventSubs.clear();
+    this.frameSubs.clear();
     this.catchupSubs.clear();
     this.errorSubs.clear();
-    this.saveResolvers.clear();
   }
 
   abstract dispose(): void;

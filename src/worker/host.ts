@@ -6,7 +6,7 @@
    ============================================================================ */
 import { Colony } from "@/engine";
 import {
-  type Command, type Outbound, SNAPSHOT_INTERVAL, MAX_DT,
+  type Command, type Outbound, SNAPSHOT_INTERVAL, MAX_DT, validShipmentManifest,
 } from "./protocol";
 
 export class SimHost {
@@ -24,8 +24,8 @@ export class SimHost {
     this.colony = seed === undefined ? new Colony() : new Colony(seed);
   }
 
-  /** apply a command from the main thread. Returns any immediate replies
-   *  (currently only `save`); snapshots/events flow through step(). */
+  /** apply a command from the main thread. State-changing commands paint at once;
+   *  request/response operations return correlated acknowledgments. */
   applyCommand(cmd: Command): Outbound[] {
     switch (cmd.type) {
       case "place": this.colony.place(cmd.defId, cmd.gx, cmd.gy, (cmd.rot ?? 0) as 0 | 1 | 2 | 3); break;
@@ -49,40 +49,62 @@ export class SimHost {
           this.colony = Colony.load(cmd.data);
           this.started = true;
         } catch (err) {
-          return [
-            { type: "error", context: "load", detail: err instanceof Error ? err.message : String(err) },
-            { type: "snapshot", snapshot: this.colony.snapshot() },
-          ];
+          return [{
+            type: "loaded", reqId: cmd.reqId, ok: false,
+            detail: err instanceof Error ? err.message : String(err),
+            snapshot: this.colony.snapshot(),
+          }];
         }
-        break;
+        return [{ type: "loaded", reqId: cmd.reqId, ok: true, snapshot: this.colony.snapshot() }];
       case "start": this.colony.reset(cmd.difficulty, cmd.seed, cmd.world, cmd.legacy); this.started = true; break; // fresh game / founding on seed+world+difficulty+legacy
       case "launchPtp": this.colony.launchPtp(); break; // end the run as expansion (the store founds the next world)
-      case "dispatchShipment": this.colony.dispatchShipment(cmd.manifest); break; // debit the sender (the store queues it for the destination)
+      case "dispatchShipment": { // debit the sender; acknowledge the amount that ACTUALLY left
+        if (!validShipmentManifest(cmd.manifest)) {
+          return [{
+            type: "shipmentDispatched", reqId: cmd.reqId, ok: false,
+            detail: "shipment quantities must be finite and non-negative (crew must be a whole number)",
+            snapshot: this.colony.snapshot(),
+          }];
+        }
+        const manifest = this.colony.dispatchShipment(cmd.manifest);
+        return [{ type: "shipmentDispatched", reqId: cmd.reqId, ok: true, manifest, snapshot: this.colony.snapshot() }];
+      }
       case "switchColony": { // parallel-colonies: load a settled world, catch it up, resume live
+        if (!cmd.credits.every(validShipmentManifest)) {
+          return [{
+            type: "switched", reqId: cmd.reqId, ok: false,
+            detail: "switchColony: invalid shipment credit",
+            snapshot: this.colony.snapshot(),
+          }];
+        }
         let next: Colony;
+        let before: ReturnType<Colony["snapshot"]>;
+        let events: ReturnType<Colony["drainEvents"]>;
+        let snapshot: ReturnType<Colony["snapshot"]>;
         try {
           next = Colony.load(cmd.save); // a corrupt away-slot must NOT cost the live colony
+          before = next.snapshot(); // the colony AS SAVED, before any credit/catch-up — the digest diffs it
+          for (const credit of cmd.credits) next.creditShipment(credit); // matured shipments arrive as seed-state, before the catch-up
+          next.setDirector(false);        // catch-up runs the engine scheduler (the main-thread Director isn't in the fast-forward)
+          events = next.fastForward(cmd.steps, true); // collect the off-screen events for the "while you were away" digest
+          next.setDirector(cmd.director); // restore the player's director setting for live play
+          next.setPaused(false);          // a switched-to colony always resumes RUNNING (even if it was saved paused)
+          snapshot = next.snapshot();
         } catch (err) {
-          return [
-            { type: "error", context: "load", detail: `switchColony: ${err instanceof Error ? err.message : String(err)}` },
-            { type: "snapshot", snapshot: this.colony.snapshot() },
-          ];
+          return [{
+            type: "switched", reqId: cmd.reqId, ok: false,
+            detail: `switchColony: ${err instanceof Error ? err.message : String(err)}`,
+            snapshot: this.colony.snapshot(),
+          }];
         }
+        // COMMIT only after load, credits, catch-up, and snapshot construction all
+        // succeeded. Any failure above leaves the live colony untouched.
         this.colony = next;
-        const before = this.colony.snapshot(); // the colony AS SAVED, before any credit/catch-up — the digest diffs it
-        for (const credit of cmd.credits) this.colony.creditShipment(credit); // matured shipments arrive as seed-state, before the catch-up
-        this.colony.setDirector(false);        // catch-up runs the engine scheduler (the main-thread Director isn't in the fast-forward)
-        const events = this.colony.fastForward(cmd.steps, true); // collect the off-screen events for the "while you were away" digest
-        this.colony.setDirector(cmd.director); // restore the player's director setting for live play
-        this.colony.setPaused(false);          // a switched-to colony always resumes RUNNING (even if it was saved paused)
         this.started = true;                   // the switched colony ticks at once
-        // Return early (like `save`): the catch-up report + the post-catch-up snapshot.
-        // The events ride the report ONLY — routing them through `events` would replay
-        // the whole off-screen run through the narrator.
-        return [
-          { type: "catchupReport", before, events },
-          { type: "snapshot", snapshot: this.colony.snapshot() },
-        ];
+        // Return one correlated acknowledgment containing both the catch-up report
+        // and post-state. Its events never ride the live event stream (which would
+        // replay the whole off-screen run through the narrator).
+        return [{ type: "switched", reqId: cmd.reqId, ok: true, before, events, snapshot }];
       }
       case "save":
         return [{ type: "saved", reqId: cmd.reqId, data: this.colony.serialize() }];
@@ -94,19 +116,22 @@ export class SimHost {
   /** advance by a real-time dt (seconds). Honors pause and speed. Returns the
    *  outbound messages produced this step (events always; snapshot when due). */
   step(realDt: number): Outbound[] {
-    const out: Outbound[] = [];
+    let events = [] as ReturnType<Colony["drainEvents"]>;
     if (this.started && !this.colony.paused) {
       let dt = realDt;
       if (dt > MAX_DT) dt = MAX_DT;
       this.colony.tick(dt * (this.colony.speed || 1));
-      out.push(...this.drainEvents());
+      events = this.colony.drainEvents();
     }
     this.sinceSnapshot += realDt;
-    if (this.sinceSnapshot >= SNAPSHOT_INTERVAL) {
+    // An event forces a frame even between normal HUD samples. The snapshot and
+    // events are indivisible, preventing a Sol-2 event from being consumed against
+    // a cached Sol-1 state.
+    if (events.length || this.sinceSnapshot >= SNAPSHOT_INTERVAL) {
       this.sinceSnapshot = 0;
-      out.push({ type: "snapshot", snapshot: this.colony.snapshot() });
+      return [{ type: "frame", snapshot: this.colony.snapshot(), events }];
     }
-    return out;
+    return [];
   }
 
   private drainEvents(): Outbound[] {

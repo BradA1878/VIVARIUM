@@ -7,6 +7,10 @@
 import { describe, it, expect } from "vitest";
 import { Colony } from "./index";
 import type { ColonyEvent, Snapshot, Resource } from "@shared/types";
+import type { ColonyState } from "./state";
+import { CARRY_CAP } from "./tuning";
+
+const stateOf = (c: Colony): ColonyState => (c as unknown as { s: ColonyState }).s;
 
 /** advance a colony by `seconds` in fixed `step`s, collecting events */
 function run(c: Colony, seconds: number, step = 0.2): ColonyEvent[] {
@@ -155,6 +159,47 @@ describe("mining", () => {
     // mined out of the field
     const depleted = dep == null || dep.amount < target!.amount - 1e-6;
     expect(depleted).toBe(true);
+  });
+
+  it("keeps interact's public strings while emitting exact pickup/unload payloads", () => {
+    const c = new Colony(7);
+    c.drainEvents(); // discard starter-build events
+    const s = stateOf(c);
+    const actor = s.colonists[0];
+    c.possess(actor.id);
+
+    s.deposits = [{
+      id: 9901, gx: actor.x, gy: actor.y, kind: "ore", amount: CARRY_CAP + 5, max: CARRY_CAP + 5,
+    }];
+    expect(c.interact()).toBe("picked");
+    expect(c.drainEvents()).toEqual([
+      expect.objectContaining({
+        type: "cargo_picked",
+        id: actor.id,
+        actorKind: "colonist",
+        cargo: { ore: CARRY_CAP },
+      }),
+    ]);
+
+    // Leave only seven units of room: the unload payload distinguishes what
+    // left the suit from what actually fit in the materials bank.
+    actor.x = s.depot.gx;
+    actor.y = s.depot.gy;
+    s.materials.amount = s.materials.capacity - 7;
+    expect(c.interact()).toBe("dropped");
+    expect(c.drainEvents()).toEqual([
+      expect.objectContaining({
+        type: "cargo_unloaded",
+        id: actor.id,
+        actorKind: "colonist",
+        cargo: { ore: CARRY_CAP },
+        banked: { ore: 7 },
+      }),
+    ]);
+
+    s.deposits = [];
+    expect(c.interact()).toBeNull();
+    expect(c.drainEvents()).toEqual([]); // unsuccessful P presses stay silent
   });
 });
 
@@ -357,6 +402,16 @@ describe("alien trade", () => {
       expect(events.some((e) => e.type === "trade_done")).toBe(true);
       // a capacity tech bumps a pool cap immediately; otherwise the tech is at least banked
       if (techId === "capacitor") expect(after.pools.power.capacity).toBeGreaterThan(powerCapBefore);
+
+      // The offer card/ship is transient; the reward is not. Prove the upgrade
+      // survives departure, a save/load boundary, and further simulation.
+      run(c, 10);
+      expect(c.snapshot().trade).toBeNull();
+      expect(c.snapshot().acquiredTech).toContain(techId);
+      const resumed = Colony.load(c.serialize());
+      expect(resumed.snapshot().acquiredTech).toContain(techId);
+      run(resumed, 60);
+      expect(resumed.snapshot().acquiredTech).toContain(techId);
       tested = true;
       break;
     }

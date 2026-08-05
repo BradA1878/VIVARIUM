@@ -15,9 +15,11 @@ import { useColony } from "@/ui/stores/colony";
 import { useSettings } from "@/ui/stores/settings";
 import { WORLD_META } from "@/ui/founding";
 import { audio } from "@/ui/audio";
+import { closeGuide } from "./guide";
+import { closeHelp, helpOpen, openHelp } from "./help";
 
 const { controls, colonies } = useColony();
-const { settings } = useSettings();
+const { settings, settingsOpen } = useSettings();
 
 const { DIFFICULTY } = Tuning;
 
@@ -70,6 +72,18 @@ function begin(): void {
   controls.start(selected.value); // lifts the worker gate on the chosen profile + greets
 }
 
+function showHelp(): void {
+  settingsOpen.value = false;
+  closeGuide();
+  openHelp();
+}
+
+function showSettings(): void {
+  closeHelp();
+  closeGuide();
+  settingsOpen.value = true;
+}
+
 // settled worlds from the Colonies ledger — revisiting loads that slot and resumes
 // the colony live (the Round-4 entry point). Newest first.
 const ledger = computed(() => colonies());
@@ -82,16 +96,39 @@ function revisit(slotKey: string): void {
 
 <template>
   <div class="startscreen">
+    <div class="start-actions">
+      <button
+        class="start-utility"
+        type="button"
+        aria-haspopup="dialog"
+        aria-controls="how-to-play"
+        :aria-expanded="helpOpen"
+        @click="showHelp"
+      >
+        ? HOW TO PLAY
+      </button>
+      <button
+        class="start-utility"
+        type="button"
+        aria-haspopup="dialog"
+        :aria-expanded="settingsOpen"
+        @click="showSettings"
+      >
+        ⚙ SETTINGS + ACCESS
+      </button>
+    </div>
     <div class="start-inner">
       <div class="start-mark">VIVARIUM</div>
       <div class="start-sub">choose the terms of the colony</div>
 
-      <div class="start-cards">
+      <div class="start-cards" role="group" aria-label="Colony difficulty">
         <button
           v-for="c in CARDS"
           :key="c.value"
           class="start-card"
           :class="{ on: selected === c.value }"
+          type="button"
+          :aria-pressed="selected === c.value"
           @click="choose(c.value)"
         >
           <div class="card-label">{{ c.label }}</div>
@@ -111,7 +148,7 @@ function revisit(slotKey: string): void {
         </button>
       </div>
 
-      <button class="start-btn" @click="begin">BEGIN</button>
+      <button class="start-btn" type="button" @click="begin">BEGIN</button>
 
       <div v-if="ledger.length" class="start-colonies">
         <div class="start-colonies-label">— or return to a colony —</div>
@@ -120,6 +157,7 @@ function revisit(slotKey: string): void {
             v-for="c in ledger"
             :key="c.slotKey"
             class="colony-chip"
+            type="button"
             @click="revisit(c.slotKey)"
           >
             <span class="colony-world">{{ worldLabel(c.worldId) }}</span>
@@ -142,14 +180,36 @@ function revisit(slotKey: string): void {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 58px 0 28px;
   background: radial-gradient(120% 100% at 50% 42%, rgba(6, 8, 11, 0.82), rgba(4, 5, 7, 0.95));
   animation: fadein 0.6s ease;
 }
 .start-inner {
   text-align: center;
   width: min(880px, 94vw);
-  padding: 0 24px;
+  padding: 20px 24px;
+  margin: auto 0;
 }
+.start-actions {
+  position: fixed;
+  top: 16px;
+  right: 18px;
+  z-index: 1;
+  display: flex;
+  gap: 7px;
+}
+.start-utility {
+  min-height: 34px;
+  padding: 6px 10px;
+  color: var(--dim);
+  border: 1px solid var(--hair);
+  border-radius: 3px;
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+}
+.start-utility:hover { color: var(--ink); border-color: rgba(127, 212, 232, 0.45); }
 .start-mark {
   font-family: var(--serif);
   font-style: italic;
@@ -295,5 +355,16 @@ function revisit(slotKey: string): void {
 @media (max-width: 720px) {
   .start-cards { grid-template-columns: 1fr; }
   .card-tag { min-height: 0; }
+  .start-inner { width: min(560px, 100%); padding-inline: 14px; }
+  .start-mark { font-size: clamp(38px, 12vw, 52px); }
+  .start-sub { margin-bottom: 20px; }
+  .start-cards { margin-bottom: 20px; }
+  .start-actions { top: 10px; right: 10px; }
+  .start-utility { min-height: 40px; }
+}
+
+@media (max-width: 520px) {
+  .start-actions { left: 10px; justify-content: flex-end; }
+  .start-utility { padding-inline: 8px; font-size: 8.5px; }
 }
 </style>

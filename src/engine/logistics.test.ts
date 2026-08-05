@@ -15,19 +15,40 @@ describe("shipment debit / credit", () => {
     const c = new Colony(7);
     const s = stateOf(c);
     const w0 = s.pools.water.amount, m0 = s.materials.amount, p0 = s.population;
-    c.dispatchShipment({ resources: { water: 10 }, materials: 20, crew: 1 });
+    const sent = c.dispatchShipment({ resources: { water: 10 }, materials: 20, crew: 1 });
     expect(s.pools.water.amount).toBeCloseTo(w0 - 10, 6);
     expect(s.materials.amount).toBeCloseTo(m0 - 20, 6);
     expect(s.population).toBe(p0 - 1);
     expect(s.colonists.length).toBe(p0 - 1);
+    expect(sent).toEqual({ resources: { water: 10 }, materials: 20, crew: 1 });
   });
 
-  it("debit clamps at zero (a colony can't ship what it doesn't have)", () => {
+  it("over-request debits and returns only what actually left", () => {
     const c = new Colony(7);
     const s = stateOf(c);
-    c.dispatchShipment({ resources: { water: 99999 }, materials: 99999 });
+    const water = s.pools.water.amount;
+    const materials = s.materials.amount;
+    const sent = c.dispatchShipment({ resources: { water: 99999 }, materials: 99999, crew: 99999 });
     expect(s.pools.water.amount).toBe(0);
     expect(s.materials.amount).toBe(0);
+    expect(s.population).toBe(0);
+    expect(sent).toEqual({ resources: { water }, materials, crew: 4 });
+  });
+
+  it("rejects negative and non-finite quantities without mutating the colony", () => {
+    const c = new Colony(7);
+    const before = c.snapshot();
+    const sent = c.dispatchShipment({
+      resources: { water: -10, oxygen: Number.NaN, food: Number.POSITIVE_INFINITY },
+      materials: -50,
+      crew: 1.5,
+    });
+    expect(sent).toEqual({});
+    expect(c.snapshot()).toEqual(before);
+
+    // The receiver is defensive too: malformed external credits cannot debit it.
+    c.creditShipment({ resources: { water: -10 }, materials: -10, crew: -1 });
+    expect(c.snapshot()).toEqual(before);
   });
 
   it("creditShipment credits resources (clamped to capacity), materials, and FRESH crew", () => {

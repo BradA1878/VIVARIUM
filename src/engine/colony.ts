@@ -22,7 +22,10 @@ import type { HazardKind } from "@shared/types";
 import type { ColonyState, SaveData, Pilot } from "./state";
 import { buildingFunctional, addPilot, removePilot } from "./state";
 import { emptyBuilding, emptyColonist } from "./state";
-import { reconcileColonists, colonistViews, depositViews, clampMaterials, interactPossessed, baseCenter, freeCellNear } from "./colonists";
+import {
+  reconcileColonists, colonistViews, depositViews, clampMaterials,
+  interactPossessedDetailed, baseCenter, freeCellNear,
+} from "./colonists";
 import { computeUnlocks } from "./unlocks";
 import { seedDeposits, seedVents, seedAquifers } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
@@ -94,17 +97,41 @@ export class Colony {
     return out;
   }
 
-  /** DEBIT an inter-planet shipment from this (live) colony — the sender side of a
-   *  transfer (parallel-colonies). Pools + materials clamp at zero; crew leaves the
-   *  roster (the highest ids, so the commander — lowest id — stays). A deterministic
-   *  player act, mirroring respondTrade's pool debit; ZERO rng. */
-  dispatchShipment(m: ShipmentManifest): void {
-    if (m.resources) for (const [r, amt] of Object.entries(m.resources) as [Resource, number][]) {
-      const p = this.s.pools[r];
-      p.amount = Math.max(0, p.amount - amt);
+  /** DEBIT an inter-planet shipment from this (live) colony and return exactly
+   *  what left. Invalid/negative quantities are ignored; over-requests clamp to
+   *  available stock. Returning the debited manifest prevents a receiver from
+   *  crediting the larger requested amount and minting resources. ZERO rng. */
+  dispatchShipment(m: ShipmentManifest): ShipmentManifest {
+    const sent: ShipmentManifest = {};
+    const resources: Partial<Record<Resource, number>> = {};
+    for (const r of ["power", "water", "oxygen", "food"] as const) {
+      const requested = m.resources?.[r];
+      if (requested == null || !Number.isFinite(requested) || requested <= 0) continue;
+      const amount = Math.min(requested, this.s.pools[r].amount);
+      if (amount <= 0) continue;
+      this.s.pools[r].amount -= amount;
+      resources[r] = amount;
     }
-    if (m.materials) this.s.materials.amount = Math.max(0, this.s.materials.amount - m.materials);
-    if (m.crew && m.crew > 0) { this.s.population = Math.max(0, this.s.population - m.crew); reconcileColonists(this.s); }
+    if (Object.keys(resources).length > 0) sent.resources = resources;
+
+    if (m.materials != null && Number.isFinite(m.materials) && m.materials > 0) {
+      const amount = Math.min(m.materials, this.s.materials.amount);
+      if (amount > 0) {
+        this.s.materials.amount -= amount;
+        sent.materials = amount;
+      }
+    }
+
+    if (m.crew != null && Number.isInteger(m.crew) && m.crew > 0) {
+      const requested = m.crew;
+      const amount = Math.min(requested, this.s.population);
+      if (amount > 0) {
+        this.s.population -= amount;
+        sent.crew = amount;
+        reconcileColonists(this.s);
+      }
+    }
+    return sent;
   }
 
   /** CREDIT a shipment as plain seed-state — the receiver side, applied on load BEFORE
@@ -113,12 +140,19 @@ export class Colony {
    *  (new ids — no collision, no commander surprise). ZERO rng, so the colony stays
    *  reproducible. */
   creditShipment(m: ShipmentManifest): void {
-    if (m.resources) for (const [r, amt] of Object.entries(m.resources) as [Resource, number][]) {
+    for (const r of ["power", "water", "oxygen", "food"] as const) {
+      const amount = m.resources?.[r];
+      if (amount == null || !Number.isFinite(amount) || amount <= 0) continue;
       const p = this.s.pools[r];
-      p.amount = Math.min(p.capacity, p.amount + amt);
+      p.amount = Math.min(p.capacity, p.amount + amount);
     }
-    if (m.materials) this.s.materials.amount = Math.min(this.s.materials.capacity, this.s.materials.amount + m.materials);
-    if (m.crew && m.crew > 0) { this.s.population += m.crew; reconcileColonists(this.s); }
+    if (m.materials != null && Number.isFinite(m.materials) && m.materials > 0) {
+      this.s.materials.amount = Math.min(this.s.materials.capacity, this.s.materials.amount + m.materials);
+    }
+    if (m.crew != null && Number.isInteger(m.crew) && m.crew > 0) {
+      this.s.population += m.crew;
+      reconcileColonists(this.s);
+    }
   }
 
   /** restart the run. Founding (PTP) can hand in a new seed and world; omitting
@@ -281,7 +315,17 @@ export class Colony {
   /** the player pressed P — pick up / drop for one piloted actor (solo: the only one) */
   interact(id?: number): "picked" | "dropped" | null {
     const target = id ?? this.s.pilots[0]?.id;
-    return target == null ? null : interactPossessed(this.s, target);
+    if (target == null) return null;
+    const result = interactPossessedDetailed(this.s, target);
+    if (!result) return null;
+    this.emit({
+      type: result.action === "picked" ? "cargo_picked" : "cargo_unloaded",
+      id: target,
+      actorKind: result.actorKind,
+      cargo: result.cargo,
+      ...(result.action === "dropped" ? { banked: result.banked } : {}),
+    });
+    return result.action;
   }
   /** accept/decline a landed alien trade offer */
   respondTrade(accept: boolean): void { applyRespondTrade(this.s, accept, this.emit); }
@@ -385,6 +429,9 @@ export class Colony {
       world: s.world,
       deadlineSol: s.deadlineSol,
       targetPop: s.targetPop,
+      settlementSustainableFor: s.settlementSustainableFor,
+      settlementEstablished: s.settlementEstablished,
+      hazardsSurvived: s.hazardsSurvived,
       selfSufficientFor: s.selfSufficientFor,
       selfSufficiencyGoal: s.selfSufficiencyGoal,
       outcome: s.outcome,
@@ -415,6 +462,7 @@ export class Colony {
           food: { ...this.s.pools.food },
         },
         flow: { ...this.s.flow },
+        selfSufficiencyBalance: { ...this.s.selfSufficiencyBalance },
         resupplyBasket: { ...this.s.resupplyBasket },
         resupplyBanked: { ...this.s.resupplyBanked },
         materials: { ...this.s.materials },
@@ -492,6 +540,13 @@ export class Colony {
       difficulty: st.difficulty ?? "normal",
       world: st.world ?? "mars", // legacy saves predate worlds → the anchor
       acquiredTech: [...(st.acquiredTech ?? [])],
+      settlementSustainableFor: st.settlementSustainableFor ?? 0,
+      settlementEstablished: st.settlementEstablished ?? false,
+      arrivalReadyFor: st.arrivalReadyFor ?? 0,
+      hazardsSurvived: st.hazardsSurvived ?? 0,
+      selfSufficiencyBalance: st.selfSufficiencyBalance
+        ? { ...st.selfSufficiencyBalance }
+        : { power: 0, water: 0, oxygen: 0, food: 0 },
       // legacy saves carry no latch: re-derive the currently-true gates on the
       // first tick, re-announcing the new buildings once (engine/unlocks.ts)
       unlocked: [...(st.unlocked ?? [])],
@@ -586,6 +641,11 @@ function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState 
     dead: 0,
     deadlineSol: prof.deadlineSol,
     targetPop: TARGET_POP,
+    settlementSustainableFor: 0,
+    settlementEstablished: false,
+    arrivalReadyFor: 0,
+    hazardsSurvived: 0,
+    selfSufficiencyBalance: { power: 0, water: 0, oxygen: 0, food: 0 },
     selfSufficientFor: 0,
     selfSufficiencyGoal: SELF_SUFFICIENCY_GOAL,
     outcome: null,

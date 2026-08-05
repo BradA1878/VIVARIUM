@@ -96,9 +96,9 @@ export const DEFS: Record<string, BuildingDef> = {
     id: "greenhouse", name: "Hydroponics", glyph: "GRO",
     foot: [2, 2], h: 16, color: "#33422f",
     cost: { power: 0 }, matCost: 30,
-    staffing: 2, consumes: { power: 6, water: 3 }, produces: { food: 5, oxygen: 2 },
+    staffing: 1, consumes: { power: 6, water: 3 }, produces: { food: 5, oxygen: 0.4 },
     requiresPressure: true, priority: 30, door: 2,
-    desc: "Food, plus a little oxygen. Needs two workers. Shed early in a brownout.",
+    desc: "Food, with trace oxygen as a crop byproduct. Needs a botanist. Shed early in a brownout.",
   },
   medbay: {
     id: "medbay", name: "Med-Bay", glyph: "MED",

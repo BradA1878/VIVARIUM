@@ -41,9 +41,11 @@
   max-height: calc(100vh - 56px - var(--ticker-h) - 10px);
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-color: rgba(127, 212, 232, 0.55) rgba(127, 212, 232, 0.07);
 }
 .rail::-webkit-scrollbar { width: 5px; }
-.rail::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 3px; }
+.rail::-webkit-scrollbar-track { background: rgba(127, 212, 232, 0.07); }
+.rail::-webkit-scrollbar-thumb { background: rgba(127, 212, 232, 0.55); border-radius: 3px; }
 
 .clock { display: flex; gap: 13px; align-items: center; padding-bottom: 13px; border-bottom: 1px solid var(--hair2); }
 .clock-dial { flex: 0 0 auto; }
@@ -214,7 +216,7 @@
   border: 1px solid var(--hair); border-radius: 3px;
 }
 .log-head { display: flex; align-items: center; justify-content: space-between; gap: 9px; padding: 9px 12px; border-bottom: 1px solid var(--hair2); }
-.log-title { font-family: var(--serif); font-style: italic; font-size: 14px; letter-spacing: 0.05em; color: #e6eef1; }
+.log-title { font-family: var(--serif); font-style: italic; font-size: 14px; font-weight: 400; letter-spacing: 0.05em; color: #e6eef1; }
 .log-x { font-size: 11px; color: var(--dim); padding: 2px 6px; transition: 0.15s; }
 .log-x:hover { color: var(--ink); }
 .log-body { padding: 10px 12px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; }
@@ -297,6 +299,85 @@
      text always lives in the log */
   .ticker .term-ts { display: none; }
   .ticker .term-txt { text-overflow: ellipsis; }
+}
+
+/* Tablet/coarse-pointer console: keep both information rails readable, make the
+   construction palette a horizontal tray, and let touch users pan every dense
+   region instead of shrinking controls below a usable target. Phones below the
+   supported floor receive the explicit ViewportGate. */
+@media (max-width: 900px), (pointer: coarse) {
+  .topbar { height: 48px; padding: 0 8px; gap: 8px; }
+  .brand { flex: 0 0 auto; gap: 7px; }
+  .brand-sub { display: none; }
+  .controls {
+    pointer-events: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+  .ctl { flex: 0 0 auto; min-height: 36px; padding: 6px 8px; }
+
+  .left-col {
+    top: 54px;
+    left: 8px;
+    width: min(248px, calc(50vw - 12px));
+  }
+  .right-col {
+    top: 54px;
+    right: 8px;
+    width: min(236px, calc(50vw - 12px));
+    max-height: calc(100dvh - 54px - var(--ticker-h) - 142px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    pointer-events: auto;
+    align-items: stretch;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+  .rail { max-height: calc(100dvh - 54px - var(--ticker-h) - 142px); }
+  .right-col > * { max-width: 100%; }
+
+  .bottom-center {
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--ticker-h) + 7px);
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
+  .inspect { max-width: 100%; flex-wrap: wrap; justify-content: center; text-align: center; }
+  .palette { width: 100%; overflow: hidden; padding-inline: 8px; }
+  .pal-grid {
+    width: 100% !important;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    padding-bottom: 4px;
+  }
+  .pal-btn { flex: 0 0 58px; width: 58px; min-height: 54px; }
+  .ticker { padding-inline: 10px; }
+}
+
+@media (max-width: 700px) {
+  .brand-name { display: none; }
+  .brand-mark { width: 10px; height: 10px; }
+  .ctl { font-size: 10px; }
+  .left-col { width: min(236px, calc(50vw - 12px)); }
+  .right-col { width: min(224px, calc(50vw - 12px)); }
+  .rail { padding-inline: 10px; }
+  .res-label, .clock-wx { font-size: 10px; }
+  .alert { padding-right: 8px; }
+  .alert-txt { font-size: 10px; }
+  .ticker .term-speaker { display: none; }
+  .ticker .term-txt { font-size: 13px; }
+  .ticker-chip { margin-left: 7px; font-size: 8.5px; }
+  .log-panel { left: 8px; width: calc(100vw - 16px); }
 }
 /* short screens: tighten the left rail's vertical rhythm so the clock +
    resources + crew + objective stack fits above the bottom cluster */

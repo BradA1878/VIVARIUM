@@ -45,8 +45,8 @@ function staffed(seed: number): { c: Colony; s: ColonyState } {
   return { c, s };
 }
 
-/** the gather brain belongs to free colonists and robots; staffed workers only
- *  pitch in when a pool runs low. To test the brain in isolation, drop the seed's
+/** the gather brain belongs to free colonists and robots; staffed workers stay on
+ *  shift even when a pool runs low. To test the brain in isolation, drop the seed's
  *  staffing buildings so assign() leaves EVERY colonist in the gather pool, and
  *  top up life support so the now-producerless colony can't starve mid-test. */
 function controlled(seed: number): { c: Colony; s: ColonyState } {
@@ -110,23 +110,28 @@ describe("idle colonists work the deposit field", () => {
     expect(staffedTicks).toBeGreaterThan(0); // the assertion actually ran
   });
 
-  it("the whole colony pitches in on gathering when a pool runs low", () => {
+  it("low stores send only idle colonists gathering; staffed workers stay on shift", () => {
     const { c, s } = staffed(11);
-    // water starving, an ice node in reach — even staffed workers should join the run
+    // water starving, an ice node in reach — idle hands respond, station labor stays put
     s.deposits = [{ id: 501, gx: 9, gy: 5, kind: "ice", amount: 140, max: 140 }];
 
     const staffedGatherStates = new Set<string>();
+    const idleGatherStates = new Set<string>();
     for (let i = 0; i < 200; i++) { // 40 s inside the day window
       s.pools.water.amount = Math.min(s.pools.water.amount, s.pools.water.capacity * 0.1); // hold it scarce
       c.tick(0.2); c.drainEvents();
       if (!(s.tod > DAY_START && s.tod < DAY_END)) continue;
       for (const k of s.colonists) {
-        if (k.workUid == null || isPiloted(s, k.id)) continue; // staffed workers only
-        if ((GATHER_STATES as readonly string[]).includes(k.state)) staffedGatherStates.add(k.state);
+        if (isPiloted(s, k.id)) continue;
+        if ((GATHER_STATES as readonly string[]).includes(k.state)) {
+          if (k.workUid == null) idleGatherStates.add(k.state);
+          else staffedGatherStates.add(k.state);
+        }
       }
     }
-    expect(GATHER_NEED_FRAC).toBeGreaterThan(0.1);       // the premise: 0.1 fill counts as "low"
-    expect(staffedGatherStates.size).toBeGreaterThan(0); // a staffed worker left to gather
+    expect(GATHER_NEED_FRAC.ice).toBeGreaterThan(0.1); // the premise: 0.1 fill counts as "low"
+    expect(idleGatherStates.size).toBeGreaterThan(0);  // spare labor answered the need
+    expect(staffedGatherStates.size).toBe(0);          // no double-working station labor
   });
 
   it("night sends empty-handed gatherers home, but a dusk carrier banks its load first", () => {
@@ -161,6 +166,7 @@ describe("idle colonists work the deposit field", () => {
 
   it("an active hazard overrides gathering to sheltering mid-trip", () => {
     const { c, s } = controlled(17);
+    s.pools.water.amount = s.pools.water.capacity * 0.1; // open an ice-gather need
     s.deposits = [{ id: 501, gx: 12, gy: 12, kind: "ice", amount: 140, max: 140 }];
 
     // let a free colonist get well into a trip
@@ -258,6 +264,24 @@ describe("need-aware targeting — the scarcest pool eats first", () => {
     s.deposits = s.deposits.filter((d) => d.id !== 502); // collapse the cache → claims release
     run(c, 1);
     expect(g.gatherDepositId).toBe(501); // the scarcest pool is now materials → ore
+  });
+
+  it("releases a sticky claim once that pool is healthy and another still needs work", () => {
+    const { c, s } = controlled(11);
+    s.materials.amount = s.materials.capacity * 0.05; // ore is initially most urgent
+    s.pools.food.amount = s.pools.food.capacity * 0.2;
+    s.deposits = [
+      { id: 501, gx: 12, gy: 12, kind: "ore", amount: 140, max: 140 },
+      { id: 502, gx: 13, gy: 13, kind: "cache", amount: 140, max: 140 },
+    ];
+    run(c, 1);
+    const g = freeColonists(s)[0];
+    expect(g.gatherDepositId).toBe(501);
+    expect(g.carryAmt).toBe(0); // still outbound, safe to retask
+
+    s.materials.amount = s.materials.capacity; // ore need is satisfied externally
+    run(c, 0.4);
+    expect(g.gatherDepositId).toBe(502); // sticky ore claim yielded to hungry food
   });
 
   it("claims hold within the chosen kind — two gatherers take distinct caches, nobody drifts to ore", () => {

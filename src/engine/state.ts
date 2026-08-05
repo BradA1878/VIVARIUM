@@ -218,6 +218,16 @@ export interface ColonyState {
   // campaign (doc §2.5)
   deadlineSol: number;
   targetPop: number;
+  /** seconds the population-8 outpost has held a positive survival balance */
+  settlementSustainableFor: number;
+  /** latched nonterminal milestone; also participates in the PTP progression gate */
+  settlementEstablished: boolean;
+  /** seconds the current post-arrival population has held healthy margins */
+  arrivalReadyFor: number;
+  /** completed active hazards this colony has lived through */
+  hazardsSurvived: number;
+  /** net resource amounts accumulated across the current full-sol proof window */
+  selfSufficiencyBalance: Record<Resource, number>;
   selfSufficientFor: number;
   selfSufficiencyGoal: number;
   outcome: Outcome;

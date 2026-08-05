@@ -21,12 +21,27 @@ export interface Anomaly {
 
 const SAMPLE_DT = 0.8; // sim-seconds between telemetry samples
 const WINDOW = 160; // rolling training window size
-const MIN_TRAIN = 50; // samples before the first training
-const TRAIN_EVERY = 40; // retrain cadence (samples)
+const MIN_TRAIN = 80; // enough history to avoid loading ML during the opening minute
+const TRAIN_EVERY = 80; // retrain infrequently; the rule-based safety net stays immediate
 const WARMUP_SCORES = 30; // scored samples before we trust the error stats
 const K_SIGMA = 3.5; // anomaly threshold in std-devs
 const ERR_FLOOR = 0.015; // ignore tiny-magnitude "anomalies"
 const ANOMALY_COOLDOWN = 45; // sim-seconds between flags
+
+/** TensorFlow is deliberately non-critical. Wait for an idle slice before
+ *  importing/training it so building, camera, and piloting input win the main
+ *  thread. The timeout still lets the model come online on continuously busy
+ *  browsers; tf.fit itself yields every batch (see autoencoder.ts). */
+function whenIdle<T>(work: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => { void work().then(resolve, reject); };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run, { timeout: 5_000 });
+    } else {
+      setTimeout(run, 0);
+    }
+  });
+}
 
 export class Sentinel {
   private ae = new Autoencoder();
@@ -70,7 +85,9 @@ export class Sentinel {
     if (due && !this.training && this.window.length >= MIN_TRAIN) {
       this.sinceTrain = 0;
       this.training = true;
-      void this.ae.ensure().then((ok) => (ok ? this.ae.train(this.window.slice()) : undefined))
+      const trainingWindow = this.window.slice();
+      void whenIdle(() => this.ae.ensure())
+        .then((ok) => (ok ? this.ae.train(trainingWindow) : undefined))
         .finally(() => { this.training = false; });
     }
 

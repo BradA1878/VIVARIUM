@@ -34,8 +34,7 @@ export class NetBridge extends BridgeCore {
       if (!this.ready) this.receive({ type: "error", context: "net-timeout", detail: "no host answered — check the room code" });
     }, JOIN_TIMEOUT_MS);
 
-    room.onSnap((snap) => this.receive({ type: "snapshot", snapshot: snap }));
-    room.onEvt((evt) => this.receive({ type: "events", events: [evt] }));
+    room.onFrame((frame) => this.receive({ type: "frame", snapshot: frame.snapshot, events: frame.events }));
     room.onHello((hello, peerId) => {
       if (hello.role === "host") {
         this.hostId = peerId;

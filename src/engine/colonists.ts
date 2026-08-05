@@ -7,12 +7,11 @@
    no Date.now — movement is a pure function of state + dt, so replay/save/
    determinism hold.
 
-   Colonists REFLECT the existing staffing/population decisions; they never
-   change the recipe math (that lives in tick.ts) — gather credits land in the
-   pools like resupply does, outside net flow, so the existing passes are
-   untouched.
+   Colonists supply the headcount that tick.ts assigns to recipes. A wounded,
+   piloted, mining, or hauling body is unavailable for that assignment; gather
+   credits still land in the pools like resupply does, outside net flow.
    ============================================================================ */
-import type { ColonistView, DepositView } from "@shared/types";
+import type { ColonistView, DepositKind, DepositView } from "@shared/types";
 import { DEFS } from "./defs";
 import {
   WALK_SPEED, PILOT_SPEED, ARRIVE_EPS, CARRY_CAP, DEPOT_RADIUS,
@@ -26,7 +25,7 @@ import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
 import { BUILDING_ROLE, nameOf, roleOf } from "./roster";
 import {
-  cargoTotal, colonyNeedsGather, depotCenter, dropCargoAtDepot, dropCarryAtDepot,
+  CARGO_KINDS, cargoTotal, colonyNeedsGather, depotCenter, dropCargoAtDepot, dropCarryAtDepot,
   nearestDepositInReach, pickupFromDeposit, pickupIntoCargo,
   stepGatherer, stepToward, type Pt,
 } from "./gather";
@@ -37,6 +36,22 @@ export { depotCenter } from "./gather";
 export type { Pt } from "./gather";
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+const GATHER_STATES = new Set<ColonistInstance["state"]>(["gathering", "mining", "hauling"]);
+
+/** A colonist supplies recipe labor only while actually available for a shift.
+ *  Piloting and an in-progress gather trip are exclusive work, just like injury. */
+export function colonistAvailableForShift(s: ColonyState, c: ColonistInstance): boolean {
+  return c.injury <= 0 && !(s.pilots ?? []).some((p) => p.id === c.id)
+    && !GATHER_STATES.has(c.state) && c.carryAmt <= 0;
+}
+
+/** engine recipe labor after exclusive embodied work is removed */
+export function availableColonistLabor(s: ColonyState): number {
+  const embodied = s.colonists.reduce((n, c) => n + (colonistAvailableForShift(s, c) ? 1 : 0), 0);
+  // Population can change before roster reconciliation (arrivals/casualties and
+  // controlled tests); never staff more bodies than the authoritative headcount.
+  return Math.min(s.population, embodied);
+}
 
 /** continuous center of a building's footprint, in grid-cell coords */
 function buildingCenter(b: { defId: string; gx: number; gy: number }): Pt {
@@ -152,7 +167,7 @@ function assign(s: ColonyState): void {
   const colonists = [...s.colonists].sort((a, b) => a.id - b.id);
 
   const workers: (ColonistInstance | null)[] = slots.map(() => null);
-  const free = colonists.filter((c) => c.injury <= 0);
+  const free = colonists.filter((c) => colonistAvailableForShift(s, c));
   const claim = (i: number, match: (c: ColonistInstance) => boolean): void => {
     const j = free.findIndex(match);
     if (j >= 0) workers[i] = free.splice(j, 1)[0];
@@ -193,24 +208,55 @@ export function depositInReach(s: ColonyState, c: ColonistInstance): DepositInst
   return nearestDepositInReach(s, c.x, c.y, c.carryKind ?? undefined);
 }
 
-/** explicit pick up / drop for the possessed actor (the player pressed P) —
+/** Exact result of a successful player-directed cargo interaction. Colony uses
+ *  this richer internal shape for feedback events while its public interact()
+ *  method keeps returning the original "picked" / "dropped" strings. */
+export type PossessedInteraction =
+  | {
+    action: "picked";
+    actorKind: "colonist" | "rover";
+    cargo: Partial<Record<DepositKind, number>>;
+  }
+  | {
+    action: "dropped";
+    actorKind: "colonist" | "rover";
+    cargo: Partial<Record<DepositKind, number>>;
+    banked: Partial<Record<DepositKind, number>>;
+  };
+
+function cargoManifest(cargo: Partial<Record<DepositKind, number>>): Partial<Record<DepositKind, number>> {
+  const manifest: Partial<Record<DepositKind, number>> = {};
+  for (const kind of CARGO_KINDS) {
+    const amount = cargo[kind] ?? 0;
+    if (amount > 0) manifest[kind] = amount;
+  }
+  return manifest;
+}
+
+/** detailed explicit pick up / drop for the possessed actor (the player pressed P) —
  *  dispatched by actor type, since rover ids share the colonist counter.
  *  A COLONIST: drops the full load at the depot if carrying + in range,
  *  otherwise grabs a load from the nearest in-range deposit (one kind).
  *  A ROVER: one press at the depot banks ALL its bays in the fixed kind order;
  *  otherwise it tops the bed up from the nearest deposit of ANY kind. */
-export function interactPossessed(s: ColonyState, id: number): "picked" | "dropped" | null {
+export function interactPossessedDetailed(s: ColonyState, id: number): PossessedInteraction | null {
   const r = (s.rovers ?? []).find((x) => x.id === id);
   if (r) {
     if (cargoTotal(r.cargo) > 0) {
       const d = depotCenter(s);
       if (Math.hypot(d.x - r.x, d.y - r.y) <= DEPOT_RADIUS) {
-        dropCargoAtDepot(s, r.cargo);
-        return "dropped";
+        const cargo = cargoManifest(r.cargo);
+        const banked = dropCargoAtDepot(s, r.cargo);
+        return { action: "dropped", actorKind: "rover", cargo, banked };
       }
     }
     const dep = nearestDepositInReach(s, r.x, r.y); // any kind — the bays are separate
-    if (dep && pickupIntoCargo(s, r.cargo, dep, ROVER_CARGO_CAP) > 0) return "picked";
+    if (dep) {
+      const amount = pickupIntoCargo(s, r.cargo, dep, ROVER_CARGO_CAP);
+      if (amount > 0) {
+        return { action: "picked", actorKind: "rover", cargo: { [dep.kind]: amount } };
+      }
+    }
     return null;
   }
 
@@ -221,18 +267,33 @@ export function interactPossessed(s: ColonyState, id: number): "picked" | "dropp
   if (c.carryAmt > 0 && c.carryKind) {
     const d = depotCenter(s);
     if (Math.hypot(d.x - c.x, d.y - c.y) <= DEPOT_RADIUS) {
-      dropCarryAtDepot(s, c);
-      return "dropped";
+      const kind = c.carryKind;
+      const amount = c.carryAmt;
+      const banked = dropCarryAtDepot(s, c);
+      return {
+        action: "dropped",
+        actorKind: "colonist",
+        cargo: { [kind]: amount },
+        banked: banked > 0 ? { [kind]: banked } : {},
+      };
     }
   }
 
   // otherwise fill the hands from the nearest deposit in reach
   const dep = depositInReach(s, c);
   if (dep) {
-    pickupFromDeposit(s, c, dep, CARRY_CAP);
-    return "picked";
+    const amount = pickupFromDeposit(s, c, dep, CARRY_CAP);
+    if (amount > 0) {
+      return { action: "picked", actorKind: "colonist", cargo: { [dep.kind]: amount } };
+    }
   }
   return null;
+}
+
+/** Legacy internal convenience: keep the original string result available to
+ *  callers that do not need the event payload. */
+export function interactPossessed(s: ColonyState, id: number): "picked" | "dropped" | null {
+  return interactPossessedDetailed(s, id)?.action ?? null;
 }
 
 /** the tick's colonist pass — runs after staffing/casualties are resolved.
@@ -273,14 +334,13 @@ export function stepColonists(s: ColonyState, dt: number): Set<number> {
         ?? (home ? accessCell(s, home) : freeCellNear(s, baseCenter(s)));
       arriveState = "recovering";
     } else if (
-      // gather when carrying a load home, or by day when there's a reason to: an
-      // unassigned colonist gathers as its idle default, and an ASSIGNED one
-      // pitches in whenever a pool runs low (colonyNeedsGather) — staffing is a
-      // headcount in the tick, so a worker out on a haul never unstaffs its
-      // building. stepGatherer returns false when there is no gather work at all
-      // → fall through to work/home.
-      (c.carryAmt > 0 || (day && (c.workUid == null || colonyNeedsGather(s)))) &&
-      stepGatherer(s, c, dt, claimed, { speed: WALK_SPEED, carryCap: AUTO_CARRY, dwell: GATHER_DWELL })
+      // Finish a load already in hand, otherwise only an UNASSIGNED daytime
+      // colonist may start a need-driven trip. Staffing and hauling are now
+      // mutually exclusive: a worker never produces at a station while mining.
+      (c.carryAmt > 0 || (day && c.workUid == null && colonyNeedsGather(s))) &&
+      stepGatherer(s, c, dt, claimed, {
+        speed: WALK_SPEED, carryCap: AUTO_CARRY, dwell: GATHER_DWELL, respectNeed: true,
+      })
     ) {
       continue; // the gather brain owned movement + state this tick
     } else if (day && c.workUid != null) {

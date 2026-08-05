@@ -5,10 +5,10 @@
    depends on (solo passthrough / architect null / guest's own actor), plus the
    subscription fanout and the error channel the resilience layer rides.
    ============================================================================ */
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import type { ColonyEvent, Snapshot } from "@shared/types";
 import type { SaveData } from "@/engine";
-import { BridgeCore } from "./bridge";
+import { BRIDGE_REQUEST_TIMEOUT_MS, BridgeCore } from "./bridge";
 import type { Command, Outbound } from "./protocol";
 
 class TestBridge extends BridgeCore {
@@ -17,6 +17,8 @@ class TestBridge extends BridgeCore {
   feed(msg: Outbound): void { this.receive(msg); }
   dispose(): void { this.clearCore(); }
 }
+
+afterEach(() => { vi.useRealTimers(); });
 
 /** a minimal snapshot: the fields receive() touches */
 function snap(over: Partial<Snapshot> = {}): Snapshot {
@@ -68,6 +70,21 @@ describe("BridgeCore.receive — possessed re-derivation per client", () => {
 });
 
 describe("BridgeCore — subscriptions and replies", () => {
+  it("installs an atomic frame's post-tick snapshot before any event consumer runs", () => {
+    const b = new TestBridge();
+    const observed: { phase: string; sol: number | undefined }[] = [];
+    b.onSnapshot((s) => observed.push({ phase: "snapshot", sol: s.sol }));
+    b.onEvent(() => observed.push({ phase: "event", sol: b.latest?.sol }));
+
+    const event = { type: "new_sol", t: 150, sol: 2, tod: 0 } as ColonyEvent;
+    b.feed({ type: "frame", snapshot: snap({ t: 150, sol: 2 }), events: [event] });
+
+    expect(observed).toEqual([
+      { phase: "snapshot", sol: 2 },
+      { phase: "event", sol: 2 },
+    ]);
+  });
+
   it("fans events out to every subscriber; catchupReport does NOT ride the event stream", () => {
     const b = new TestBridge();
     const events: ColonyEvent[] = [];
@@ -100,6 +117,47 @@ describe("BridgeCore — subscriptions and replies", () => {
     const data = { version: 1, seed: 5 } as unknown as SaveData;
     b.feed({ type: "saved", reqId: req.reqId, data });
     await expect(p).resolves.toBe(data);
+  });
+
+  it("load() resolves only after its acknowledged snapshot is installed", async () => {
+    const b = new TestBridge();
+    const data = { version: 1, seed: 5 } as unknown as SaveData;
+    const p = b.load(data);
+    const req = b.sent.find((c) => c.type === "load") as Extract<Command, { type: "load" }>;
+    const loaded = snap({ t: 42, sol: 3 });
+    b.feed({ type: "loaded", reqId: req.reqId, ok: true, snapshot: loaded });
+    await expect(p).resolves.toBe(loaded);
+    expect(b.latest).toBe(loaded);
+  });
+
+  it("switchColony rejects a failed load while preserving the host's returned live snapshot", async () => {
+    const b = new TestBridge();
+    const data = { version: 1, seed: 5 } as unknown as SaveData;
+    const p = b.switchColony(data, 10, true, []);
+    const rejected = expect(p).rejects.toThrow("bad target");
+    const req = b.sent.find((c) => c.type === "switchColony") as Extract<Command, { type: "switchColony" }>;
+    const live = snap({ world: "mars", t: 12 });
+    b.feed({ type: "switched", reqId: req.reqId, ok: false, snapshot: live, detail: "bad target" });
+    await rejected;
+    expect(b.latest).toBe(live);
+  });
+
+  it("save/load requests time out instead of hanging forever", async () => {
+    vi.useFakeTimers();
+    const b = new TestBridge();
+    const save = expect(b.save()).rejects.toThrow("colony save timed out");
+    const load = expect(b.load({ version: 1 } as unknown as SaveData)).rejects.toThrow("colony load timed out");
+    await vi.advanceTimersByTimeAsync(BRIDGE_REQUEST_TIMEOUT_MS + 1);
+    await save;
+    await load;
+  });
+
+  it("dispose rejects every pending request and rejects future requests immediately", async () => {
+    const b = new TestBridge();
+    const pending = expect(b.save()).rejects.toThrow("simulation bridge disposed");
+    b.dispose();
+    await pending;
+    await expect(b.load({ version: 1 } as unknown as SaveData)).rejects.toThrow("bridge disposed");
   });
 
   it("ready flips on the worker's ready message", () => {

@@ -15,6 +15,9 @@ coverage/
 # playwright / screenshots (root-level images are always QA screenshots —
 # a stray `git add -A` must not commit them)
 .playwright-mcp/
+test-results/
+playwright-report/
+blob-report/
 phase*-scene*.png
 /*.png
 /*.jpeg

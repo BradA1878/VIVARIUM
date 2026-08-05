@@ -46,9 +46,16 @@ const roleLabel = (actorId: number | null): string => (actorId == null ? "specta
 </script>
 
 <template>
-  <button class="coop-toggle" :class="{ on: open, live: mode !== 'solo' }" @click="toggle">&#9678; CO-OP</button>
+  <button
+    class="coop-toggle"
+    :class="{ on: open, live: mode !== 'solo' }"
+    type="button"
+    aria-controls="coop-panel"
+    :aria-expanded="open"
+    @click="toggle"
+  >&#9678; CO-OP</button>
 
-  <div v-if="open" class="coop-panel">
+  <div v-if="open" id="coop-panel" class="coop-panel">
     <div class="coop-title">CO-OP · {{ mode === "solo" ? "OFFLINE" : mode === "host" ? "HOSTING" : "GUEST" }}</div>
 
     <template v-if="mode === 'solo'">
@@ -61,8 +68,8 @@ const roleLabel = (actorId: number | null): string => (actorId == null ? "specta
         <input class="cf-in" v-model="code" maxlength="24" placeholder="e.g. marsbase" @keyup.enter="host" />
       </label>
       <div class="coop-actions">
-        <button class="coop-btn host" :disabled="!code.trim()" @click="host">&#9632; HOST</button>
-        <button class="coop-btn join" :disabled="!code.trim()" @click="join">&rarr; JOIN</button>
+        <button class="coop-btn host" type="button" :disabled="!code.trim()" @click="host">&#9632; HOST</button>
+        <button class="coop-btn join" type="button" :disabled="!code.trim()" @click="join">&rarr; JOIN</button>
       </div>
       <div class="coop-hint">The host runs the colony and builds; guests each drive an astronaut. Share the code out-of-band.</div>
     </template>
@@ -136,7 +143,7 @@ const roleLabel = (actorId: number | null): string => (actorId == null ? "specta
   border-radius: 3px;
   padding: 5px 7px;
 }
-.cf-in:focus { outline: none; border-color: rgba(143, 184, 255, 0.6); }
+.cf-in:focus { border-color: rgba(143, 184, 255, 0.6); }
 
 .coop-actions { display: flex; gap: 6px; margin-top: 3px; }
 .coop-btn {

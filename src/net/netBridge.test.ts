@@ -7,6 +7,7 @@
    ============================================================================ */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { Command } from "@/worker/protocol";
+import type { ColonyEvent, Snapshot } from "@shared/types";
 import { NetBridge, JOIN_TIMEOUT_MS } from "./netBridge";
 import type { NetRoom } from "./room";
 
@@ -20,6 +21,7 @@ function fakeRoom() {
     sendCmd: send("cmd"), onCmd: on("cmd"),
     sendSnap: send("snap"), onSnap: on("snap"),
     sendEvt: send("evt"), onEvt: on("evt"),
+    sendFrame: send("frame"), onFrame: on("frame"),
     sendHello: send("hello"), onHello: on("hello"),
     sendClaim: send("claim") as NetRoom["sendClaim"], onClaim: on("claim"),
     sendRoster: send("roster"), onRoster: on("roster"),
@@ -52,6 +54,21 @@ describe("NetBridge — handshake", () => {
     const cmd = sent.filter((s) => s.ch === "cmd").at(-1)!;
     expect(cmd.target).toBe("H");
     expect((cmd.data as Command).type).toBe("moveIntent");
+    b.dispose();
+  });
+
+  it("installs a host frame's snapshot before delivering its events", () => {
+    const { room, fire } = fakeRoom();
+    const b = new NetBridge(room, "Ada");
+    fire.hello({ role: "host", name: "Brad" } as never, "H" as never);
+    const observed: number[] = [];
+    b.onEvent(() => observed.push(b.latest?.sol ?? -1));
+    const snapshot = { possessed: null, colonists: [], rovers: [], buildings: [], sol: 2 } as unknown as Snapshot;
+    const event = { type: "new_sol", t: 150, sol: 2, tod: 0 } as ColonyEvent;
+
+    fire.frame({ snapshot, events: [event] } as never, "H" as never);
+
+    expect(observed).toEqual([2]);
     b.dispose();
   });
 });

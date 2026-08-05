@@ -8,6 +8,7 @@
    ============================================================================ */
 import type { Difficulty, Outcome, ShipmentManifest } from "@shared/types";
 import { SOL_LENGTH } from "@/engine/tuning";
+import { shipmentHasCargo, validShipmentManifest } from "@/worker/protocol";
 
 /** one settled world. `slotKey` is the persistence slot (loadBest(slotKey) revisits it). */
 export interface ColonyRecord {
@@ -73,8 +74,9 @@ function isRecord(x: unknown): x is ColonyRecord {
 function isShipment(x: unknown): x is Shipment {
   const s = x as Shipment;
   return !!x && typeof x === "object"
-    && typeof s.id === "number" && typeof s.toSlot === "string" && typeof s.fromSlot === "string"
-    && typeof s.dispatchedAt === "number" && typeof s.transitSols === "number" && !!s.manifest;
+    && Number.isSafeInteger(s.id) && s.id > 0 && typeof s.toSlot === "string" && typeof s.fromSlot === "string"
+    && Number.isFinite(s.dispatchedAt) && s.dispatchedAt >= 0 && Number.isFinite(s.transitSols) && s.transitSols > 0
+    && validShipmentManifest(s.manifest) && shipmentHasCargo(s.manifest);
 }
 
 /** rebuild a valid Ledger from anything — corrupt JSON, an old version, partial
@@ -130,6 +132,7 @@ export function removeColony(slotKey: string, storage?: LedgerStorage): Ledger {
 /** queue a shipment (id auto-assigned). Returns the new ledger. */
 export function addShipment(s: Omit<Shipment, "id">, storage?: LedgerStorage): Ledger {
   const ledger = loadLedger(storage);
+  if (!isShipment({ ...s, id: 1 })) return ledger;
   const id = ledger.shipments.reduce((m, x) => Math.max(m, x.id), 0) + 1;
   const next: Ledger = { ...ledger, shipments: [...ledger.shipments, { ...s, id }] };
   saveLedger(next, storage);

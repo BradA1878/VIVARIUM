@@ -5,10 +5,14 @@
 ```bash
 npm install            # one-time
 npm run dev            # Vite dev server → http://localhost:5180 (fully playable, no backend)
-npm run server         # Hono backend on :8787 (live narrator + Mongo); Vite proxies /api → here
-npm test               # Vitest: all *.test.ts under src/ and shared/
+npm run server:dev     # Hono backend on :8787 (live narrator + Mongo); Vite proxies /api → here
+npm run server:build   # production server bundle → dist-server/
+npm run server:start   # run the production server bundle
+npm test               # Vitest: all *.test.ts under src/, shared/, and server/
+npm run test:e2e       # Playwright smoke/accessibility checks (desktop + mobile)
 npm run typecheck      # vue-tsc --noEmit  (covers src/, shared/, server/) — run after edits
 npm run build          # typecheck + vite build
+npm run build:egg      # production build with the /vivarium/ base path
 ```
 
 Run one test file or test by name:
@@ -69,7 +73,7 @@ reaches the live model.
 
 ## Testing & determinism
 
-There are 31 test files (384 tests), weighted toward the guarantees that matter:
+There are 50 test files (556 tests), weighted toward the guarantees that matter:
 
 - `engine/engine.test.ts` — same seed + dt sequence → same future.
 - `engine/campaign.test.ts`, `hazards.test.ts`, `predict.test.ts`,
@@ -93,6 +97,9 @@ There are 31 test files (384 tests), weighted toward the guarantees that matter:
   mid-injury and mid-fabrication), and old saves load with graceful field
   defaults.
 - `worker/host.test.ts` — the command/snapshot loop.
+- `worker/bridge.test.ts`, `net/*.test.ts`, `persistence/colonies.test.ts` —
+  atomic snapshot/event frames, acknowledged operations, transactional colony
+  switching, and shipment validation.
 - `render/perf.test.ts` — the PerfGovernor. The governor is the model citizen
   for testing renderer policy: `render/perf.ts` imports no DOM or three, so
   the ladder walk (calibration, demote/spike/promote evidence, cooldowns,
@@ -103,8 +110,15 @@ There are 31 test files (384 tests), weighted toward the guarantees that matter:
   and the dry-register guard: every scripted line ≤140 chars, single-line),
   world model diagnosis, Sentinel, Director.
 - `ui/**` — the node-safe pure halves of the UI: `stores/settings.test.ts`,
-  `stores/history.test.ts`, `hints.test.ts`, and `audio/map.test.ts` (the
-  event→cue / snapshot-diff mapping — no AudioContext is ever constructed).
+  `stores/history.test.ts`, `hints.test.ts`, `components/guide.test.ts`,
+  `components/keyboard.test.ts`, and `audio/map.test.ts` (the event→cue /
+  snapshot-diff mapping — no AudioContext is ever constructed).
+- `server/app.test.ts` — the production server's health boundary without opening
+  a listener or requiring Mongo.
+
+The Playwright suite in `e2e/` exercises the real WebGL app at desktop and phone
+sizes, including the field guide, safe reset flow, keyboard focus, viewport gate,
+horizontal overflow, and WCAG A/AA serious-or-critical Axe findings.
 
 Rare or scheduled events are tested by **state injection**, never by waiting:
 set the timer/sol so the event is due *now* (the `ufo.test.ts` pattern, reused
@@ -160,7 +174,7 @@ The game needs no backend or keys. To enable the live narrator and networked sav
 
 ```bash
 cp .env.example .env   # then fill in values
-npm run server         # Hono on :8787; Vite proxies /api → here
+npm run server:dev     # Hono on :8787; Vite proxies /api → here
 ```
 
 | Env var | Effect |

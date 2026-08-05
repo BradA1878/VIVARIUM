@@ -200,16 +200,24 @@ around.
 ## The campaign — the launch window
 
 Earth's launch window closes at the **start of Sol 22** (Sol 28 on CALM, Sol 18
-on BRUTAL). To win you must reach a **real settlement** before then:
+on BRUTAL). The campaign now has two visible proofs:
 
-- grow to the **target population (8 colonists)**, and
-- sustain **non-negative net on all life support** (without counting resupply) for a
-  **sustained stretch (~45 s)** at that population.
+1. Establish an **outpost**: reach 8 colonists and sustain non-negative net life
+   support (without counting resupply) for 45 seconds. This is a milestone, not
+   the end of the run.
+2. Prove a **settlement**: reach 12 colonists, operate a staffed and fueled
+   reactor, unlock the Transport Pod schematic, survive an active hazard, and
+   hold a positive aggregate resource balance for a full 150-second sol. At the
+   finish you also need 20 seconds of life-support reserve and 30 stored power.
+
+Building and launching the 200-material Transport Pod remains an optional
+expansion ending; completing the settlement proof wins the current world.
 
 Let the window close on an unfinished colony, or lose everyone, and the watch ends.
 The objective panel tracks both clocks; the Chronicler writes the last entry. (These
-numbers live in `engine/tuning.ts` — `DEADLINE_SOL`, `TARGET_POP`,
-`SELF_SUFFICIENCY_GOAL`, and the `DIFFICULTY` profiles — and are easy to retune.)
+numbers live in `engine/tuning.ts` — `DEADLINE_SOL`, `SETTLEMENT_POP`,
+`SETTLEMENT_SUSTAIN_GOAL`, `TARGET_POP`, `SELF_SUFFICIENCY_GOAL`, and the
+`DIFFICULTY` profiles — and are easy to retune.)
 
 ## The end of a run — the report and the dossier
 

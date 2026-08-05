@@ -7,9 +7,10 @@ import { SimHost } from "./host";
 import type { Outbound } from "./protocol";
 import { Colony, type SaveData } from "@/engine";
 import { emptyBuilding, type ColonyState } from "@/engine/state";
+import type { Snapshot } from "@shared/types";
 
-function snapsIn(msgs: Outbound[]): Outbound[] {
-  return msgs.filter((m) => m.type === "snapshot");
+function snapsIn(msgs: Outbound[]): Snapshot[] {
+  return msgs.flatMap((m) => "snapshot" in m ? [m.snapshot] : []);
 }
 
 describe("SimHost", () => {
@@ -25,6 +26,23 @@ describe("SimHost", () => {
     const after = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
     expect(after).toBeGreaterThan(before);
     expect(snapsIn(out).length).toBeGreaterThan(0);
+  });
+
+  it("emits tick events atomically with the matching post-tick snapshot", () => {
+    const host = new SimHost(123);
+    host.applyCommand({ type: "start" });
+    const colony = (host as unknown as { colony: Colony }).colony;
+    const state = (colony as unknown as { s: ColonyState }).s;
+    state.sol = 1;
+    state.tod = 0.9999; // the next bounded tick crosses into Sol 2
+
+    const out = host.step(0.1);
+    const frame = out.find((m) => m.type === "frame") as Extract<Outbound, { type: "frame" }>;
+    const event = frame.events.find((e) => e.type === "new_sol");
+    expect(event).toBeTruthy();
+    expect(frame.snapshot.sol).toBe(2);
+    expect(event?.sol).toBe(frame.snapshot.sol);
+    expect(out).toHaveLength(1); // state + events cross the worker wall together
   });
 
   it("pause freezes sim time; resume restarts it", () => {
@@ -85,7 +103,7 @@ describe("SimHost", () => {
     expect(saved.reqId).toBe(7);
 
     const fresh = new SimHost(1);
-    fresh.applyCommand({ type: "load", data: saved.data });
+    fresh.applyCommand({ type: "load", reqId: 2, data: saved.data });
     const loaded = (fresh.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
     const original = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
     expect(loaded.t).toBe(original.t);
@@ -126,7 +144,7 @@ describe("SimHost", () => {
       .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
 
     const fresh = new SimHost(1);
-    fresh.applyCommand({ type: "load", data }); // no `start` — load lifts the gate itself
+    fresh.applyCommand({ type: "load", reqId: 2, data }); // no `start` — load lifts the gate itself
     const before = (fresh.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
     for (let i = 0; i < 20; i++) fresh.step(0.05);
     const after = (fresh.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
@@ -168,8 +186,8 @@ describe("SimHost", () => {
     // a live Mars host switches to it with a ~1-sol catch-up (1500 steps)
     const host = new SimHost();
     host.applyCommand({ type: "start" });
-    const out = host.applyCommand({ type: "switchColony", save, steps: 1500, director: true, credits: [] });
-    const snap = (out.find((m) => m.type === "snapshot") as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    const out = host.applyCommand({ type: "switchColony", reqId: 3, save, steps: 1500, director: true, credits: [] });
+    const snap = (out.find((m) => m.type === "switched") as Extract<Outbound, { type: "switched"; ok: true }>).snapshot;
     expect(snap.world).toBe("ceres");            // now showing the target world
     expect(snap.t).toBeGreaterThan(save.state.t); // caught up — sim time advanced past the save
 
@@ -188,10 +206,43 @@ describe("SimHost", () => {
 
     const host = new SimHost();
     host.applyCommand({ type: "start" });
-    host.applyCommand({ type: "switchColony", save, steps: 0, director: true, credits: [{ materials: 50 }] });
+    host.applyCommand({ type: "switchColony", reqId: 3, save, steps: 0, director: true, credits: [{ materials: 50 }] });
     const saved = (host.applyCommand({ type: "save", reqId: 2 })
       .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
     expect(saved.state.materials.amount).toBe(mat0 + 50); // the shipment was credited on load (no catch-up at steps 0)
+  });
+
+  it("rejects invalid shipment quantities without mutating the colony", () => {
+    const host = new SimHost(7);
+    host.applyCommand({ type: "start" });
+    const before = (host.applyCommand({ type: "save", reqId: 1 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+    const out = host.applyCommand({
+      type: "dispatchShipment", reqId: 2,
+      manifest: { resources: { water: -10 }, materials: Number.NaN },
+    });
+    const reply = out[0] as Extract<Outbound, { type: "shipmentDispatched"; ok: false }>;
+    expect(reply.ok).toBe(false);
+    const after = (host.applyCommand({ type: "save", reqId: 3 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+    expect(after.state.pools.water.amount).toBe(before.state.pools.water.amount);
+    expect(after.state.materials.amount).toBe(before.state.materials.amount);
+  });
+
+  it("acknowledges only the cargo actually debited from a stale over-request", () => {
+    const host = new SimHost(7);
+    host.applyCommand({ type: "start" });
+    const before = (host.applyCommand({ type: "save", reqId: 1 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+    const requested = before.state.pools.water.amount + 500;
+    const out = host.applyCommand({
+      type: "dispatchShipment", reqId: 2, manifest: { resources: { water: requested } },
+    });
+    const reply = out[0] as Extract<Outbound, { type: "shipmentDispatched"; ok: true }>;
+    expect(reply.ok).toBe(true);
+    expect(reply.manifest.resources?.water).toBeCloseTo(before.state.pools.water.amount, 6);
+    expect(reply.manifest.resources?.water).toBeLessThan(requested);
+    expect(reply.snapshot.pools.water.amount).toBe(0);
   });
 
   // ---- the resilience boundary: corrupt saves must not wedge the sim ----
@@ -199,10 +250,10 @@ describe("SimHost", () => {
   it("a corrupt load reports an error and keeps serving instead of wedging", () => {
     const host = new SimHost(1);
     const bad = { version: 1, seed: 1, rngState: 1, envRngState: 1, state: { oops: true } };
-    const out = host.applyCommand({ type: "load", data: bad as unknown as SaveData });
-    const err = out.find((m) => m.type === "error") as Extract<Outbound, { type: "error" }>;
-    expect(err).toBeTruthy();
-    expect(err.context).toBe("load");
+    const out = host.applyCommand({ type: "load", reqId: 7, data: bad as unknown as SaveData });
+    const reply = out.find((m) => m.type === "loaded") as Extract<Outbound, { type: "loaded"; ok: false }>;
+    expect(reply.ok).toBe(false);
+    expect(reply.reqId).toBe(7);
     // still paints, still gated (the start screen is the recovery path), still steps
     expect(snapsIn(out).length).toBe(1);
     const t0 = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t;
@@ -220,17 +271,38 @@ describe("SimHost", () => {
     const bad = { version: 1, seed: 1, rngState: 1, envRngState: 1, state: null };
     const out = host.applyCommand({
       type: "switchColony",
+      reqId: 8,
       save: bad as unknown as SaveData,
       steps: 100, director: true, credits: [],
     });
-    const err = out.find((m) => m.type === "error") as Extract<Outbound, { type: "error" }>;
-    expect(err).toBeTruthy();
+    const reply = out.find((m) => m.type === "switched") as Extract<Outbound, { type: "switched"; ok: false }>;
+    expect(reply.ok).toBe(false);
     // the live world survived and still ticks
     const snap = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
     expect(snap.world).toBe("mars");
     expect(snap.t).toBeGreaterThanOrEqual(liveT);
     for (let i = 0; i < 10; i++) host.step(0.05);
     expect((host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.t).toBeGreaterThan(liveT);
+  });
+
+  it("a target that fails during catch-up never replaces the live colony", () => {
+    const targetSeed = new SimHost(9);
+    targetSeed.applyCommand({ type: "start", world: "ceres" });
+    const target = (targetSeed.applyCommand({ type: "save", reqId: 1 })
+      .find((m) => m.type === "saved") as Extract<Outbound, { type: "saved" }>).data;
+    target.state.buildings[0].defId = "missing-definition";
+
+    const host = new SimHost(3);
+    host.applyCommand({ type: "start", world: "mars" });
+    const liveBefore = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    const out = host.applyCommand({
+      type: "switchColony", reqId: 9, save: target, steps: 1, director: true, credits: [],
+    });
+    const reply = out[0] as Extract<Outbound, { type: "switched"; ok: false }>;
+    expect(reply.ok).toBe(false);
+    const liveAfter = (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    expect(liveAfter.world).toBe("mars");
+    expect(liveAfter.t).toBe(liveBefore.t);
   });
 
   it("launchPtp ends the run as expansion when a pod is built", () => {

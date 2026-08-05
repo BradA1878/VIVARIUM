@@ -21,8 +21,7 @@ import type { NetRoom, RosterMsg } from "./room";
 /** the slice of the bridge the relay needs (SimBridge/BridgeCore satisfies it) */
 export interface RelayBridge {
   latest: Snapshot | null;
-  onSnapshot(fn: (s: Snapshot) => void): () => void;
-  onEvent(fn: (e: ColonyEvent) => void): () => void;
+  onFrame(fn: (s: Snapshot, events: ColonyEvent[]) => void): () => void;
   possess(id: number | null, on?: boolean): void;
   moveIntent(dx: number, dy: number, id?: number): void;
   interact(id?: number): void;
@@ -33,8 +32,7 @@ interface PlayerSlot { name: string; actorId: number | null }
 export class HostRelay {
   /** peerId → the player's name + the colonist they currently drive (null = spectating) */
   private players = new Map<string, PlayerSlot>();
-  private offSnap: () => void;
-  private offEvt: () => void;
+  private offFrame: () => void;
 
   constructor(
     private room: NetRoom,
@@ -52,8 +50,10 @@ export class HostRelay {
       if (slot) slot.name = hello.name;
       this.broadcastRoster();
     });
-    this.offSnap = bridge.onSnapshot((s) => this.onSnapshot(s));
-    this.offEvt = bridge.onEvent((e) => room.sendEvt(e));
+    this.offFrame = bridge.onFrame((s, events) => {
+      this.onSnapshot(s);
+      room.sendFrame({ snapshot: s, events });
+    });
   }
 
   /** a peer connected: greet, assign a free colonist, possess it, tell them */
@@ -90,7 +90,6 @@ export class HostRelay {
   /** broadcast every snapshot; hand a colonist back to spectate if it died, and
    *  re-embody a spectator once a fresh colonist arrives (the chosen death rule) */
   private onSnapshot(s: Snapshot): void {
-    this.room.sendSnap(s);
     const alive = new Set<number>([...s.colonists.map((c) => c.id), ...s.rovers.map((r) => r.id)]);
     let changed = false;
     // pass 1: a piloted colonist that died/abducted → spectate
@@ -134,8 +133,7 @@ export class HostRelay {
   }
 
   dispose(): void {
-    this.offSnap();
-    this.offEvt();
+    this.offFrame();
     for (const slot of this.players.values()) if (slot.actorId != null) this.bridge.possess(slot.actorId, false);
     this.players.clear();
   }

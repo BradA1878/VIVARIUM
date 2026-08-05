@@ -4,10 +4,11 @@
    ever observes the snapshot/event stream and issues commands (doc §0); it never
    touches the tick.
    ============================================================================ */
-import { ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
+import { computed, ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
 import { RESOURCES } from "@shared/types";
 import type { ColonyEvent, Difficulty, LegacyManifest, Resource, ShipmentManifest, Snapshot, World } from "@shared/types";
 import type { BridgeCore } from "@/worker/bridge";
+import { shipmentHasCargo, validShipmentManifest } from "@/worker/protocol";
 import type { ThreeRenderer } from "@/render/renderer";
 import type { HoverInfo, SelectInfo } from "@/render/three/placement";
 import { Council, type Register } from "@/agent/council";
@@ -84,6 +85,21 @@ export const roster = ref<{ peerId: string; name: string; actorId: number | null
 export function setMode(m: ColonyMode): void { mode.value = m; }
 export function setRoster(players: { peerId: string; name: string; actorId: number | null }[]): void { roster.value = players; }
 
+/** One source of truth for which controls a session role can actually exercise.
+ *  Components can hide/disable against this instead of presenting guest actions
+ *  that the host authority correctly drops. */
+export const capabilities = computed(() => {
+  const architect = mode.value !== "guest";
+  return {
+    architect,
+    canBuild: architect,
+    canManageSimulation: architect,
+    canManageColonies: architect,
+    canRespondTrade: architect,
+    canPilot: mode.value !== "host",
+  };
+});
+
 /** guest-side connection state, for the lobby's status line: joining →
  *  'connecting'; a roster lands → 'connected'; no host inside the join window →
  *  'failed'; the host vanished mid-session → 'host-left'. Solo/host sit on 'idle'. */
@@ -130,9 +146,9 @@ export interface AwayDigest {
 export const awayDigest = ref<AwayDigest | null>(null);
 /** dismiss the away digest (the panel's close button) */
 export function dismissAwayDigest(): void { awayDigest.value = null; }
-// the in-flight catch-up report, awaiting the post-catch-up snapshot to diff against.
-// The host posts {catchupReport} then {snapshot} as two messages; the report lands
-// first (before `snapshot.value` updates), so the digest is built on the NEXT snapshot.
+// The switch acknowledgment carries the catch-up report and post-catch-up snapshot
+// atomically. BridgeCore delivers the report callback first, so the snapshot callback
+// below can diff the two without an unrelated frame interleaving.
 let pendingCatchup: { before: Snapshot; events: ColonyEvent[] } | null = null;
 
 let bridge: BridgeCore | null = null;
@@ -164,6 +180,16 @@ let offBootSnap: (() => void) | null = null;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 let stopSettingsWatch: (() => void) | null = null;
 let msgId = 1;
+// Live narration is one request at a time. The epoch invalidates late replies
+// across reset/switch/dispose so an old colony can never speak into a new run.
+let narrationEpoch = 0;
+let liveNarrationInFlight = false;
+let narrationWatermarkT = -Infinity;
+let switching = false;
+let switchIntent = 0;
+// Matured rows remain queued until a save containing their credits is durable.
+// A later successful autosave can finish a previously timed-out save safely.
+let pendingCreditedShipments: { slotKey: string; ids: number[] } | null = null;
 // the persistence slot the live run reads/writes. Default reuses today's single
 // key (Mars behavior unchanged); founding/revisit point this at a world's slot.
 const ACTIVE_SLOT_KEY = "vivarium:activeslot:v1";
@@ -278,6 +304,10 @@ export function pushLine(
  *  cold boot. The planet keeps its cross-run MEMORY (playerModel); only this run's
  *  scratch is cleared, and the opening bias is re-aimed for the next run. */
 function tearDownRun(): void {
+  narrationEpoch++;
+  liveNarrationInFlight = false;
+  narrationWatermarkT = -Infinity;
+  pendingCreditedShipments = null;
   council?.reset();
   sentinel?.reset();
   director?.reset();
@@ -312,49 +342,88 @@ function greetAfter(ms: number, difficulty: Difficulty): void {
 /** keep the active colony's ledger row live — sols/population/savedAt refreshed from a
  *  save, preserving foundedAt/legacy — so the Colonies map shows current numbers and the
  *  catch-up has an accurate "last saved" stamp (parallel-colonies). */
-function refreshLedgerRow(save: SaveData): void {
+function refreshLedgerRow(save: SaveData, slotKey = activeSlot): void {
   const st = save.state;
-  const existing = loadLedger().colonies.find((c) => c.slotKey === activeSlot);
+  const existing = loadLedger().colonies.find((c) => c.slotKey === slotKey);
   upsertColony({
     ...existing,
-    worldId: st.world, slotKey: activeSlot, seed: save.seed, difficulty: st.difficulty,
+    worldId: st.world, slotKey, seed: save.seed, difficulty: st.difficulty,
     label: WORLD_META[st.world].label, outcome: st.outcome, sols: st.sol, population: st.population,
     foundedAt: existing?.foundedAt ?? Date.now(), savedAt: Date.now(),
   });
 }
 
+function finishCreditedShipments(slotKey: string): void {
+  if (pendingCreditedShipments?.slotKey !== slotKey) return;
+  removeShipments(pendingCreditedShipments.ids);
+  pendingCreditedShipments = null;
+}
+
 /** enter a colony as the live one: reset agent scratch (NOT the slot it loads), then
  *  load + deterministically CATCH UP (by the elapsed-since-savedAt step count) + resume,
  *  via the switchColony command. Shared by revisit (StartScreen) and switchTo (in-game). */
-function goTo(slotKey: string, target: SaveData): void {
-  if (!bridge) return;
+async function goTo(slotKey: string, target: SaveData): Promise<boolean> {
+  if (!bridge || switching) return false;
+  const switchingBridge = bridge;
+  switching = true;
   curtain.value = true; // drop the curtain to mask the catch-up + world rebuild
   if (curtainTimer) clearTimeout(curtainTimer);
-  curtainTimer = setTimeout(() => { curtain.value = false; }, 850); // lift once the new colony has rendered
-  setActiveSlot(slotKey);
-  council?.reset(); sentinel?.reset(); director?.reset();
-  lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
-  awayDigest.value = null; pendingCatchup = null; // supersede any unread digest from a prior switch
-  dismissHint();
-  messages.value = [];
   const rec = loadLedger().colonies.find((c) => c.slotKey === slotKey);
   const savedAt = rec?.savedAt ?? rec?.foundedAt ?? Date.now();
   const steps = catchupSteps(Date.now() - savedAt);
   // credit any inter-planet shipments that have ARRIVED at this world, then drop them
   // from the queue — synchronously, before the async switch (exactly-once, ordered by id).
   const matured = maturedShipments(slotKey, Date.now());
-  bridge.switchColony(target, steps, settings.value.directorEnabled, matured.map((s) => s.manifest)); // credit + catch-up + resume
-  // Drop the credited shipments only AFTER the credit is durable: persist the credited
-  // (+caught-up) target first, then remove the queue rows. A tab-close before this can't lose
-  // the credit — the shipment stays queued and simply re-credits on the next switch (its credit
-  // was lost too). Safe: no mass lost, no double-credit.
-  if (matured.length) {
-    void bridge.save().then((s) => { persist(slotKey, s); removeShipments(matured.map((m) => m.id)); });
+  // Clear only the switch scratch before the RPC; the active slot, ledger, council,
+  // history, and visible log remain the old colony until the worker acknowledges.
+  awayDigest.value = null;
+  pendingCatchup = null;
+  try {
+    const arrived = await switchingBridge.switchColony(target, steps, settings.value.directorEnabled, matured.map((s) => s.manifest));
+    if (bridge !== switchingBridge) throw new Error("simulation session changed during colony switch");
+
+    // COMMIT: the worker has loaded/caught-up the target and delivered its snapshot.
+    // Only now may persistence identity and run-scoped observers move to that world.
+    setActiveSlot(slotKey);
+    narrationEpoch++;
+    liveNarrationInFlight = false;
+    narrationWatermarkT = -Infinity;
+    council?.reset(); sentinel?.reset(); director?.reset();
+    lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
+    dismissHint();
+    messages.value = [];
+
+    // Drop credited shipments only AFTER the credited target is durable. If this
+    // save fails the queue remains, favoring recoverability over silent mass loss.
+    if (matured.length) {
+      pendingCreditedShipments = { slotKey, ids: matured.map((m) => m.id) };
+      try {
+        const credited = await switchingBridge.save();
+        await persist(slotKey, credited);
+        finishCreditedShipments(slotKey);
+      } catch (err) {
+        // The colony switch itself is committed. Keep the queue rows so a failed
+        // durability step cannot silently destroy cargo, and surface the degraded save.
+        console.error("[vivarium] credited shipment save failed:", err);
+        simError.value = "The colony arrived, but its credited shipments could not be saved yet. Keep this tab open for autosave.";
+      }
+    }
+    lastRealEventT = arrived.t;
+    history = resetHistory();
+    startScreen.value = false;
+    greetAfter(BOOT_LINE_MS, target.state.difficulty);
+    curtainTimer = setTimeout(() => { curtain.value = false; }, 450);
+    return true;
+  } catch (err) {
+    pendingCatchup = null;
+    curtain.value = false;
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error("[vivarium] colony switch failed:", err);
+    if (!simError.value) simError.value = `That colony could not be opened (${detail}). The current world is unchanged.`;
+    return false;
+  } finally {
+    switching = false;
   }
-  lastRealEventT = target.state.t;
-  history = resetHistory();
-  startScreen.value = false;
-  greetAfter(BOOT_LINE_MS, target.state.difficulty);
 }
 
 /** build the "while you were away" digest from the catch-up's before/after snapshots
@@ -414,16 +483,46 @@ function routeEvent(e: ColonyEvent): void {
     if (u) pushLine(u.line, e.sol, e.tod, u.speaker, u.register, u.severity);
     return;
   }
-  const cand = council.shouldSpeak(e, snapshot.value, e.t);
+  // Preserve single-flight without muting emergency overrides: while a live call
+  // is pending, the normal cooldown reservation gates routine events and Council
+  // may still speak a severity-4 line immediately from its scripted bank.
+  if (liveNarrationInFlight) {
+    const urgent = council.observe(e, snapshot.value, e.t);
+    if (urgent) {
+      narrationWatermarkT = Math.max(narrationWatermarkT, e.t);
+      pushLine(urgent.line, e.sol, e.tod, urgent.speaker, urgent.register, urgent.severity);
+    }
+    return;
+  }
+  const eventSnapshot = snapshot.value;
+  const cand = council.shouldSpeak(e, eventSnapshot, e.t);
   if (!cand) return;
-  void narrateLive(e, snapshot.value, cand.persona).then((live) => {
-    council!.commit(cand, e, e.t);
-    pushLine(live ?? cand.line, e.sol, e.tod, cand.speaker, cand.register, cand.severity);
-  });
+  // Reserve cooldowns synchronously, before fetch. Parallel events can no longer
+  // all pass shouldSpeak while the first request is in flight.
+  council.commit(cand, e, e.t);
+  liveNarrationInFlight = true;
+  narrationWatermarkT = Math.max(narrationWatermarkT, e.t);
+  const epoch = narrationEpoch;
+  const owner = council;
+  void narrateLive(e, eventSnapshot, cand.persona)
+    .then((live) => {
+      if (epoch !== narrationEpoch || council !== owner || e.t < narrationWatermarkT || !settings.value.narratorLive) return;
+      pushLine(live ?? cand.line, e.sol, e.tod, cand.speaker, cand.register, cand.severity);
+    })
+    .catch(() => {
+      if (epoch !== narrationEpoch || council !== owner || e.t < narrationWatermarkT || !settings.value.narratorLive) return;
+      pushLine(cand.line, e.sol, e.tod, cand.speaker, cand.register, cand.severity);
+    })
+    .finally(() => {
+      if (epoch === narrationEpoch && council === owner) liveNarrationInFlight = false;
+    });
 }
 
 /** wire the store to the live bridge + renderer (called once from App) */
 export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "solo"): void {
+  narrationEpoch++;
+  liveNarrationInFlight = false;
+  narrationWatermarkT = -Infinity;
   bridge = b;
   renderer = r;
   mode.value = m;
@@ -448,9 +547,9 @@ export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "sol
   b.onEvent((e) => audio.onEvent(e));
   b.onSnapshot((s) => audio.onSnapshot(s));
 
-  // the "while you were away" digest (parallel-colonies): a switchColony's catch-up
-  // posts {catchupReport} then {snapshot}. Stash the report here; the post-catch-up
-  // snapshot lands next, and the onSnapshot handler below builds the digest off it.
+  // the "while you were away" digest (parallel-colonies): BridgeCore delivers a
+  // switch ack's catch-up report immediately before its matching snapshot callback.
+  // Stash the report here; onSnapshot below builds the digest from that same ack.
   // The events ride this stream ONLY — they never reach the council/narrator path.
   b.onCatchupReport((before, events) => { pendingCatchup = { before, events }; });
 
@@ -606,10 +705,10 @@ export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "sol
   // safely shrink — buildings could fall outside the new bounds). A save from a
   // SMALLER grid is fine: Colony.load re-centers it into the current grid.
   const bootT0 = Date.now();
-  void loadBest(activeSlot).then((save) => {
+  void loadBest(activeSlot).then(async (save) => {
     const usable = save && !save.state.outcome && save.state.N <= GRID_N;
     if (usable) {
-      b.load(save);
+      await b.load(save);
       // the save carries its own directorControlled flag — re-assert this
       // browser's setting over it (the settings watch only fires on *changes*)
       b.setDirector(settings.value.directorEnabled);
@@ -617,8 +716,15 @@ export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "sol
       history = loadHistory(); // a resumed run keeps its curves
       return save.state.difficulty; // greet in the SAVE's register, not the fresh seed's
     }
-    if (save) { clearLocal(activeSlot); history = resetHistory(); void b.save().then((s) => persist(activeSlot, s)); } // incompatible/finished — start fresh, overwrite everywhere
+    if (save) {
+      clearLocal(activeSlot);
+      history = resetHistory();
+      void b.save().then((s) => persist(activeSlot, s)).catch((err) => console.error("[vivarium] replacement save failed:", err));
+    } // incompatible/finished — start fresh, overwrite everywhere
     return undefined; // fresh seed — the snapshot carries the run's difficulty
+  }).catch((err) => {
+    console.error("[vivarium] saved colony load failed:", err);
+    return undefined;
   }).then((resumedDiff) => {
     // A fresh game waits on the start screen: the worker's tick is gated until the
     // player picks a difficulty and presses Begin, and the greeting moves into the
@@ -661,14 +767,28 @@ export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "sol
     // has already archived the leaving world LIVE (outcome cleared) to its slot, and
     // an autosave of the paused expansion-outcome state would clobber that archive.
     // (victory/defeat still autosave so their boot-discard keeps working.)
-    if (startScreen.value || launching || snapshot.value?.outcome === "expansion") return;
-    void b.save().then((s) => { persist(activeSlot, s); refreshLedgerRow(s); }); // keep the Colonies map + savedAt current
+    if (startScreen.value || launching || switching || snapshot.value?.outcome === "expansion") return;
+    // Capture identity at request time: a switch must not make an older save
+    // resolve into the newly-active slot.
+    const saveSlot = activeSlot;
+    void b.save()
+      .then(async (s) => {
+        await persist(saveSlot, s);
+        finishCreditedShipments(saveSlot);
+        refreshLedgerRow(s, saveSlot);
+      })
+      .catch((err) => { console.error("[vivarium] autosave failed:", err); }); // keep the Colonies map + savedAt current
     saveHistory(history); // the run telemetry rides the same tick
   }, AUTOSAVE_MS);
 }
 
 /** tear down the store's timers + watchers (called from App on unmount) */
 export function disposeColony(): void {
+  switchIntent++;
+  narrationEpoch++;
+  liveNarrationInFlight = false;
+  narrationWatermarkT = -Infinity;
+  pendingCreditedShipments = null;
   if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
   if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
   if (hintGapTimer) { clearTimeout(hintGapTimer); hintGapTimer = null; }
@@ -681,7 +801,7 @@ export function disposeColony(): void {
 
 // ---- tool selection (mirrors prototype app.jsx) ------------------------------
 function pick(defId: string): void {
-  if (snapshot.value?.possessed != null) return; // piloting locks construction
+  if (!capabilities.value.canBuild || snapshot.value?.possessed != null) return; // piloting/guest locks construction
   audio.uiTick();
   if (tool.value === defId && !demolish.value) { clearTool(); return; }
   tool.value = defId;
@@ -697,7 +817,7 @@ function rotate(): void { audio.uiTick(); renderer?.rotate(); }
 /** Del — remove the currently-selected building */
 function removeSelected(): void { renderer?.removeSelected(); }
 function toggleDemolish(): void {
-  if (snapshot.value?.possessed != null) return; // piloting locks construction
+  if (!capabilities.value.canBuild || snapshot.value?.possessed != null) return; // piloting/guest locks construction
   audio.uiTick();
   const v = !demolish.value;
   demolish.value = v;
@@ -713,13 +833,17 @@ function clearTool(): void {
 
 // ---- controls ----------------------------------------------------------------
 const controls = {
-  togglePause(): void { if (bridge && snapshot.value) bridge.setPaused(!snapshot.value.paused); },
-  setSpeed(n: number): void { bridge?.setPaused(false); bridge?.setSpeed(n); },
-  storm(): void { bridge?.forceStorm(); },
+  setPaused(value: boolean): void {
+    if (capabilities.value.canManageSimulation && bridge) bridge.setPaused(value);
+  },
+  togglePause(): void { if (capabilities.value.canManageSimulation && bridge && snapshot.value) bridge.setPaused(!snapshot.value.paused); },
+  setSpeed(n: number): void { if (capabilities.value.canManageSimulation) { bridge?.setPaused(false); bridge?.setSpeed(n); } },
+  storm(): void { if (capabilities.value.canManageSimulation) bridge?.forceStorm(); },
   /** F — the commander chain: unpossessed → possess the LEADER (lowest living
    *  colonist id, ui/lead.ts); piloting the leader beside a functional rover →
    *  board it; otherwise (driving, or no rover in reach) → release. */
   possessToggle(): void {
+    if (!capabilities.value.canPilot) return;
     const s = snapshot.value;
     if (!bridge || !s) return;
     if (s.possessed == null) {
@@ -740,13 +864,13 @@ const controls = {
   /** P — pick up from a deposit / drop at the depot */
   interact(): void { bridge?.interact(); },
   /** accept/decline a landed alien trade offer */
-  respondTrade(accept: boolean): void { bridge?.respondTrade(accept); },
+  respondTrade(accept: boolean): void { if (capabilities.value.canRespondTrade) bridge?.respondTrade(accept); },
   /** the fresh-game start screen committed a difficulty: lift the worker's start
    *  gate on the chosen profile, drop the screen, and greet in that register
    *  (a resumed save greets on load instead — see initColony). Also clears any
    *  prior-run agent state so "play again" (EndScreen → replay) lands clean. */
   start(difficulty: Difficulty): void {
-    if (!bridge) return;
+    if (!bridge || switching || !capabilities.value.canManageSimulation) return;
     setActiveSlot("default"); // a fresh game lives in the origin slot, not the last world's
     bridge.start(difficulty); // host applies reset(difficulty) and begins ticking
     updateSettings({ nextDifficulty: difficulty }); // the picked difficulty becomes the standing default
@@ -758,6 +882,7 @@ const controls = {
     greetAfter(BOOT_LINE_MS, difficulty);
   },
   reset(): void {
+    if (switching || !capabilities.value.canManageSimulation) return;
     setActiveSlot("default"); // an in-game restart returns to the origin slot
     bridge?.reset(settings.value.nextDifficulty); // the chosen difficulty starts here
     tearDownRun();
@@ -769,6 +894,7 @@ const controls = {
    *  rather than restarting immediately. The worker keeps its (finished, frozen)
    *  colony until Begin calls start(), which reseeds it on the chosen profile. */
   replay(): void {
+    if (switching) return;
     messages.value = []; // clear the finished run's log so the screen is quiet behind the curtain
     startScreen.value = true;
   },
@@ -776,11 +902,19 @@ const controls = {
    *  in the Colonies ledger, then end the run as "expansion" (the Expansion
    *  EndScreen offers the next world). Captures the leaving identity for foundNext. */
   async launch(): Promise<void> {
-    if (!bridge) return;
+    if (!bridge || switching || !capabilities.value.canManageColonies) return;
     const s = snapshot.value;
     if (!s || s.outcome) return;
     launching = true; // gate autosave across the whole launch → handoff window
-    const save = await bridge.save();
+    let save: SaveData;
+    try {
+      save = await bridge.save();
+    } catch (err) {
+      launching = false;
+      console.error("[vivarium] launch save failed:", err);
+      simError.value = `Launch aborted because the colony could not be saved (${err instanceof Error ? err.message : String(err)}).`;
+      return;
+    }
     const archive = { ...save, state: { ...save.state, outcome: null, outcomeReason: "" } };
     // log the ledger row FIRST (synchronous), so a tab-close during the remote save
     // round-trip can't orphan the world (local archive + ledger land in one tick).
@@ -791,6 +925,7 @@ const controls = {
       foundedAt: Date.now(), savedAt: Date.now(),
     });
     void persist(activeSlot, archive); // archive the LIVE copy (outcome cleared) so revisit resumes it
+    finishCreditedShipments(activeSlot); // saveLocal ran synchronously inside persist
     // the legacy that travels: the two lowest-id living colonists (commander +
     // next-senior) by literal id, and one alien tech if any was acquired.
     const livingIds = (save.state.colonists ?? []).map((c) => c.id).sort((a, b) => a - b);
@@ -802,7 +937,7 @@ const controls = {
    *  point persistence at its new slot, and found the run there (carrying difficulty).
    *  Mirrors start() but for a planet-hop. */
   foundNext(world: World): void {
-    if (!bridge || !pendingLaunch) return;
+    if (!bridge || switching || !pendingLaunch || !capabilities.value.canManageColonies) return;
     const difficulty = pendingLaunch.difficulty;
     const legacy = pendingLaunch.legacy;
     // derive the next world's seed; if a settled colony already occupies that slot
@@ -823,7 +958,7 @@ const controls = {
       foundedAt: Date.now(), savedAt: Date.now(),
       legacy,
     });
-    void bridge.save().then((sv) => persist(slot, sv));
+    void bridge.save().then((sv) => persist(slot, sv)).catch((err) => console.error("[vivarium] founding save failed:", err));
     pendingLaunch = null;
     startScreen.value = false;
     greetAfter(BOOT_LINE_MS, difficulty);
@@ -833,33 +968,60 @@ const controls = {
    *  NOT a fresh start — it must never clear the slot it just loaded. */
   /** revisit a settled world from the StartScreen — load + catch up + resume live. */
   async revisit(slotKey: string): Promise<void> {
-    if (!bridge) return;
-    const save = await loadBest(slotKey);
-    if (!save) return; // the slot was abandoned/cleared — ignore the click
-    goTo(slotKey, save);
+    if (!bridge || switching || !capabilities.value.canManageColonies) return;
+    const intent = ++switchIntent;
+    try {
+      const save = await loadBest(slotKey);
+      if (!save || intent !== switchIntent) return; // gone, or a newer destination superseded this click
+      await goTo(slotKey, save);
+    } catch (err) {
+      console.error("[vivarium] revisit failed:", err);
+      simError.value = `That colony could not be opened (${err instanceof Error ? err.message : String(err)}).`;
+    }
   },
   /** switch the live colony to another settled world (the in-game Colonies map): save the
    *  LEAVING colony first (no loss) + refresh its ledger row, then load + catch up + resume
    *  the target. */
   async switchTo(slotKey: string): Promise<void> {
-    if (!bridge || slotKey === activeSlot) return; // already here
-    const leaving = await bridge.save();
-    await persist(activeSlot, leaving);
-    refreshLedgerRow(leaving);
-    const save = await loadBest(slotKey);
-    if (!save) return; // target slot gone
-    goTo(slotKey, save);
+    if (!bridge || !capabilities.value.canManageColonies || slotKey === activeSlot || switching) return; // already here
+    const intent = ++switchIntent;
+    try {
+      const leaving = await bridge.save();
+      if (intent !== switchIntent) return;
+      await persist(activeSlot, leaving);
+      finishCreditedShipments(activeSlot);
+      refreshLedgerRow(leaving);
+      const save = await loadBest(slotKey);
+      if (!save || intent !== switchIntent) return; // target gone, or a newer click won
+      await goTo(slotKey, save);
+    } catch (err) {
+      console.error("[vivarium] pre-switch save failed:", err);
+      simError.value = `Could not leave this colony safely (${err instanceof Error ? err.message : String(err)}). The current world is unchanged.`;
+    }
   },
   /** send an inter-planet shipment from the LIVE colony to another settled world: debit
    *  the sender in its tick, then queue it on the ledger for the destination to credit
    *  on arrival (after transitSols of transit). */
   async dispatchShipment(toSlot: string, manifest: ShipmentManifest, transitSols = 1): Promise<void> {
-    if (!bridge || toSlot === activeSlot) return;
-    bridge.dispatchShipment(manifest);   // debit the live colony in its tick (deterministic)
-    const debited = await bridge.save(); // capture the DEBITED state and make it durable BEFORE the shipment
-    await persist(activeSlot, debited);  // is queued — so a tab-close can't keep the shipment without the
-    refreshLedgerRow(debited);           // matching debit (no mass duplication). The queue row lands last.
-    addShipment({ fromSlot: activeSlot, toSlot, manifest, dispatchedAt: Date.now(), transitSols });
+    if (!bridge || switching || !capabilities.value.canManageColonies || toSlot === activeSlot) return;
+    if (!validShipmentManifest(manifest) || !Number.isFinite(transitSols) || transitSols <= 0) {
+      simError.value = "Shipment quantities must be finite and non-negative; transit time must be positive.";
+      return;
+    }
+    try {
+      // The engine clamps stale/over-large requests and returns what ACTUALLY left.
+      // Only that acknowledged manifest may enter the cross-colony ledger.
+      const actual = await bridge.dispatchShipment(manifest);
+      if (!shipmentHasCargo(actual)) return;
+      const debited = await bridge.save(); // capture the DEBITED state and make it durable BEFORE the shipment
+      await persist(activeSlot, debited);  // is queued — so a tab-close can't keep the shipment without the
+      finishCreditedShipments(activeSlot);
+      refreshLedgerRow(debited);           // matching debit (no mass duplication). The queue row lands last.
+      addShipment({ fromSlot: activeSlot, toSlot, manifest: actual, dispatchedAt: Date.now(), transitSols });
+    } catch (err) {
+      console.error("[vivarium] shipment failed:", err);
+      simError.value = `Shipment failed (${err instanceof Error ? err.message : String(err)}). Nothing was queued.`;
+    }
   },
   save(): Promise<unknown> | undefined { return bridge?.save(); },
 };
@@ -957,6 +1119,6 @@ export function useColony() {
     snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
     runHistory, runEpitaph, directorDossier, colonies, shipments, activeSlot: activeSlotRef, controls,
-    mode, roster, netStatus, simError, dismissSimError,
+    mode, capabilities, roster, netStatus, simError, dismissSimError,
   };
 }

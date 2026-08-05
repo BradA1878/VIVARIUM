@@ -130,9 +130,16 @@ function toggle(): void {
 </script>
 
 <template>
-  <button class="colonies-toggle" :class="{ on: open }" @click="toggle">&#8862; COLONIES</button>
+  <button
+    class="colonies-toggle"
+    :class="{ on: open }"
+    type="button"
+    aria-controls="colonies-panel"
+    :aria-expanded="open"
+    @click="toggle"
+  >&#8862; COLONIES</button>
 
-  <div v-if="open" class="colonies-panel">
+  <div v-if="open" id="colonies-panel" class="colonies-panel">
     <div class="colonies-title">COLONIES</div>
 
     <div
@@ -144,6 +151,7 @@ function toggle(): void {
       <div class="cr-head">
         <button
           class="cr-name"
+          type="button"
           :disabled="c.slotKey === activeSlot"
           :title="c.slotKey === activeSlot ? 'live colony' : 'switch to this colony'"
           @click="go(c.slotKey)"
@@ -155,40 +163,43 @@ function toggle(): void {
           v-if="c.slotKey !== activeSlot"
           class="cr-ship"
           :class="{ on: composing === c.slotKey }"
+          type="button"
+          :aria-expanded="composing === c.slotKey"
+          :aria-controls="`shipment-${c.slotKey}`"
           title="send a shipment to this colony"
           @click="openComposer(c.slotKey)"
         >&#10547; ship</button>
       </div>
 
-      <div v-if="composing === c.slotKey" class="composer">
+      <div v-if="composing === c.slotKey" :id="`shipment-${c.slotKey}`" class="composer">
         <div class="comp-row">
           <span class="comp-lbl">materials</span>
           <div class="comp-step">
-            <button class="step-btn" :disabled="draft.materials <= 0" @click="step('materials', -1)">&minus;</button>
-            <input class="step-in" type="number" min="0" :max="haveMaterials" :value="draft.materials" @input="onInput('materials', $event)" />
-            <button class="step-btn" :disabled="draft.materials >= haveMaterials" @click="step('materials', 1)">+</button>
+            <button class="step-btn" type="button" :disabled="draft.materials <= 0" aria-label="Decrease materials" @click="step('materials', -1)">&minus;</button>
+            <input class="step-in" type="number" min="0" :max="haveMaterials" :value="draft.materials" aria-label="Materials to send" @input="onInput('materials', $event)" />
+            <button class="step-btn" type="button" :disabled="draft.materials >= haveMaterials" aria-label="Increase materials" @click="step('materials', 1)">+</button>
           </div>
           <span class="comp-cap">/ {{ haveMaterials }}</span>
         </div>
         <div class="comp-row">
           <span class="comp-lbl">water</span>
           <div class="comp-step">
-            <button class="step-btn" :disabled="draft.water <= 0" @click="step('water', -1)">&minus;</button>
-            <input class="step-in" type="number" min="0" :max="haveWater" :value="draft.water" @input="onInput('water', $event)" />
-            <button class="step-btn" :disabled="draft.water >= haveWater" @click="step('water', 1)">+</button>
+            <button class="step-btn" type="button" :disabled="draft.water <= 0" aria-label="Decrease water" @click="step('water', -1)">&minus;</button>
+            <input class="step-in" type="number" min="0" :max="haveWater" :value="draft.water" aria-label="Water to send" @input="onInput('water', $event)" />
+            <button class="step-btn" type="button" :disabled="draft.water >= haveWater" aria-label="Increase water" @click="step('water', 1)">+</button>
           </div>
           <span class="comp-cap">/ {{ haveWater }}</span>
         </div>
         <div class="comp-row">
           <span class="comp-lbl">crew</span>
           <div class="comp-step">
-            <button class="step-btn" :disabled="draft.crew <= 0" @click="step('crew', -1)">&minus;</button>
-            <input class="step-in" type="number" min="0" :max="haveCrew" :value="draft.crew" @input="onInput('crew', $event)" />
-            <button class="step-btn" :disabled="draft.crew >= haveCrew" @click="step('crew', 1)">+</button>
+            <button class="step-btn" type="button" :disabled="draft.crew <= 0" aria-label="Decrease crew" @click="step('crew', -1)">&minus;</button>
+            <input class="step-in" type="number" min="0" :max="haveCrew" :value="draft.crew" aria-label="Crew to send" @input="onInput('crew', $event)" />
+            <button class="step-btn" type="button" :disabled="draft.crew >= haveCrew" aria-label="Increase crew" @click="step('crew', 1)">+</button>
           </div>
           <span class="comp-cap">/ {{ haveCrew }}</span>
         </div>
-        <button class="comp-send" :disabled="!canSend" @click="send(c.slotKey)">&#10547; SEND</button>
+        <button class="comp-send" type="button" :disabled="!canSend" @click="send(c.slotKey)">&#10547; SEND</button>
       </div>
     </div>
 

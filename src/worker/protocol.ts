@@ -1,9 +1,9 @@
 /* ============================================================================
    Worker protocol — the typed message contract across the hard wall (doc §0).
    Main thread sends Commands; the worker (which owns the engine) sends Outbound
-   messages: throttled snapshots, the event stream, and save responses.
+   messages: atomic state/event frames and correlated operation responses.
    ============================================================================ */
-import type { ColonyEvent, Difficulty, HazardKind, LegacyManifest, ShipmentManifest, Snapshot, World } from "@shared/types";
+import { RESOURCES, type ColonyEvent, type Difficulty, type HazardKind, type LegacyManifest, type ShipmentManifest, type Snapshot, type World } from "@shared/types";
 import type { SaveData } from "@/engine";
 
 // ---- main thread → worker ----------------------------------------------------
@@ -30,7 +30,7 @@ export type Command =
   // run; omitting any of the three keeps the current colony's value (the engine
   // applies them deterministically — the main thread chooses them, never the tick).
   | { type: "reset"; difficulty?: Difficulty; seed?: number; world?: World; legacy?: LegacyManifest }
-  | { type: "load"; data: SaveData }
+  | { type: "load"; reqId: number; data: SaveData }
   | { type: "save"; reqId: number }
   | { type: "start"; difficulty?: Difficulty; seed?: number; world?: World; legacy?: LegacyManifest }
   // launch the PTP: a deliberate player act ending the run as "expansion" (the
@@ -41,10 +41,10 @@ export type Command =
   // `steps` catch-up sub-steps (deterministic off-screen advance — count computed
   // main-side), then resume it live. `director` is the player's setting to restore after
   // the catch-up (which always runs the engine scheduler).
-  | { type: "switchColony"; save: SaveData; steps: number; director: boolean; credits: ShipmentManifest[] }
+  | { type: "switchColony"; reqId: number; save: SaveData; steps: number; director: boolean; credits: ShipmentManifest[] }
   // DEBIT an inter-planet shipment from the live colony (the store queues it for the
   // destination). Deterministic, mirrors respondTrade's pool debit.
-  | { type: "dispatchShipment"; manifest: ShipmentManifest };
+  | { type: "dispatchShipment"; reqId: number; manifest: ShipmentManifest };
 
 /** where a surfaced failure came from: a thrown command, the step loop, a save
  *  that wouldn't load, the Worker itself dying, or (guest-side) the co-op
@@ -54,9 +54,19 @@ export type SimErrorContext = "command" | "step" | "load" | "worker" | "net-lost
 // ---- worker → main thread ----------------------------------------------------
 export type Outbound =
   | { type: "ready" }
+  // A tick's post-state and the events it produced travel as one message. BridgeCore
+  // installs the snapshot before fanning out any event, so every observer sees the
+  // state that actually caused that event (including across the co-op transport).
+  | { type: "frame"; snapshot: Snapshot; events: ColonyEvent[] }
   | { type: "snapshot"; snapshot: Snapshot }
   | { type: "events"; events: ColonyEvent[] }
   | { type: "saved"; reqId: number; data: SaveData }
+  | { type: "loaded"; reqId: number; ok: true; snapshot: Snapshot }
+  | { type: "loaded"; reqId: number; ok: false; snapshot: Snapshot; detail: string }
+  | { type: "switched"; reqId: number; ok: true; snapshot: Snapshot; before: Snapshot; events: ColonyEvent[] }
+  | { type: "switched"; reqId: number; ok: false; snapshot: Snapshot; detail: string }
+  | { type: "shipmentDispatched"; reqId: number; ok: true; snapshot: Snapshot; manifest: ShipmentManifest }
+  | { type: "shipmentDispatched"; reqId: number; ok: false; snapshot: Snapshot; detail: string }
   // a failure the player must SEE instead of a silent freeze: the shell/host
   // catch, post this, and keep serving (doc: the boundary never wedges quietly)
   | { type: "error"; context: SimErrorContext; detail: string }
@@ -73,3 +83,28 @@ export const SNAPSHOT_INTERVAL = 0.08;
 export const LOOP_MS = 1000 / 30;
 /** clamp a single dt against tab-switch / throttle jumps */
 export const MAX_DT = 0.1;
+
+/** Runtime validation at the worker wall. UI types do not make peer messages,
+ *  stale persisted rows, or dev-console calls trustworthy. Crew is discrete;
+ *  every quantity must be finite and non-negative. */
+export function validShipmentManifest(value: unknown): value is ShipmentManifest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const m = value as ShipmentManifest;
+  if (m.materials !== undefined && (!Number.isFinite(m.materials) || m.materials < 0)) return false;
+  if (m.crew !== undefined && (!Number.isSafeInteger(m.crew) || m.crew < 0)) return false;
+  if (m.resources !== undefined) {
+    if (!m.resources || typeof m.resources !== "object" || Array.isArray(m.resources)) return false;
+    for (const [resource, amount] of Object.entries(m.resources)) {
+      if (!RESOURCES.includes(resource as (typeof RESOURCES)[number])) return false;
+      if (!Number.isFinite(amount) || (amount as number) < 0) return false;
+    }
+  }
+  return true;
+}
+
+/** Empty/zero manifests are harmless but should never become ledger rows. */
+export function shipmentHasCargo(m: ShipmentManifest): boolean {
+  return (m.materials ?? 0) > 0
+    || (m.crew ?? 0) > 0
+    || Object.values(m.resources ?? {}).some((amount) => (amount ?? 0) > 0);
+}
