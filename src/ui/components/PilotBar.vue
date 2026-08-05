@@ -19,7 +19,7 @@ import { PICKUP_RADIUS, DEPOT_RADIUS, CARRY_CAP, ROVER_CARGO_CAP } from "@/engin
 import { CARGO_KINDS } from "@/engine/gather";
 import { leaderId, boardableRover } from "../lead";
 
-const { snapshot, controls, capabilities } = useColony();
+const { snapshot, controls, capabilities, mode, netStatus } = useColony();
 const Q = Math.SQRT1_2;
 
 const pilot = computed(() => {
@@ -131,13 +131,18 @@ onUnmounted(() => {
 
 <template>
   <button
-    v-if="capabilities.canPilot && snapshot && !pilot && !rover && snapshot.colonists.length"
+    v-if="mode !== 'guest' && capabilities.canPilot && snapshot && !pilot && !rover && snapshot.colonists.length"
     class="touch-enter"
     type="button"
     @click="controls.possessToggle()"
   >
     ▶ PILOT COMMANDER
   </button>
+  <!-- a guest's suit is relay-assigned, so possessToggle is meaningless — an
+       unassigned guest spectates until the next arrival re-embodies them -->
+  <div v-if="mode === 'guest' && netStatus === 'connected' && !pilot && !rover" class="pilot spectate">
+    <span class="pilot-tag">◇ NO SUIT ASSIGNED — you take the next arrival</span>
+  </div>
   <div v-if="pilot" class="pilot">
     <span class="pilot-tag">&#9654; PILOTING — <b v-if="isCmdr" class="cmdr">CMDR&nbsp;</b>{{ pilot.name.toUpperCase() }} · {{ pilot.role.toUpperCase() }}</span>
     <span class="pilot-sep" />
@@ -219,6 +224,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.pilot.spectate { border-color: rgba(127, 212, 232, 0.35); color: var(--dim); }
 .pilot {
   pointer-events: auto;
   display: inline-flex;

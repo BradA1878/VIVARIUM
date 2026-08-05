@@ -379,6 +379,27 @@
   .ticker-chip { margin-left: 7px; font-size: 8.5px; }
   .log-panel { left: 8px; width: calc(100vw - 16px); }
 }
+/* ---------- phone astronaut (tier 2): the cockpit ----------
+   Active only for a guest below the 560×440 floor (App.vue's hud--phone).
+   Everything but the vitals strip, ticker, log, and PilotBar disappears; the
+   touch targets grow to thumb size. Desktop/tablet and solo are untouched. */
+.hud--phone .topbar,
+.hud--phone .left-col,
+.hud--phone .right-col,
+.hud--phone .inspect { display: none; }
+.hud--phone .phone-vitals { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; }
+.hud--phone .bottom-center {
+  left: 8px;
+  right: 8px;
+  bottom: calc(var(--ticker-h) + 8px);
+  width: auto;
+  max-width: none;
+  transform: none;
+}
+.hud--phone .touch-move { min-width: 52px; min-height: 52px; font-size: 16px; }
+.hud--phone .touch-action,
+.hud--phone .touch-release { min-height: 48px; }
+
 /* short screens: tighten the left rail's vertical rhythm so the clock +
    resources + crew + objective stack fits above the bottom cluster */
 @media (max-height: 820px) {

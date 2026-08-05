@@ -32,6 +32,8 @@ import HintToast from "./components/HintToast.vue";
 import SettingsModal from "./components/SettingsModal.vue";
 import HelpModal from "./components/HelpModal.vue";
 import ViewportGate from "./components/ViewportGate.vue";
+import VitalsStrip from "./components/VitalsStrip.vue";
+import { belowFloor } from "./viewport";
 import { helpOpen } from "./components/help";
 import { blocksGameplayKeys, isNativeActivationTarget } from "./components/keyboard";
 import { SimBridge, type BridgeCore } from "@/worker/bridge";
@@ -55,7 +57,13 @@ let renderer: ThreeRenderer | null = null;
 const {
   snapshot, tool, demolish, hover, selected, clearTool, rotate, removeSelected,
   controls, logOpen, toggleLog, startScreen, capabilities, simError, dismissSimError,
+  mode,
 } = useColony();
+
+/** phone astronaut mode (tier 2): a guest below the 560×440 floor sheds the
+ *  HUD to the cockpit (VitalsStrip + PilotBar + ticker). Rotating above the
+ *  floor simply deactivates it — both inputs are live refs. */
+const phoneGuest = computed(() => belowFloor.value && mode.value === "guest");
 function reloadApp(): void { window.location.reload(); }
 const { settings, settingsOpen, updateSettings } = useSettings();
 const storming = computed(() => snapshot.value?.weather === "dust");
@@ -299,7 +307,8 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="hud" v-if="ready && !startScreen">
+    <div class="hud" :class="{ 'hud--phone': phoneGuest }" v-if="ready && !startScreen">
+      <VitalsStrip v-if="phoneGuest" class="phone-vitals" />
       <TopBar />
 
       <div class="left-col">
@@ -332,7 +341,8 @@ onUnmounted(() => {
 
     </div>
 
-    <div v-if="!booting && !startScreen" class="hint-layer">
+    <!-- FirstHint/HintToast teach architect controls — suppressed in the phone cockpit -->
+    <div v-if="!booting && !startScreen && !phoneGuest" class="hint-layer">
       <FirstHint />
       <HintToast />
     </div>
