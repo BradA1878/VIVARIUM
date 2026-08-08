@@ -374,6 +374,12 @@ export class ThreeRenderer {
     this.scene.setView(this.camFocus, this.camView);
   }
 
+  /** HUD camera controls use the same CameraControls delta path as the wheel,
+   *  so follow profiles, clamping, and run resets cannot drift apart. */
+  zoomCamera(direction: "in" | "out"): void {
+    this.cameraControls.zoomStep(direction);
+  }
+
   /** DEV-only frame-pacing probe (window.__viv): start recording rendered-frame
    *  intervals. Pair with fpsProbeStop() after ~15s of play. */
   fpsProbeStart(): void {

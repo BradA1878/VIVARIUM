@@ -834,6 +834,8 @@ function clearTool(): void {
 
 // ---- controls ----------------------------------------------------------------
 const controls = {
+  /** Render-only camera action — never crosses the deterministic worker wall. */
+  zoomCamera(direction: "in" | "out"): void { renderer?.zoomCamera(direction); },
   setPaused(value: boolean): void {
     if (capabilities.value.canManageSimulation && bridge) bridge.setPaused(value);
   },

@@ -24,6 +24,17 @@ npx vitest run -t "brownout sheds the lowest"
 
 The fastest correctness loop is `npm run typecheck && npm test`.
 
+## Easter-egg release
+
+Production is built by the separate `BradA1878/bradanderson.org` repository.
+That repository records an exact game SHA in `VIVARIUM_COMMIT`; it does not pull
+a moving `main` branch during a deploy. Its scheduled release workflow polls
+this repository's public Actions state and advances the pin only when the
+current `main` commit has a completed, successful `ci.yml` push run. The pin
+commit then triggers Railway's parent-repository deployment. No cross-repository
+PAT is required. The parent workflow can also be started manually when an
+immediate sync is needed.
+
 ## Project layout
 
 ```

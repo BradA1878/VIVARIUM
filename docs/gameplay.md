@@ -281,6 +281,7 @@ problem.
 | **F** | Take command: possess the **commander** → board a nearby rover → release |
 | **WASD** / arrows | Drive the possessed colonist or rover (camera-aligned) |
 | **P** / **E** | Pick up at a deposit / drop at the depot (while piloting) |
+| Camera **+ / −** | Zoom the colony view in / out (wheel also zooms; left- or middle-drag pans) |
 | **L** | Pull up / close the council log |
 | **Space** | Pause / resume |
 | Top bar | Trigger a storm/hazard, pause, change speed; the gear opens settings |

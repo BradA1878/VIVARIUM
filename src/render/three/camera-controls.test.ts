@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CameraRig, wheelPixels } from "./camera-controls";
+import { CAMERA_BUTTON_ZOOM_DELTA, CameraRig, wheelPixels } from "./camera-controls";
 
 describe("camera controls", () => {
   test("normalizes wheel delta modes", () => {
@@ -18,6 +18,18 @@ describe("camera controls", () => {
 
     rig.zoomBy(10_000, 13);
     expect(rig.viewFor(13)).toBe(22);
+  });
+
+  test("explicit zoom steps use the wheel delta scale and remain reversible", () => {
+    const rig = new CameraRig(20);
+    rig.setContext("mars", null);
+
+    rig.zoomBy(-CAMERA_BUTTON_ZOOM_DELTA, 13);
+    const zoomedIn = rig.viewFor(13);
+    expect(zoomedIn).toBeLessThan(13);
+
+    rig.zoomBy(CAMERA_BUTTON_ZOOM_DELTA, 13);
+    expect(rig.viewFor(13)).toBeCloseTo(13);
   });
 
   test("manual pan remains relative to a moving follow anchor", () => {

@@ -35,6 +35,17 @@ function buildingCount(page: Page): Promise<number> {
   });
 }
 
+function cameraView(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    type DebugWindow = Window & {
+      __viv?: { renderer?: { scene?: { camera?: { top?: number } } } };
+    };
+    const view = (window as DebugWindow).__viv?.renderer?.scene?.camera?.top;
+    if (view == null) throw new Error("no debug camera is available");
+    return view;
+  });
+}
+
 /** Arm the Solar Array tool and two-step-tap it onto open ground. The colony
  *  layout rides the run's seed, so candidate spots are probed until the commit
  *  tap lands; the aim tap must never place anywhere (that failure means the
@@ -92,4 +103,29 @@ test("touch: with no tool armed, tapping a building selects it in one tap", asyn
   await page.touchscreen.tap(spot.x, spot.y); // the building we just placed
   // "SELECTED" discriminates the select branch from the sticky hover info line
   await expect(page.locator(".inspect")).toContainText(/selected solar array/i);
+});
+
+test("touch: explicit zoom controls stay visible, thumb-sized, and functional", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("mobile"), "touch interaction check");
+  await bootToGame(page);
+
+  const group = page.getByRole("group", { name: "Camera zoom controls" });
+  const zoomIn = page.getByRole("button", { name: "Zoom camera in" });
+  const zoomOut = page.getByRole("button", { name: "Zoom camera out" });
+  await expect(group).toBeVisible();
+  await expect(group).toBeInViewport();
+
+  for (const button of [zoomIn, zoomOut]) {
+    const box = await button.boundingBox();
+    if (!box) throw new Error("zoom button has no bounding box");
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+
+  const before = await cameraView(page);
+  await zoomIn.tap();
+  await expect.poll(() => cameraView(page)).toBeLessThan(before - 0.5);
+  const zoomedIn = await cameraView(page);
+  await zoomOut.tap();
+  await expect.poll(() => cameraView(page)).toBeGreaterThan(zoomedIn + 0.5);
 });

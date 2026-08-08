@@ -33,6 +33,7 @@ import SettingsModal from "./components/SettingsModal.vue";
 import HelpModal from "./components/HelpModal.vue";
 import ViewportGate from "./components/ViewportGate.vue";
 import VitalsStrip from "./components/VitalsStrip.vue";
+import CameraZoom from "./components/CameraZoom.vue";
 import { belowFloor } from "./viewport";
 import { helpOpen } from "./components/help";
 import { blocksGameplayKeys, isNativeActivationTarget } from "./components/keyboard";
@@ -310,6 +311,7 @@ onUnmounted(() => {
     <div class="hud" :class="{ 'hud--phone': phoneGuest }" v-if="ready && !startScreen">
       <VitalsStrip v-if="phoneGuest" class="phone-vitals" />
       <TopBar />
+      <CameraZoom />
 
       <div class="left-col">
         <div class="panel rail">

@@ -17,6 +17,10 @@ import * as THREE from "three";
 export const CAMERA_MIN_VIEW = 3;
 export const CAMERA_MAX_VIEW = 22;
 export const CAMERA_DRAG_THRESHOLD = 5;
+/** One explicit-button press is a reversible ~20% zoom step. Keeping it in the
+ *  same delta vocabulary as a wheel gesture means every input shares the rig's
+ *  active profile, min/max clamp, and reset lifecycle. */
+export const CAMERA_BUTTON_ZOOM_DELTA = 150;
 
 const WHEEL_ZOOM_RATE = 0.0015;
 
@@ -202,6 +206,16 @@ export class CameraControls {
     return this.rig.viewFor(baseView);
   }
 
+  /** Public zoom seam for non-canvas controls. Wheel and HUD buttons both end
+   *  here before CameraRig applies the active profile and view clamps. */
+  zoomBy(deltaPixels: number): void {
+    this.rig.zoomBy(deltaPixels, this.baseView);
+  }
+
+  zoomStep(direction: "in" | "out"): void {
+    this.zoomBy(direction === "in" ? -CAMERA_BUTTON_ZOOM_DELTA : CAMERA_BUTTON_ZOOM_DELTA);
+  }
+
   reset(): void {
     if (this.drag) this.finishDrag(this.drag.pointerId);
     this.rig.reset();
@@ -309,7 +323,7 @@ export class CameraControls {
     const delta = wheelPixels(e.deltaY, e.deltaMode, this.canvas.clientHeight || window.innerHeight);
     if (delta === 0) return;
     e.preventDefault();
-    this.rig.zoomBy(delta, this.baseView);
+    this.zoomBy(delta);
   }
 
   private onWindowBlur(): void {

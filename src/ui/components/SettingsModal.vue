@@ -107,7 +107,7 @@ const KEYS: [string, string][] = [
   ["F", "pilot / release the commander · board a nearby rover"],
   ["WASD / arrows", "walk while piloting (camera-aligned)"],
   ["P / E", "pick up at a deposit · unload at the depot"],
-  ["Mouse", "left / middle-drag to pan · wheel to zoom"],
+  ["View", "+ / − or mouse wheel to zoom · left / middle-drag to pan"],
   ["Space", "pause / resume"],
   ["R", "rotate the ghost or selected building"],
   ["Del / Backspace", "remove the selected building"],

@@ -164,6 +164,41 @@ test("pilot movement is blocked by Help and resumes from restored button focus",
   }).toBeGreaterThan(0.1);
 });
 
+test("visible camera zoom controls work from the keyboard and expose clear names", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "desktop keyboard interaction");
+  await reachStartScreen(page);
+  await page.getByRole("button", { name: "BEGIN" }).click();
+  await expect(page.locator(".topbar")).toBeVisible();
+
+  const closeGuide = page.getByRole("button", { name: /close field guide/i });
+  if (await closeGuide.isVisible()) await closeGuide.click();
+
+  const zoom = page.getByRole("group", { name: "Camera zoom controls" });
+  const zoomIn = page.getByRole("button", { name: "Zoom camera in" });
+  const zoomOut = page.getByRole("button", { name: "Zoom camera out" });
+  await expect(zoom).toBeVisible();
+  await expect(zoomIn).toHaveAttribute("title", "Zoom camera in");
+  await expect(zoomOut).toHaveAttribute("title", "Zoom camera out");
+
+  const before = await cameraPose(page);
+  await zoomIn.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await cameraPose(page)).view).toBeLessThan(before.view - 0.5);
+  const zoomedIn = await cameraPose(page);
+
+  await zoomOut.focus();
+  await page.keyboard.press("Space");
+  await expect.poll(async () => (await cameraPose(page)).view).toBeGreaterThan(zoomedIn.view + 0.5);
+  await expect(zoomOut).toBeFocused();
+
+  const results = await new AxeBuilder({ page })
+    .include(".camera-zoom")
+    .withTags(["wcag2a", "wcag2aa"])
+    .analyze();
+  const blocking = results.violations.filter((v) => v.impact === "critical" || v.impact === "serious");
+  expect(blocking, blocking.map((v) => `${v.id}: ${v.help}`).join("\n")).toEqual([]);
+});
+
 test("mouse drag and wheel control the camera while piloting without snapping back", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "desktop mouse interaction");
   await reachStartScreen(page);
