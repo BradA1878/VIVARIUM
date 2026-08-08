@@ -74,6 +74,11 @@ button:disabled { cursor: not-allowed; }
      zoom hijacking the two-step tap-to-place */
   touch-action: none;
 }
+@media (any-pointer: fine) {
+  .stage { cursor: grab; }
+  .stage.placement-active { cursor: crosshair; }
+  .stage.camera-dragging { cursor: grabbing; }
+}
 .vignette {
   position: absolute;
   inset: 0;

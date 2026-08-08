@@ -108,12 +108,16 @@ export class PlacementController {
   }
 
   // ---- tool state -----------------------------------------------------------
-  setTool(defId: string): void { this.tool = { kind: "place", defId }; this.ghostRot = 0; this.routeSource = null; this.setSelected(null); }
-  setDemolish(): void { this.tool = { kind: "demolish" }; this.routeSource = null; this.setSelected(null); }
-  setRoute(): void { this.tool = { kind: "route" }; this.routeSource = null; this.setSelected(null); }
-  clearTool(): void { this.tool = null; this.routeSource = null; this.setSelected(null); }
+  setTool(defId: string): void { this.tool = { kind: "place", defId }; this.ghostRot = 0; this.routeSource = null; this.setSelected(null); this.syncCursor(); }
+  setDemolish(): void { this.tool = { kind: "demolish" }; this.routeSource = null; this.setSelected(null); this.syncCursor(); }
+  setRoute(): void { this.tool = { kind: "route" }; this.routeSource = null; this.setSelected(null); this.syncCursor(); }
+  clearTool(): void { this.tool = null; this.routeSource = null; this.setSelected(null); this.syncCursor(); }
   onHover(cb: (info: HoverInfo | null) => void): void { this.hoverCb = cb; }
   onSelect(cb: (info: SelectInfo | null) => void): void { this.selectCb = cb; }
+
+  private syncCursor(): void {
+    this.canvas.classList.toggle("placement-active", this.tool !== null);
+  }
 
   /** R — rotate the ghost while placing, else the selected/hovered building */
   rotate(): void {
@@ -433,6 +437,7 @@ export class PlacementController {
   }
 
   dispose(): void {
+    this.canvas.classList.remove("placement-active");
     this.canvas.removeEventListener("pointermove", this.onMove);
     this.canvas.removeEventListener("pointerleave", this.onLeave);
     this.canvas.removeEventListener("click", this.onClick);

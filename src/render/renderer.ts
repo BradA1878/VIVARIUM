@@ -17,6 +17,7 @@ import { CELL, GridSpace } from "./three/coords";
 import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh, type KitEnv } from "./three/kit";
 import { PlacementController, type HoverInfo, type SelectInfo } from "./three/placement";
+import { CameraControls } from "./three/camera-controls";
 import { Atmosphere } from "./three/atmosphere";
 import { StormFx } from "./three/stormfx";
 import { HazardFx } from "./three/hazardfx";
@@ -136,6 +137,7 @@ export class ThreeRenderer {
   private env: KitEnv = { night: 0 };
   private bridge: BridgeCore;
   private placement: PlacementController;
+  private cameraControls: CameraControls;
   private atmosphere: Atmosphere;
   private stormFx: StormFx;
   private hazardFx: HazardFx;
@@ -163,6 +165,7 @@ export class ThreeRenderer {
   private scratchSeen = new Set<number>();
   private scratchNeeded = new Set<string>();
   private scratchFocus = new THREE.Vector3();
+  private scratchCameraFocus = new THREE.Vector3();
   // DEV-only pacing probe (window.__viv): null = off; when recording, holds the
   // interval (ms) between consecutive RENDERED frames so judder is measurable.
   private frameLog: number[] | null = null;
@@ -205,9 +208,11 @@ export class ThreeRenderer {
   private static readonly DEBUG_UFO_TTL = 10;    // hover seconds before leaving
   private static readonly DEBUG_UFO_LEAVE = 2.5; // leave-ascent seconds before dispose
 
-  // follow-cam: lerped focus + ortho extent driven toward the possessed target
+  // follow-cam base: lerped toward the possessed target or colony. Mouse input
+  // is composed on top by CameraControls, so it is never overwritten here.
   private camFocus = new THREE.Vector3(0, 0, 0);
   private camView = 13;
+  private lastCameraT: number | null = null;
 
   // transient juice bookkeeping — all of it small + self-expiring
   // false until the first snapshot reconcile completes, so seeding the scene
@@ -241,6 +246,7 @@ export class ThreeRenderer {
     this.scene.scene.add(this.robotsGroup);
     this.scene.scene.add(this.bubbles.group);
     this.scene.scene.add(this.nameTags.group);
+    this.cameraControls = new CameraControls(canvas, this.scene.camera, this.grid.half() + 4);
     this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
     this.scene.scene.add(this.placement.group);
     this.atmosphere = new Atmosphere(this.grid);
@@ -356,6 +362,16 @@ export class ThreeRenderer {
   /** DEV observability — the governor's live read for window.__viv */
   perfInfo(): { step: number; ema: number; pinned: number | null; calibrating: boolean } {
     return this.governor.info();
+  }
+
+  /** Recenter both manual camera profiles at a run/colony boundary. World is
+   *  not a sufficient identity: Reset and parallel slots can both be Mars. */
+  resetCamera(): void {
+    this.cameraControls.reset();
+    this.camFocus.set(0, 0, 0);
+    this.camView = 13;
+    this.lastCameraT = null;
+    this.scene.setView(this.camFocus, this.camView);
   }
 
   /** DEV-only frame-pacing probe (window.__viv): start recording rendered-frame
@@ -1127,13 +1143,19 @@ export class ThreeRenderer {
    *  colonist (close) or a rover (a step wider, it's a faster machine) — or
    *  back to the overview (colony centroid, wide) when nothing is piloted. */
   private updateCamera(snap: Snapshot, dt: number): void {
+    // Network guests do not execute the host's UI reset lifecycle. A backwards
+    // sim clock is the authoritative fallback signal that a fresh run arrived.
+    if (this.lastCameraT !== null && snap.t < this.lastCameraT) this.resetCamera();
+    this.lastCameraT = snap.t;
     let targetFocus: THREE.Vector3;
     let targetView: number;
+    let pilotKey: string | null = null;
     const col = snap.possessed != null ? this.colonists.get(snap.possessed) : undefined;
     const rec = col ?? (snap.possessed != null ? this.rovers.get(snap.possessed) : undefined);
     if (rec) {
       targetFocus = this.scratchFocus.copy(rec.pos);
       targetView = col ? 5.5 : 6.5;
+      pilotKey = `${col ? "colonist" : "rover"}:${snap.possessed}`;
     } else {
       // overview: frame the colony (centroid of its buildings) so it stays
       // centered wherever it sits on the larger grid, wide enough to see the
@@ -1141,10 +1163,12 @@ export class ThreeRenderer {
       targetFocus = this.colonyCentroid(snap);
       targetView = 13;
     }
+    this.cameraControls.setContext(snap.world, pilotKey);
     const k = 1 - Math.exp(-6 * dt);
     this.camFocus.lerp(targetFocus, k);
     this.camView += (targetView - this.camView) * k;
-    this.scene.setView(this.camFocus, this.camView);
+    const focus = this.cameraControls.focusFor(this.camFocus, this.scratchCameraFocus);
+    this.scene.setView(focus, this.cameraControls.viewFor(this.camView));
   }
 
   /** world-space centroid of all placed buildings (origin if none) */
@@ -1167,6 +1191,7 @@ export class ThreeRenderer {
     window.removeEventListener("resize", this.onResize);
     this.unsubEvents();
     this.nameTags.dispose();
+    this.cameraControls.dispose();
     this.placement.dispose();
     this.atmosphere.dispose();
     this.stormFx.dispose();

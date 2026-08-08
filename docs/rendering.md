@@ -182,6 +182,14 @@ whatever the render rate does. `renderer.perfInfo()` exposes the live read
 - When you possess a colonist, the renderer runs a **follow-cam** off
   `snapshot.possessed`, interpolating the colonist's continuous position between
   snapshots so movement stays smooth at the snapshot rate.
+- On a fine pointer, **left- or middle-drag pans** and the **wheel zooms**. These
+  controls edit a bounded offset/zoom profile layered over the automatic anchor,
+  rather than mutating the Three camera directly (which the follow-cam would
+  overwrite on its next frame). Colony and pilot views keep separate profiles:
+  boarding starts centered, and releasing restores the previous colony framing.
+  The camera angle remains fixed so camera-aligned movement never changes basis.
+- Camera input ignores touch and pen; those pointers remain owned by the
+  two-step placement and phone-pilot controls.
 
 ## Terrain, atmosphere, and hazards
 

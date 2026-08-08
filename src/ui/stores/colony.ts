@@ -384,6 +384,7 @@ async function goTo(slotKey: string, target: SaveData): Promise<boolean> {
 
     // COMMIT: the worker has loaded/caught-up the target and delivered its snapshot.
     // Only now may persistence identity and run-scoped observers move to that world.
+    renderer?.resetCamera();
     setActiveSlot(slotKey);
     narrationEpoch++;
     liveNarrationInFlight = false;
@@ -872,6 +873,7 @@ const controls = {
   start(difficulty: Difficulty): void {
     if (!bridge || switching || !capabilities.value.canManageSimulation) return;
     setActiveSlot("default"); // a fresh game lives in the origin slot, not the last world's
+    renderer?.resetCamera();
     bridge.start(difficulty); // host applies reset(difficulty) and begins ticking
     updateSettings({ nextDifficulty: difficulty }); // the picked difficulty becomes the standing default
     tearDownRun(); // wipe council/sentinel/director/history (no-op on a clean fresh boot)
@@ -884,6 +886,7 @@ const controls = {
   reset(): void {
     if (switching || !capabilities.value.canManageSimulation) return;
     setActiveSlot("default"); // an in-game restart returns to the origin slot
+    renderer?.resetCamera();
     bridge?.reset(settings.value.nextDifficulty); // the chosen difficulty starts here
     tearDownRun();
     bridge?.setDirector(settings.value.directorEnabled); // reset() reseeds with the scheduler on
@@ -948,6 +951,7 @@ const controls = {
     while (taken.has(slotId(world, seed))) seed = nextSeedFrom(seed);
     const slot = slotId(world, seed);
     setActiveSlot(slot);
+    renderer?.resetCamera();
     bridge.start(difficulty, seed, world, legacy); // found the new run on its own slot, carrying the legacy
     tearDownRun(); // wipe agent/run scratch (clears the fresh slot — empty)
     bridge.setDirector(settings.value.directorEnabled);

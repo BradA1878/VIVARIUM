@@ -140,6 +140,10 @@ onBeforeUnmount(() => {
               <dd>Move while piloting.</dd>
             </div>
             <div class="help-key-row">
+              <dt><kbd>MOUSE</kbd></dt>
+              <dd>Left- or middle-drag to pan; use the wheel to zoom.</dd>
+            </div>
+            <div class="help-key-row">
               <dt><kbd>P</kbd> <span>or</span> <kbd>E</kbd></dt>
               <dd>Mine a nearby deposit, or unload when beside the depot.</dd>
             </div>
@@ -189,6 +193,7 @@ onBeforeUnmount(() => {
             <div class="help-key-row"><dt><kbd>F</kbd></dt><dd>Pilot or release; the commander can board a nearby rover.</dd></div>
             <div class="help-key-row"><dt><kbd>WASD</kbd> / <kbd>ARROWS</kbd></dt><dd>Move the piloted astronaut or rover.</dd></div>
             <div class="help-key-row"><dt><kbd>P</kbd> / <kbd>E</kbd></dt><dd>Mine, load, drop, or unload when a prompt appears.</dd></div>
+            <div class="help-key-row"><dt><kbd>MOUSE</kbd></dt><dd>Left- or middle-drag to pan; use the wheel to zoom.</dd></div>
             <div class="help-key-row"><dt><kbd>SPACE</kbd></dt><dd>Pause or resume the simulation.</dd></div>
             <div class="help-key-row"><dt><kbd>R</kbd></dt><dd>Rotate the placement ghost or selected building.</dd></div>
             <div class="help-key-row"><dt><kbd>DELETE</kbd> / <kbd>BACKSPACE</kbd></dt><dd>Remove the selected building.</dd></div>
