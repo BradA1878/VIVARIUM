@@ -3,9 +3,12 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function reachStartScreen(page: Page): Promise<void> {
   await page.goto("/");
-  const boot = page.locator(".boot");
-  await expect(boot).toBeVisible();
-  await boot.click();
+  // The intro auto-dismisses and disables pointer events during its 480 ms
+  // fade. A Playwright actionability click can begin just as that happens,
+  // then retry against a node that has been removed (especially on slower CI
+  // runners). This test is not about the intro animation, so atomically finish
+  // it only when the button still exists.
+  await page.evaluate(() => document.querySelector<HTMLButtonElement>(".boot")?.click());
   await expect(page.getByRole("button", { name: "BEGIN" })).toBeVisible();
 }
 
@@ -242,7 +245,7 @@ test("mouse drag and wheel control the camera while piloting without snapping ba
 test("small screens explain the viewport requirement and recover in landscape", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "mobile adaptation check");
   await page.goto("/");
-  await page.locator(".boot").click();
+  await page.evaluate(() => document.querySelector<HTMLButtonElement>(".boot")?.click());
 
   await expect(page.getByRole("heading", { name: /field console/i })).toBeVisible();
   await expect(page.getByText(/joining one works right here/i)).toBeVisible();
