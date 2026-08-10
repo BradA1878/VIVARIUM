@@ -13,7 +13,7 @@ import {
 import type { ColonyState } from "./state";
 import type { Emit } from "./tick";
 import type { RNG } from "./rng";
-import { TECH_DEFS, TECH_IDS } from "./techs";
+import { TECH_DEFS, TECH_IDS, isKnownTech } from "./techs";
 import { recomputeCaps } from "./caps";
 import { bumpMorale } from "./morale";
 
@@ -102,6 +102,9 @@ export function respondTrade(s: ColonyState, accept: boolean, emit: Emit): void 
   const tr = s.trade;
   if (!tr || tr.phase !== "landed") return;
   if (accept) {
+    // Generated offers always name a known tech. This guard protects a stale or
+    // hand-edited live state from charging materials for an inert definition.
+    if (tr.give.res === "tech" && !isKnownTech(tr.give.tech)) return;
     const have = poolOf(s, tr.take.res);
     if (have.amount < tr.take.amount) return; // can't pay — leave the offer open
     have.amount -= tr.take.amount;
@@ -109,7 +112,11 @@ export function respondTrade(s: ColonyState, accept: boolean, emit: Emit): void 
       // a permanent upgrade — bank it and let the caps pass apply any bonus now
       if (!s.acquiredTech.includes(tr.give.tech)) s.acquiredTech.push(tr.give.tech);
       recomputeCaps(s);
-      emit({ type: "trade_done", detail: TECH_DEFS[tr.give.tech]?.name ?? tr.give.tech });
+      emit({
+        type: "trade_done",
+        tech: tr.give.tech,
+        detail: TECH_DEFS[tr.give.tech]?.name ?? tr.give.tech,
+      });
     } else {
       const got = poolOf(s, tr.give.res);
       got.amount = Math.min(got.capacity, got.amount + tr.give.amount);

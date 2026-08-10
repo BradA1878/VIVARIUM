@@ -66,4 +66,16 @@ describe("ScriptedNarrator", () => {
     expect(n.lineFor(ev("brownout", 0))).toBeTruthy();
     expect(n.lineFor(ev("brownout", 0))).toBeTruthy(); // again, gate not consulted
   });
+
+  it("uses the permanent-integration bank for alien tech trades", () => {
+    const tech = new ScriptedNarrator().lineFor(ev("trade_done", 0, {
+      tech: "capacitor",
+      detail: "Capacitor Lattice",
+    }));
+    expect(tech).toContain("Capacitor Lattice");
+    expect(tech!.toLowerCase()).toContain("permanent");
+
+    const cargo = new ScriptedNarrator().lineFor(ev("trade_done", 0, { detail: "water" }));
+    expect(cargo).toMatch(/Cargo|Pools/);
+  });
 });

@@ -52,7 +52,14 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
         <div class="trade-side-val">{{ fmt(trade.take.amount) }} {{ trade.take.res }}</div>
       </div>
     </div>
-    <div v-if="giveTech" class="trade-tech-desc">{{ giveTech.desc }}</div>
+    <div v-if="giveTech" class="trade-tech">
+      <p class="trade-tech-desc">{{ giveTech.desc }}</p>
+      <div class="trade-tech-effect">
+        <span>PERMANENT EFFECT</span>
+        <strong>{{ giveTech.effect }}</strong>
+      </div>
+      <p class="trade-tech-stays">Applies immediately and remains after the traders leave.</p>
+    </div>
     <div class="trade-countdown">offer closes in {{ fmt(Math.round(trade.deadline)) }}s</div>
     <div v-if="capabilities.canRespondTrade" class="trade-actions">
       <button
@@ -61,7 +68,7 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
         :disabled="!canAfford"
         @click="controls.respondTrade(true)"
       >
-        Accept
+        {{ giveTech ? "Integrate tech" : "Accept" }}
       </button>
       <button class="trade-btn decline" type="button" @click="controls.respondTrade(false)">
         Decline
@@ -147,13 +154,42 @@ const canAfford = computed(() => !!trade.value && have.value >= trade.value.take
 .trade-side.tech { border-color: rgba(176, 130, 232, 0.55); }
 .trade-side.tech .trade-side-lbl { color: #b082e8; }
 .trade-side-val.tech-name { color: #c7a6f2; font-size: 11.5px; line-height: 1.25; }
+.trade-tech {
+  margin-bottom: 9px;
+  padding: 7px 8px;
+  background: rgba(176, 130, 232, 0.07);
+  border-left: 2px solid rgba(176, 130, 232, 0.62);
+}
 .trade-tech-desc {
+  margin: 0 0 6px;
   font-size: 9.5px;
   line-height: 1.35;
   color: var(--dim);
-  margin-bottom: 9px;
-  border-left: 2px solid rgba(176, 130, 232, 0.5);
-  padding-left: 7px;
+  font-family: var(--serif);
+  font-style: italic;
+}
+.trade-tech-effect {
+  display: grid;
+  gap: 2px;
+}
+.trade-tech-effect span {
+  color: #b082e8;
+  font-size: 7.5px;
+  letter-spacing: 0.15em;
+}
+.trade-tech-effect strong {
+  color: #decafa;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.trade-tech-stays {
+  margin: 6px 0 0;
+  color: #9bd6a0;
+  font-size: 8px;
+  line-height: 1.35;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 .trade-swap {
   align-self: center;

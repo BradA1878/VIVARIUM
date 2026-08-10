@@ -157,6 +157,9 @@ onBeforeUnmount(() => {
             <li><b>ICE</b><span aria-hidden="true">→</span><span>WATER</span></li>
             <li><b>CACHE</b><span aria-hidden="true">→</span><span>FOOD</span></li>
           </ul>
+          <p class="help-resupply">
+            <b>EARTH RESUPPLY:</b> automatically adds power, water, oxygen, and food while the lander is present, as storage allows. No action is required.
+          </p>
           <p class="touch-note">
             <b>TOUCH:</b> tap <em>PILOT COMMANDER</em>, use the direction pad, then tap <em>MINE</em> or <em>UNLOAD</em> when prompted.
           </p>
@@ -186,6 +189,13 @@ onBeforeUnmount(() => {
             </p>
           </section>
         </div>
+
+        <section class="help-section compact help-traders" aria-labelledby="help-traders-title">
+          <h3 id="help-traders-title">TRADERS + ALIEN TECH</h3>
+          <p>
+            Alien traders offer timed exchanges. A deal labeled <b>ALIEN TECH</b> costs materials and grants a permanent colony upgrade. Choose <b>INTEGRATE TECH</b> to accept it: the exact effect starts immediately, stays after the craft leaves, and remains listed in the Alien Tech panel.
+          </p>
+        </section>
 
         <details class="help-more">
           <summary>ALL CONTROLS</summary>
@@ -375,6 +385,13 @@ kbd {
 .resource-map li { display: flex; align-items: center; gap: 6px; color: var(--dim); letter-spacing: 0.05em; }
 .resource-map li b { color: var(--rust); font-size: 9.5px; letter-spacing: 0.12em; }
 .resource-map li span:last-child { color: var(--cyan); font-size: 9.5px; }
+.help-resupply {
+  margin: 10px 0 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--cyan);
+  color: var(--dim) !important;
+}
+.help-resupply b { color: var(--cyan); letter-spacing: 0.08em; }
 .touch-note { margin-top: 10px; color: var(--dim) !important; font-size: 10px !important; }
 .touch-note b { color: var(--cyan); letter-spacing: 0.1em; }
 .touch-note em { color: var(--ink); font-style: normal; }

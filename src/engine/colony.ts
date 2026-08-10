@@ -29,6 +29,7 @@ import {
 import { computeUnlocks } from "./unlocks";
 import { seedDeposits, seedVents, seedAquifers } from "./deposits";
 import { respondTrade as applyRespondTrade, tradeView } from "./trade";
+import { isKnownTech } from "./techs";
 import { ufoView } from "./ufo";
 import { roverViews } from "./rover";
 import { robotViews } from "./robots";
@@ -489,6 +490,13 @@ export class Colony {
     c.rng.setState(data.rngState);
     if (data.envRngState !== undefined) c.envRng.setState(data.envRngState);
     const st = data.state;
+    // A save can outlive a removed/renamed tech definition. Cancel that stale
+    // offer rather than presenting a deal that could charge materials for an
+    // inert id; known resource and tech offers resume exactly where they were.
+    const loadedTrade = st.trade
+      && (st.trade.give.res !== "tech" || isKnownTech(st.trade.give.tech))
+      ? { ...st.trade, give: { ...st.trade.give }, take: { ...st.trade.take } }
+      : null;
     c.s = {
       ...st,
       grid: st.grid instanceof Int32Array ? st.grid.slice() : Int32Array.from(st.grid as ArrayLike<number>),
@@ -530,7 +538,7 @@ export class Colony {
       windLevel: st.windLevel ?? 0,
       depot: st.depot ? { ...st.depot } : { gx: 6, gy: 5 },
       pilots: loadPilots(st),
-      trade: st.trade ? { ...st.trade, give: { ...st.trade.give }, take: { ...st.trade.take } } : null,
+      trade: loadedTrade,
       ufo: st.ufo ? { ...st.ufo } : null,
       nextUfo: st.nextUfo ?? UFO_FIRST,
       nextBirth: st.nextBirth ?? BIRTH_FIRST,
@@ -539,7 +547,10 @@ export class Colony {
       moraleLatch: st.moraleLatch ?? false,
       difficulty: st.difficulty ?? "normal",
       world: st.world ?? "mars", // legacy saves predate worlds → the anchor
-      acquiredTech: [...(st.acquiredTech ?? [])],
+      // Acquired tech is authoritative data, not a cached effect list. Normal
+      // acquisition already validates/dedupes; repeat that at the save boundary
+      // so an old/edited payload cannot stack or advertise an inert upgrade.
+      acquiredTech: [...new Set((st.acquiredTech ?? []).filter(isKnownTech))],
       settlementSustainableFor: st.settlementSustainableFor ?? 0,
       settlementEstablished: st.settlementEstablished ?? false,
       arrivalReadyFor: st.arrivalReadyFor ?? 0,
@@ -564,6 +575,10 @@ export class Colony {
     // an older save on a smaller build grid: re-center the colony into today's
     // larger grid rather than stranding the base in a corner. Pure, grows only.
     if (c.s.N < GRID_N) migrateGrid(c.s, GRID_N);
+    // Re-derive every capacity from buildings + acquired tech. Current saves
+    // already carry these values, but this repairs legacy/inconsistent payloads
+    // and guarantees the permanent upgrade remains the source of truth.
+    recomputeCaps(c.s);
     c.events = [];
     return c;
   }

@@ -337,7 +337,9 @@ describe("alien trade", () => {
       expect(amountOf(after, tr.take.res)).toBeLessThanOrEqual(haveTake - tr.take.amount + 1);
       // the `give` resource is credited (clamped to capacity)
       expect(amountOf(after, tr.give.res)).toBeGreaterThanOrEqual(giveBefore);
-      expect(events.some((e) => e.type === "trade_done")).toBe(true);
+      const completed = events.find((e) => e.type === "trade_done");
+      expect(completed).toBeTruthy();
+      expect(completed).not.toHaveProperty("tech");
       done = true;
       break;
     }
@@ -399,7 +401,11 @@ describe("alien trade", () => {
       const after = c.snapshot();
 
       expect(after.acquiredTech).toContain(techId);
-      expect(events.some((e) => e.type === "trade_done")).toBe(true);
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "trade_done",
+        tech: techId,
+        detail: expect.any(String),
+      }));
       // a capacity tech bumps a pool cap immediately; otherwise the tech is at least banked
       if (techId === "capacitor") expect(after.pools.power.capacity).toBeGreaterThan(powerCapBefore);
 
@@ -416,5 +422,36 @@ describe("alien trade", () => {
       break;
     }
     expect(tested).toBe(true);
+  });
+
+  it("re-derives permanent tech effects from loaded ids and ignores duplicates", () => {
+    const c = new Colony(41);
+    const expectedCapacity = c.snapshot().pools.power.capacity + 140;
+    const save = c.serialize();
+    save.state.acquiredTech = ["capacitor", "capacitor", "retired-relic", "constructor"];
+    save.state.pools.power.capacity = 1; // stale cached value from a legacy/edited save
+
+    const resumed = Colony.load(save).snapshot();
+    expect(resumed.acquiredTech).toEqual(["capacitor"]);
+    expect(resumed.pools.power.capacity).toBe(expectedCapacity);
+  });
+
+  it("cancels a stale saved offer instead of charging for an unknown tech", () => {
+    const c = new Colony(42);
+    const save = c.serialize();
+    save.state.trade = {
+      id: save.state.tradeCounter++,
+      phase: "landed",
+      give: { res: "tech", amount: 1, tech: "retired-relic" },
+      take: { res: "materials", amount: 40 },
+      tLeft: 20,
+      gx: 1,
+      gy: 1,
+    };
+    const materialsBefore = save.state.materials.amount;
+
+    const resumed = Colony.load(save);
+    expect(resumed.snapshot().trade).toBeNull();
+    expect(resumed.snapshot().materials.amount).toBe(materialsBefore);
   });
 });

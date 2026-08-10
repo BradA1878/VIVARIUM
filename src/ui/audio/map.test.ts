@@ -146,6 +146,14 @@ describe("EVENT_CUES", () => {
     expect(fn!(ev(type))).toBe(cue);
   });
 
+  it("gives permanent alien technology its own acquisition signature", () => {
+    expect(EVENT_CUES.trade_done!(ev("trade_done", { detail: "water" }))).toBe("tradeDone");
+    expect(EVENT_CUES.trade_done!(ev("trade_done", {
+      tech: "capacitor",
+      detail: "Capacitor Lattice",
+    }))).toBe("techIntegrated");
+  });
+
   it("leaves uncued engine events unmapped (no entry, not a null-returner)", () => {
     // the diff layer owns place/demolish; storms speak through hazard_* + the
     // wind bed; idle banter is council prose, never a sting.

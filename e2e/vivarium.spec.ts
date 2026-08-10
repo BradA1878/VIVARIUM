@@ -74,6 +74,11 @@ test("fresh start is keyboard- and screen-reader-ready", async ({ page }, testIn
   await expect(help.locator(".resource-map")).toContainText("ORE");
   await expect(help.locator(".resource-map")).toContainText("MATERIALS");
   await expect(help).toContainText("does not enter colony stores");
+  await expect(help).toContainText("EARTH RESUPPLY");
+  await expect(help).toContainText("automatically adds power, water, oxygen, and food");
+  await expect(help).toContainText("No action is required");
+  await expect(help).toContainText("TRADERS + ALIEN TECH");
+  await expect(help).toContainText("the exact effect starts immediately");
   await expect(help.getByRole("button", { name: /field guide/i })).toHaveCount(0);
 
   const helpResults = await new AxeBuilder({ page })
@@ -197,6 +202,97 @@ test("visible camera zoom controls work from the keyboard and expose clear names
     .analyze();
   const blocking = results.violations.filter((v) => v.impact === "critical" || v.impact === "serious");
   expect(blocking, blocking.map((v) => `${v.id}: ${v.help}`).join("\n")).toEqual([]);
+});
+
+test("accepting alien tech reveals and proves its permanent active effect", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "desktop trade interaction");
+  await reachStartScreen(page);
+  await page.getByRole("button", { name: "BEGIN" }).click();
+  await expect(page.locator(".topbar")).toBeVisible();
+
+  const closeGuide = page.getByRole("button", { name: /close field guide/i });
+  if (await closeGuide.isVisible()) await closeGuide.click();
+  const techAnnouncement = page.locator(".notice-layer .sr-only");
+  await expect(techAnnouncement).toHaveText("");
+
+  const capacityBefore = await page.evaluate(async () => {
+    type TechSave = {
+      state: {
+        materials: { amount: number };
+        acquiredTech: string[];
+        tradeCounter: number;
+        trade: {
+          id: number;
+          phase: "landed";
+          give: { res: "tech"; amount: number; tech: string };
+          take: { res: "materials"; amount: number };
+          tLeft: number;
+          gx: number;
+          gy: number;
+        } | null;
+      };
+    };
+    type DebugBridge = {
+      save(): Promise<TechSave>;
+      load(save: TechSave): Promise<unknown>;
+      latest: { pools: { power: { capacity: number } }; acquiredTech: string[] } | null;
+    };
+    const bridge = (window as Window & { __viv?: { bridge?: DebugBridge } }).__viv?.bridge;
+    if (!bridge) throw new Error("No debug bridge is available");
+    const save = await bridge.save();
+    save.state.materials.amount = 100;
+    save.state.acquiredTech = save.state.acquiredTech.filter((id) => id !== "capacitor");
+    save.state.trade = {
+      id: save.state.tradeCounter++,
+      phase: "landed",
+      give: { res: "tech", amount: 1, tech: "capacitor" },
+      take: { res: "materials", amount: 40 },
+      tLeft: 30,
+      gx: 1,
+      gy: 1,
+    };
+    await bridge.load(save);
+    if (!bridge.latest) throw new Error("Loaded snapshot is unavailable");
+    return bridge.latest.pools.power.capacity;
+  });
+
+  const integrate = page.getByRole("button", { name: /integrate tech/i });
+  await expect(integrate).toBeVisible();
+  await expect(page.locator(".trade-panel")).toContainText("PERMANENT EFFECT");
+  await expect(page.locator(".trade-panel")).toContainText("+140 kW maximum power capacity");
+  await integrate.click();
+
+  const reveal = page.locator(".tech-reveal");
+  await expect(reveal).toBeVisible();
+  await expect(reveal).toContainText("NONHUMAN SYSTEM INTEGRATED");
+  await expect(reveal).toContainText("Capacitor Lattice");
+  await expect(reveal).toContainText("+140 kW maximum power capacity");
+  await expect(reveal).toContainText("This technology stays with this colony");
+  await expect(techAnnouncement).toContainText("Permanent effect active now");
+
+  const results = await new AxeBuilder({ page })
+    .include(".tech-reveal")
+    .withTags(["wcag2a", "wcag2aa"])
+    .analyze();
+  const blocking = results.violations.filter((v) => v.impact === "critical" || v.impact === "serious");
+  expect(blocking, blocking.map((v) => `${v.id}: ${v.help}`).join("\n")).toEqual([]);
+
+  await page.getByRole("button", { name: /dismiss alien tech notice/i }).click();
+  await expect(reveal).toBeHidden();
+
+  const ledger = page.locator(".alien-tech");
+  await expect(ledger).toContainText("PERMANENT");
+  await expect(ledger).toContainText("Capacitor Lattice");
+  await expect(ledger).toContainText("+140 kW maximum power capacity");
+  await expect.poll(() => page.evaluate(() => {
+    type DebugSnapshot = { pools: { power: { capacity: number } }; acquiredTech: string[] };
+    const latest = (window as Window & { __viv?: { bridge?: { latest?: DebugSnapshot | null } } })
+      .__viv?.bridge?.latest;
+    return {
+      capacity: latest?.pools.power.capacity ?? -1,
+      acquired: latest?.acquiredTech.includes("capacitor") ?? false,
+    };
+  })).toEqual({ capacity: capacityBefore + 140, acquired: true });
 });
 
 test("mouse drag and wheel control the camera while piloting without snapping back", async ({ page }, testInfo) => {

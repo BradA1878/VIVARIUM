@@ -493,6 +493,10 @@ export interface ColonyEvent {
   cargo?: Partial<Record<DepositKind, number>>;
   /** cargo_unloaded: the post-capacity amount that actually entered each bank */
   banked?: Partial<Record<DepositKind, number>>;
+  /** trade_done: id of the permanent alien upgrade that was integrated. Omitted
+   *  for ordinary resource exchanges so observers can distinguish the rare
+   *  acquisition without guessing from the free-text detail. */
+  tech?: string;
   /** free-text detail (e.g. the Sentinel's anomalous feature, or a hazard kind) */
   detail?: string;
   /** anomaly magnitude in standard deviations above learned-normal */

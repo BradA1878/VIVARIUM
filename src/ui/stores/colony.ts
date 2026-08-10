@@ -37,6 +37,7 @@ import {
 } from "./history";
 import { Hints, type Hint, type HintId } from "../hints";
 import { leaderId, boardableRover } from "../lead";
+import { alienTechFromEvent } from "../alienTech";
 
 // player preferences (persisted) — gate the director, the live narrator, render
 // quality, the audio gains, and the next run's difficulty. The deep watch below
@@ -63,6 +64,13 @@ const hover: Ref<HoverInfo | null> = ref(null);
 const selected: Ref<SelectInfo | null> = ref(null);
 /** the contextual teaching toast currently on screen (HintToast.vue renders it) */
 const hintToast: Ref<Hint | null> = ref(null);
+/** the rare, independent acquisition notice rendered by AlienTechReveal. It is
+ *  not a teaching hint: every newly integrated technology deserves its moment. */
+export interface AlienTechRevealState {
+  nonce: number;
+  techId: string;
+}
+const alienTechReveal: Ref<AlienTechRevealState | null> = ref(null);
 /** whether the pull-up council log (LogOverlay.vue) is open */
 export const logOpen = ref(false);
 function toggleLog(): void {
@@ -174,6 +182,8 @@ let history: RunHistory = emptyHistory();
 let hints: Hints | null = null;
 let hintTimer: ReturnType<typeof setTimeout> | null = null;
 let hintGapTimer: ReturnType<typeof setTimeout> | null = null;
+let alienTechRevealTimer: ReturnType<typeof setTimeout> | null = null;
+let alienTechRevealNonce = 1;
 // the boot greeting's pending pieces, so dispose can cancel an un-spoken line
 let bootTimer: ReturnType<typeof setTimeout> | null = null;
 let offBootSnap: (() => void) | null = null;
@@ -217,6 +227,7 @@ let pendingLaunch: { seed: number; difficulty: Difficulty; world: World; legacy:
 let launching = false;
 
 const HINT_TOAST_MS = 14_000;
+const ALIEN_TECH_REVEAL_MS = 10_000;
 /** quiet beat between toasts — the next hint must not appear the frame the last one left */
 const HINT_GAP_MS = 1_500;
 /** the boot greeting's beat — how long after init the first words land */
@@ -229,6 +240,23 @@ function showHint(h: Hint | null): void {
   audio.uiTick();
   if (hintTimer) clearTimeout(hintTimer);
   hintTimer = setTimeout(dismissHint, HINT_TOAST_MS);
+}
+
+/** make an accepted alien system unmistakable without stopping the simulation.
+ *  A second acquisition replaces/restarts the card; the persistent right-rail
+ *  ledger remains after this reveal leaves. */
+function showAlienTechReveal(techId: string): void {
+  alienTechReveal.value = { nonce: alienTechRevealNonce++, techId };
+  if (alienTechRevealTimer) clearTimeout(alienTechRevealTimer);
+  alienTechRevealTimer = setTimeout(dismissAlienTechReveal, ALIEN_TECH_REVEAL_MS);
+}
+
+function dismissAlienTechReveal(): void {
+  if (alienTechRevealTimer) {
+    clearTimeout(alienTechRevealTimer);
+    alienTechRevealTimer = null;
+  }
+  alienTechReveal.value = null;
 }
 
 /** surface a closed resupply window's banked totals as a toast — reusing the
@@ -255,9 +283,9 @@ function showResupplyToast(e: ColonyEvent): void {
       )
     : [];
   const body = parts.length
-    ? `Resupply landed: ${parts.join(", ")}.${full.length ? ` ${full.map((k) => `${k} tank full`).join(", ")} — overflow vented.` : ""}`
-    : `Resupply window closed.${full.length ? ` Every pool was full — the drop vented.` : " Nothing banked."}`;
-  showHint({ id: "resupply_done" as HintId, title: "RESUPPLY LANDED", body });
+    ? `Automatic transfer complete: ${parts.join(", ")}.${full.length ? ` ${full.map((k) => `${k} tank full`).join(", ")} — overflow vented.` : ""} No action was required.`
+    : `Automatic resupply closed.${full.length ? ` Every pool was full, so the drop vented.` : " Nothing banked."} No action was required.`;
+  showHint({ id: "resupply_done" as HintId, title: "RESUPPLY COMPLETE", body });
 }
 
 /** close the toast (✕, auto-dismiss, or reset) and let the next hint through —
@@ -319,6 +347,7 @@ function tearDownRun(): void {
   attributionCounter = 0;
   launching = false; // the new run is beginning — let autosave resume
   awayDigest.value = null; pendingCatchup = null; // a fresh run has no "while you were away" to show
+  dismissAlienTechReveal();
   clearLocal(activeSlot); // discard the saved colony; autosave will persist the fresh one
   history = resetHistory(); // a new run starts its telemetry from zero
   dismissHint();
@@ -392,6 +421,7 @@ async function goTo(slotKey: string, target: SaveData): Promise<boolean> {
     council?.reset(); sentinel?.reset(); director?.reset();
     lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
     dismissHint();
+    dismissAlienTechReveal();
     messages.value = [];
 
     // Drop credited shipments only AFTER the credited target is durable. If this
@@ -657,8 +687,10 @@ export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "sol
   b.onEvent((e) => {
     recordEvent(history, e); // the run report's tallies count from here
     if (!snapshot.value?.outcome && hints) showHint(hints.onEvent(e)); // event-driven teaching toasts
-    // a resupply window closing surfaces what actually banked (the toast reads
-    // the event's amounts; the inbound RESUPPLY alert in Alerts.vue is unchanged)
+    const acquiredTech = alienTechFromEvent(e);
+    if (acquiredTech && !snapshot.value?.outcome) showAlienTechReveal(acquiredTech.id);
+    // a resupply window closing surfaces what actually banked (the live alert
+    // already explains that the transfer is automatic while the pod is present)
     if (e.type === "resupply_done" && !snapshot.value?.outcome) showResupplyToast(e);
     if (e.type === "crit_start" && e.res) lastCritRes = e.res as Axis;
     else if (e.type === "hazard_start" && e.kind) lastHazard = e.kind;
@@ -793,6 +825,7 @@ export function disposeColony(): void {
   if (autosaveTimer) { clearInterval(autosaveTimer); autosaveTimer = null; }
   if (hintTimer) { clearTimeout(hintTimer); hintTimer = null; }
   if (hintGapTimer) { clearTimeout(hintGapTimer); hintGapTimer = null; }
+  dismissAlienTechReveal();
   if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
   if (offBootSnap) { offBootSnap(); offBootSnap = null; }
   if (stopSettingsWatch) { stopSettingsWatch(); stopSettingsWatch = null; }
@@ -1122,8 +1155,8 @@ function shipments(): Shipment[] {
 
 export function useColony() {
   return {
-    snapshot, messages, tool, demolish, hover, selected, hintToast, logOpen, startScreen,
-    pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, toggleLog,
+    snapshot, messages, tool, demolish, hover, selected, hintToast, alienTechReveal, logOpen, startScreen,
+    pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, dismissAlienTechReveal, toggleLog,
     runHistory, runEpitaph, directorDossier, colonies, shipments, activeSlot: activeSlotRef, controls,
     mode, capabilities, roster, netStatus, simError, dismissSimError,
   };

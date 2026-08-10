@@ -4,6 +4,7 @@ import { useColony } from "@/ui/stores/colony";
 import { fmt } from "@/ui/format";
 import { DEFS } from "@/engine";
 import type { HazardKind } from "@shared/types";
+import { resupplyAlertCopy } from "./alerts";
 
 interface AlertItem {
   k: string;
@@ -88,8 +89,7 @@ const items = computed<AlertItem[]>(() => {
     out.push({
       k: "resupply",
       sev: 1,
-      txt: "RESUPPLY WINDOW — inbound",
-      sub: `delivering · closes in ${fmt(cur.resupplyT)}s`,
+      ...resupplyAlertCopy(cur.resupplyT),
     });
   }
 

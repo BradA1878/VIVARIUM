@@ -11,7 +11,10 @@ export interface TechDef {
   id: string;
   name: string;
   glyph: string;
+  /** atmospheric explanation shown beside the offer */
   desc: string;
+  /** exact, player-facing mechanical consequence */
+  effect: string;
   /** permanent pool-capacity additions */
   capBonus?: Partial<Record<Resource | "materials", number>>;
   /** flat power generated every second, day or night */
@@ -29,47 +32,60 @@ export interface TechDef {
 export const TECH_DEFS: Record<string, TechDef> = {
   capacitor: {
     id: "capacitor", name: "Capacitor Lattice", glyph: "⚡",
-    desc: "Alien storage matrix. +140 power capacity.",
+    desc: "An alien storage matrix folds charge into a space smaller than its casing.",
+    effect: "+140 kW maximum power capacity.",
     capBonus: { power: 140 },
   },
   cryocell: {
     id: "cryocell", name: "Cryo Cistern", glyph: "≈",
-    desc: "Folded-space water store. +140 water capacity.",
+    desc: "A folded-space cistern holds more water than its shell can contain.",
+    effect: "+140 m³ maximum water capacity.",
     capBonus: { water: 140 },
   },
   o2reservoir: {
     id: "o2reservoir", name: "O₂ Reservoir", glyph: "◌",
-    desc: "Compressed oxygen vault. +110 oxygen capacity.",
+    desc: "A pressure vault binds oxygen in a stable nonhuman lattice.",
+    effect: "+110 kPa maximum oxygen capacity.",
     capBonus: { oxygen: 110 },
   },
   fusioncell: {
     id: "fusioncell", name: "Fusion Cell", glyph: "✷",
-    desc: "A sliver of a star. +3.5 power every second, day or night.",
+    desc: "A sliver of a star burns without fuel or sunlight.",
+    effect: "+3.5 power every second, day and night.",
     passivePower: 3.5,
   },
   bioscrubber: {
     id: "bioscrubber", name: "Bioscrubber", glyph: "✿",
-    desc: "Living air filter. Colonists need 18% less oxygen.",
+    desc: "A living filter learns the chemistry of every breath passing through it.",
+    effect: "Colonists consume 18% less oxygen.",
     demandMult: { oxygen: 0.82 },
   },
   aegis: {
     id: "aegis", name: "Aegis Resonator", glyph: "⛨",
-    desc: "Tunes your deflectors to alien frequencies. Each Deflector Array wards off abductors far better.",
+    desc: "The resonator retunes every Deflector Array to the visitors' own frequencies.",
+    effect: "Each online Deflector blocks 80% of abduction attempts, up from 50%.",
     deflectorBoost: 0.3,
   },
   medigel: {
     id: "medigel", name: "Medi-Gel", glyph: "✚",
-    desc: "Alien tissue weave that knits a wound from within. The injured heal twice as fast.",
+    desc: "An alien tissue weave knits a wound from within.",
+    effect: "Injured colonists heal twice as fast.",
     healRateMult: 2,
   },
   harmonizer: {
     id: "harmonizer", name: "Harmonizer", glyph: "♬",
-    desc: "A standing resonance the crew can feel in their bones. Morale never sinks as low.",
+    desc: "A standing resonance settles into the crew's bones and quiets panic.",
+    effect: "Colony morale can never fall below 45% (up from 15%).",
     moraleFloor: 0.45,
   },
 };
 
 export const TECH_IDS: string[] = Object.keys(TECH_DEFS);
+
+/** Record lookups must not accept Object.prototype names from edited saves. */
+export function isKnownTech(id: string): boolean {
+  return Object.hasOwn(TECH_DEFS, id);
+}
 
 /** summed capacity bonus from acquired techs */
 export function techCapBonus(s: ColonyState): Record<Resource | "materials", number> {

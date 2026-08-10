@@ -314,6 +314,18 @@ class AudioEngine {
         tone(ctx, sfx, { type: "triangle", f0: 660, dur: 0.09, gain: 0.1 });
         tone(ctx, sfx, { type: "triangle", f0: 990, dur: 0.14, gain: 0.1, delay: 0.1 });
         break;
+      case "techIntegrated": // an impossible machine settling into the colony
+        tone(ctx, sfx, {
+          type: "sine", f0: 146.83, f1: 293.66, dur: 0.82, gain: 0.12,
+          vib: { f: 5.5, depth: 5 }, filter: { type: "lowpass", freq: 1200 },
+        });
+        chord(ctx, sfx, [
+          { f: 587.33, at: 0.18, dur: 0.3, type: "triangle", gain: 0.09 },
+          { f: 830.61, at: 0.42, dur: 0.34, type: "sine", gain: 0.08 },
+          { f: 1174.66, at: 0.68, dur: 0.5, type: "sine", gain: 0.07 },
+        ]);
+        noiseHit(ctx, sfx, { dur: 0.16, gain: 0.055, delay: 0.7, filter: { type: "highpass", freq: 2400 } });
+        break;
       case "ufoSweep": // the saucer descends
         tone(ctx, sfx, { type: "sawtooth", f0: 220, f1: 80, dur: 0.8, gain: 0.12, filter: { type: "lowpass", freq: 900 } });
         break;

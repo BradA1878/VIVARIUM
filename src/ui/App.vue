@@ -13,6 +13,7 @@ import ResourceRail from "./components/ResourceRail.vue";
 import Crew from "./components/Crew.vue";
 import Objective from "./components/Objective.vue";
 import AlienTechStatus from "./components/AlienTechStatus.vue";
+import AlienTechReveal from "./components/AlienTechReveal.vue";
 import Alerts from "./components/Alerts.vue";
 import EndScreen from "./components/EndScreen.vue";
 import StartScreen from "./components/StartScreen.vue";
@@ -343,10 +344,14 @@ onUnmounted(() => {
 
     </div>
 
-    <!-- FirstHint/HintToast teach architect controls — suppressed in the phone cockpit -->
-    <div v-if="!booting && !startScreen && !phoneGuest" class="hint-layer">
-      <FirstHint />
-      <HintToast />
+    <!-- One shared stack prevents a rare acquisition from obscuring/consuming a
+         teaching card. Phone guests keep the tech result but not architect hints. -->
+    <div v-if="!booting && !startScreen" class="notice-layer">
+      <AlienTechReveal v-if="ready" />
+      <template v-if="!phoneGuest">
+        <FirstHint />
+        <HintToast />
+      </template>
     </div>
 
     <EndScreen v-if="!booting" />
@@ -368,19 +373,21 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* the first-time hint sits centered near the top; only the card itself is
-   interactive (the card opts back into pointer events) */
-.hint-layer {
+/* Transient notices share one top-center stack so two independent observer
+   streams can never paint over each other. Only their controls opt into input. */
+.notice-layer {
   position: absolute;
-  top: 78px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: max(66px, calc(env(safe-area-inset-top) + 50px));
+  left: 0;
+  right: 0;
   pointer-events: none;
-  z-index: 60;
+  z-index: 58;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
+  padding-right: max(14px, env(safe-area-inset-right));
+  padding-left: max(14px, env(safe-area-inset-left));
   max-height: calc(100dvh - 136px);
 }
 
@@ -446,7 +453,7 @@ onUnmounted(() => {
 .bf-actions button:disabled { opacity: 0.5; cursor: wait; }
 
 @media (max-width: 760px) {
-  .hint-layer { top: 54px; width: calc(100vw - 20px); max-height: calc(100dvh - 104px); }
+  .notice-layer { top: max(54px, calc(env(safe-area-inset-top) + 48px)); max-height: calc(100dvh - 104px); }
   .sim-error { top: 52px; flex-wrap: wrap; }
   .se-msg { flex: 1 0 100%; }
 }

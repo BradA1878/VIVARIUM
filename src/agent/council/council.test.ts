@@ -156,6 +156,18 @@ describe("the new event banks", () => {
     expect(b!.register).toBe("watcher");
     expect(b!.line.toLowerCase()).toContain("strike"); // the default cause
   });
+
+  it("narrates alien-tech integration as permanent rather than ordinary cargo", () => {
+    const tech = new Council().observe(ev("trade_done", 10, {
+      tech: "capacitor",
+      detail: "Capacitor Lattice",
+    }), null, 10);
+    expect(tech!.line).toContain("Capacitor Lattice");
+    expect(tech!.line.toLowerCase()).toContain("permanent");
+
+    const cargo = new Council().observe(ev("trade_done", 10, { detail: "water" }), null, 10);
+    expect(cargo!.line.toLowerCase()).toMatch(/cargo|pools/);
+  });
 });
 
 describe("the dry register guard", () => {

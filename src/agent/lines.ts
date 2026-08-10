@@ -107,10 +107,16 @@ export const LINES: Partial<Record<EventType | "boot", Bank>> = {
     "Nonhuman vessel on approach. It is signaling an exchange. First contact logged.",
     "Traders landed. They carry {detail}. Offer on screen. The window is short.",
   ],
-  trade_done: [
-    "Trade complete. Pools updated on both sides. First exchange with a nonhuman party logged.",
-    "Exchange accepted. Cargo transferred. The ledger records a fair deal.",
-  ],
+  trade_done: {
+    default: [
+      "Trade complete. Pools updated on both sides. First exchange with a nonhuman party logged.",
+      "Exchange accepted. Cargo transferred. The ledger records a fair deal.",
+    ],
+    tech: [
+      "Integration complete: {detail}. Permanent alien system active now. It remains after the traders depart.",
+      "Nonhuman technology accepted: {detail}. Its permanent effect is live and recorded under Alien Tech.",
+    ],
+  },
   trade_left: [
     "Trader craft departed. Sky clear. Trade window closed.",
     "The visitors lifted off. No further offers this pass. Logged.",

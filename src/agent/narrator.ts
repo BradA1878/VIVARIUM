@@ -55,12 +55,18 @@ export class ScriptedNarrator {
   private pick(bank: Bank, e: ColonyEvent): string | null {
     let arr: string[];
     if (Array.isArray(bank)) arr = bank;
-    else arr = e.res ? bank[e.res] ?? [] : [];
+    else {
+      const subkey = e.type === "trade_done"
+        ? (e.tech ? "tech" : "default")
+        : e.res;
+      arr = subkey ? bank[subkey] ?? [] : [];
+    }
     if (!arr.length) return null;
-    const key = e.type + (e.res ?? "");
+    const key = e.type + (e.tech ? ":tech" : `:${e.res ?? ""}`);
     const i = (this.rotators[key] = (this.rotators[key] ?? 0) + 1) % arr.length;
     return arr[i]
       .replace("{sol}", String(e.sol))
-      .replace("{secs}", String(e.secs ?? ""));
+      .replace("{secs}", String(e.secs ?? ""))
+      .replace("{detail}", e.detail ?? "");
   }
 }

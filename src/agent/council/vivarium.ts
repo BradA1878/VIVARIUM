@@ -30,8 +30,12 @@ export class VivariumVoice implements Voice {
     const e = ctx.event;
     const bank = LINES[e.type] as Bank | undefined;
     if (!bank) return null;
-    // record banks key by resource; a strike casualty carries detail instead
-    const key = e.res ?? (e.type === "casualty" && e.detail === "strike" ? "strike" : undefined);
+    // record banks key by resource; a strike casualty carries detail instead.
+    // A completed trade keys on its typed tech payload so an integration never
+    // gets narrated as ordinary cargo/pool movement.
+    const key = e.type === "trade_done"
+      ? (e.tech ? "tech" : "default")
+      : e.res ?? (e.type === "casualty" && e.detail === "strike" ? "strike" : undefined);
     const line = this.pick(bank, e.type, key, e.sol, e.secs, e.detail);
     if (!line) return null;
     return {
