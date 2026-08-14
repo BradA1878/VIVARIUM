@@ -149,9 +149,12 @@ which keeps the floor from ever dropping too far.
 ## Injuries and the Med-Bay
 
 Meteor strikes and quake jolts now hurt **people**, not just buildings: anyone
-standing near an impact is wounded. The wounded limp, leave the labor pool, and
-make their own way to triage — and a **second hit while wounded kills**, so get
-them clear of the next telegraph.
+standing exposed near an impact is wounded. As soon as a warning appears,
+unpiloted crew head to the nearest connected, sealed shelter; they are protected
+from quake jolts once they arrive, while piloted crew remain exposed until you
+release them. One hazard cannot wound and then kill the same colonist, but a
+**new meteor or quake impact before recovery can kill**. The wounded limp,
+leave the labor pool, and make their own way to triage.
 
 Everyone heals slowly on their own, but a powered, connected **Med-Bay** heals
 ~3× faster at its door — faster still with a **medic** staffing it, and twice as

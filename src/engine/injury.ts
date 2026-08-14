@@ -8,7 +8,7 @@
 import type { ColonyState } from "./state";
 import { buildingFunctional, removePilot } from "./state";
 import type { Emit } from "./tick";
-import { accessCell } from "./colonists";
+import { accessCell, atSealedShelter } from "./colonists";
 import { roleMatchCount } from "./roster";
 import { bumpMorale } from "./morale";
 import { techHealRateMult } from "./techs";
@@ -32,18 +32,30 @@ export function medbayStations(s: ColonyState): { x: number; y: number; matched:
   return out;
 }
 
-/** a strike landed at (gx, gy): wound every colonist within INJURY_RADIUS of the
- *  cell center — and kill the ones already wounded (the abduction removal
- *  pattern: instance gone, population down, possession cleared). */
-export function applyStrikeInjuries(s: ColonyState, gx: number, gy: number, emit: Emit): void {
+/** A strike landed at (gx, gy): wound every exposed colonist within
+ *  INJURY_RADIUS and kill the ones already wounded. Each hazard instance can
+ *  affect a colonist only once, preventing a rapid multi-strike event from
+ *  inflicting both the wound and the lethal follow-up. Autonomous colonists who
+ *  have physically reached sealed shelter are safe from quake jolts. */
+export function applyStrikeInjuries(
+  s: ColonyState,
+  gx: number,
+  gy: number,
+  hazard: { id: number; kind: "meteor" | "quake" },
+  emit: Emit,
+): void {
   for (const c of [...s.colonists]) {
     if (Math.hypot(c.x - gx, c.y - gy) > INJURY_RADIUS) continue;
+    if (hazard.kind === "quake" && atSealedShelter(s, c)) continue;
+    if (c.lastStrikeHazardId === hazard.id) continue;
+    c.lastStrikeHazardId = hazard.id;
     if (c.injury > 0) {
       s.colonists = s.colonists.filter((k) => k.id !== c.id);
       removePilot(s, c.id);
+      s.lastLossCause = { type: "strike", hazard: hazard.kind };
       s.population = Math.max(0, s.population - 1);
       s.dead += 1;
-      emit({ type: "casualty", detail: "strike", n: 1 });
+      emit({ type: "casualty", detail: "strike", kind: hazard.kind, n: 1 });
       bumpMorale(s, -MORALE_BUMP.casualty);
     } else {
       c.injury = INJURY_RECOVERY;

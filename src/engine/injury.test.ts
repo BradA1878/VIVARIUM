@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 import type { BuildingState, ColonyEvent, Side } from "@shared/types";
 import { Colony, DEFS, ORDER } from "./index";
 import { applyStrikeInjuries, updateInjuries, injuredCount } from "./injury";
-import { stepColonists } from "./colonists";
+import { accessCell, atSealedShelter, stepColonists } from "./colonists";
 import type { ColonistInstance, ColonyState } from "./state";
 import { emptyColonist } from "./state";
 import {
@@ -34,10 +34,12 @@ function collector() {
   return { ev, emit: (e: Omit<ColonyEvent, "t" | "sol" | "tod">) => { ev.push(e); } };
 }
 
+const strike = (kind: "meteor" | "quake", id = 1) => ({ id, kind });
+
 /** a minimal state carrying only what applyStrikeInjuries touches */
 function strikeState(colonists: ColonistInstance[], possessed: number | null = null): ColonyState {
   return {
-    colonists, population: colonists.length, dead: 0,
+    buildings: [], colonists, population: colonists.length, dead: 0,
     pilots: possessed != null ? [{ id: possessed, dx: 0, dy: 0 }] : [],
     morale: MORALE_START,
   } as unknown as ColonyState;
@@ -62,6 +64,31 @@ function healState(colonists: ColonistInstance[], buildings: BuildingState[]): C
     colonists, population: colonists.length, dead: 0, pilots: [],
     morale: MORALE_START,
   } as unknown as ColonyState;
+}
+
+/** Seed 1 was the reported three-survivor/full-tank quake wipe: before the
+ *  fairness guards, repeated jolts killed all three around t=10.6. */
+function threeCrewQuake(exposeOne = false): Colony {
+  const c = new Colony(1);
+  const s = stateOf(c);
+  c.setDirector(true);
+  s.population = 3;
+  s.colonists = s.colonists.slice(0, 3);
+  s.arrivalsLeft = 0;
+  s.nextArrival = s.nextTrade = s.nextUfo = s.nextBirth = 1e9;
+  for (const k of ["power", "oxygen", "water", "food"] as const) {
+    s.pools[k].amount = s.pools[k].capacity;
+  }
+  if (exposeOne) {
+    // Seed 1's first quake target is (5, 6); possession keeps this actor
+    // deliberately exposed there while the autonomous crew evacuate.
+    s.colonists[0].x = 5;
+    s.colonists[0].y = 6;
+    c.possess(s.colonists[0].id);
+  }
+  c.triggerHazard("quake", 1);
+  c.drainEvents(); // discard only the warning; the test records active effects
+  return c;
 }
 
 describe("the Med-Bay def", () => {
@@ -93,7 +120,7 @@ describe("applyStrikeInjuries", () => {
     const far = emptyColonist(3, 5 + INJURY_RADIUS + 0.1, 5);
     const s = strikeState([near, diag, far]);
     const { ev, emit } = collector();
-    applyStrikeInjuries(s, 5, 5, emit);
+    applyStrikeInjuries(s, 5, 5, strike("meteor"), emit);
 
     expect(near.injury).toBe(INJURY_RECOVERY);
     expect(diag.injury).toBe(INJURY_RECOVERY);
@@ -104,13 +131,57 @@ describe("applyStrikeInjuries", () => {
     expect(injuredCount(s)).toBe(2);
   });
 
+  it("lets one hazard instance affect each colonist only once", () => {
+    const k = emptyColonist(1, 5, 5);
+    const s = strikeState([k]);
+    const { ev, emit } = collector();
+
+    applyStrikeInjuries(s, 5, 5, strike("quake", 41), emit);
+    expect(k.injury).toBe(INJURY_RECOVERY);
+    expect(k.lastStrikeHazardId).toBe(41);
+    expect(ev.filter((e) => e.type === "colonist_injured")).toHaveLength(1);
+
+    applyStrikeInjuries(s, 5, 5, strike("quake", 41), emit);
+    expect(s.population).toBe(1);
+    expect(s.dead).toBe(0);
+    expect(ev.filter((e) => e.type === "casualty")).toHaveLength(0);
+
+    applyStrikeInjuries(s, 5, 5, strike("quake", 42), emit);
+    expect(s.population).toBe(0); // a later hazard still supplies the lethal second hit
+    const casualty = ev.find((e) => e.type === "casualty");
+    expect(casualty).toMatchObject({ detail: "strike", kind: "quake", n: 1 });
+  });
+
+  it("protects only autonomous crew who have reached sealed shelter from a quake", () => {
+    const safe = emptyColonist(1, MEDBAY_DOOR.x, MEDBAY_DOOR.y);
+    safe.state = "sheltering";
+    const enRoute = emptyColonist(2, MEDBAY_DOOR.x + ARRIVE_EPS + 0.01, MEDBAY_DOOR.y);
+    enRoute.state = "sheltering"; // walking state alone must not grant immunity
+    const nearby = emptyColonist(3, MEDBAY_DOOR.x, MEDBAY_DOOR.y);
+    nearby.state = "idle"; // at the door, but not actually sheltering
+    const piloted = emptyColonist(4, MEDBAY_DOOR.x, MEDBAY_DOOR.y);
+    piloted.state = "sheltering";
+    const s = healState([safe, enRoute, nearby, piloted], [medbay()]);
+    s.pilots = [{ id: piloted.id, dx: 0, dy: 0 }];
+    const { ev, emit } = collector();
+
+    applyStrikeInjuries(s, 5, 5, strike("quake", 9), emit);
+
+    expect(safe.injury).toBe(0);
+    expect(safe.lastStrikeHazardId).toBeNull();
+    expect(enRoute.injury).toBe(INJURY_RECOVERY);
+    expect(nearby.injury).toBe(INJURY_RECOVERY);
+    expect(piloted.injury).toBe(INJURY_RECOVERY);
+    expect(ev.filter((e) => e.type === "colonist_injured").map((e) => e.id)).toEqual([2, 3, 4]);
+  });
+
   it("a second strike on an already-injured colonist kills", () => {
     const hurt = emptyColonist(1, 5, 5);
     hurt.injury = 12;
     const bystander = emptyColonist(2, 12, 12);
     const s = strikeState([hurt, bystander]);
     const { ev, emit } = collector();
-    applyStrikeInjuries(s, 5, 5, emit);
+    applyStrikeInjuries(s, 5, 5, strike("meteor"), emit);
 
     expect(s.colonists.find((c) => c.id === 1)).toBeUndefined();
     expect(s.population).toBe(1);
@@ -118,6 +189,7 @@ describe("applyStrikeInjuries", () => {
     const cas = ev.find((e) => e.type === "casualty");
     expect(cas).toBeDefined();
     expect(cas!.detail).toBe("strike");
+    expect(cas!.kind).toBe("meteor");
     expect(cas!.n).toBe(1);
     expect(cas!.res).toBeUndefined(); // not a life-support death
     expect(s.morale).toBeCloseTo(MORALE_START - MORALE_BUMP.casualty, 6);
@@ -127,7 +199,7 @@ describe("applyStrikeInjuries", () => {
     const hurt = emptyColonist(1, 5, 5);
     hurt.injury = 12;
     const s = strikeState([hurt, emptyColonist(2, 12, 12)], 1);
-    applyStrikeInjuries(s, 5, 5, collector().emit);
+    applyStrikeInjuries(s, 5, 5, strike("meteor"), collector().emit);
 
     expect(s.pilots).toEqual([]); // the piloted victim died → released
     expect(s.population).toBe(1);
@@ -255,9 +327,42 @@ describe("triage movement", () => {
 
   it("an active hazard overrides triage — the wounded shelter too", () => {
     const { s, k } = hurtWalker();
-    s.hazards.push({ kind: "meteor", phase: "active", tLeft: 9, activeDur: 9, intensity: 1, cadence: 1 });
+    s.hazards.push({ id: 1, kind: "meteor", phase: "active", tLeft: 9, activeDur: 9, intensity: 1, cadence: 1 });
     stepColonists(s, 0.2);
     expect(k.state).toBe("sheltering");
+  });
+
+  it("starts autonomous evacuation during the warning, before the first strike", () => {
+    const { s, k } = hurtWalker();
+    s.hazards.push({ id: 1, kind: "quake", phase: "telegraph", tLeft: 4, activeDur: 9, intensity: 1, cadence: 1 });
+    stepColonists(s, 0.2);
+    expect(k.state).toBe("sheltering");
+  });
+
+  it("walks past a nearer disconnected module toward a connected shelter", () => {
+    const c = new Colony(321);
+    const s = stateOf(c);
+    const hub = s.buildings.find((b) => DEFS[b.defId].isHub)!;
+    for (const b of s.buildings) b.connected = b.uid === hub.uid;
+    const disconnected = {
+      ...hub,
+      uid: 999_001,
+      gx: 10,
+      gy: 10,
+      connected: false,
+    };
+    s.buildings.push(disconnected);
+    const falseDoor = accessCell(s, disconnected);
+    const k = s.colonists[0];
+    k.x = falseDoor.x;
+    k.y = falseDoor.y;
+    s.hazards.push({ id: 1, kind: "quake", phase: "telegraph", tLeft: 4, activeDur: 9, intensity: 1, cadence: 1 });
+
+    stepColonists(s, 0.2);
+
+    expect(Math.hypot(k.x - falseDoor.x, k.y - falseDoor.y)).toBeGreaterThan(0);
+    for (let i = 0; i < 100; i++) stepColonists(s, 0.2);
+    expect(atSealedShelter(s, k)).toBe(true);
   });
 
   it("with no treatable medbay the wounded head home instead, still as toMedbay", () => {
@@ -304,6 +409,87 @@ describe("strikes wound through the real tick (director-driven meteor)", () => {
     expect(events.filter((e) => e.type === "strike").length).toBeGreaterThan(0);
     expect(events.some((e) => e.type === "colonist_injured" && e.id != null)).toBe(true);
     expect(c.snapshot().colonists.some((v) => v.injury > 0)).toBe(true);
+  });
+});
+
+describe("quake strike fairness through the real tick", () => {
+  it("does not turn the three-crew/full-tank repro into a repeated-strike wipe", () => {
+    const c = threeCrewQuake();
+    const events = run(c, 20);
+    const s = c.snapshot();
+
+    expect(events.filter((e) => e.type === "strike" && e.detail === "quake").length).toBeGreaterThan(1);
+    expect(events.filter((e) => e.type === "colonist_injured")).toHaveLength(0);
+    expect(events.filter((e) => e.type === "casualty" && e.detail === "strike")).toHaveLength(0);
+    expect(s.population).toBe(3);
+    expect(s.dead).toBe(0);
+    expect(s.outcome).toBeNull();
+    expect(Object.values(s.pools).every((p) => p.amount > 0)).toBe(true);
+  });
+
+  it("round-trips hazard identity and per-colonist hit markers mid-quake", () => {
+    const c = threeCrewQuake(true);
+    const opening: ColonyEvent[] = [];
+    while (!opening.some((e) => e.type === "colonist_injured") && c.snapshot().t < 20) {
+      c.tick(0.2);
+      opening.push(...c.drainEvents());
+    }
+    expect(opening.some((e) => e.type === "colonist_injured")).toBe(true);
+    expect(c.snapshot().hazards.some((h) => h.kind === "quake" && h.phase === "active")).toBe(true);
+
+    const before = stateOf(c);
+    const d = Colony.load(c.serialize());
+    const after = stateOf(d);
+    expect(after.hazards.map((h) => h.id)).toEqual(before.hazards.map((h) => h.id));
+    expect(after.hazardCounter).toBe(before.hazardCounter);
+    expect(after.colonists.map((k) => k.lastStrikeHazardId))
+      .toEqual(before.colonists.map((k) => k.lastStrikeHazardId));
+
+    const aEvents = run(c, 20);
+    const bEvents = run(d, 20);
+    expect(bEvents).toEqual(aEvents);
+    expect(d.snapshot()).toEqual(c.snapshot());
+    expect(aEvents.filter((e) => e.type === "casualty" && e.detail === "strike")).toHaveLength(0);
+  });
+
+  it("backfills missing strike identities in legacy saves deterministically", () => {
+    const c = threeCrewQuake(true);
+    run(c, 5); // active quake, before this seed's first crew hit
+    const save = c.serialize();
+    delete (save.state as Partial<ColonyState>).hazardCounter;
+    for (const h of save.state.hazards) delete (h as { id?: number }).id;
+    for (const k of save.state.colonists) delete (k as Partial<ColonistInstance>).lastStrikeHazardId;
+
+    const a = Colony.load(save);
+    const b = Colony.load(save);
+    expect(stateOf(a).hazards.map((h) => h.id)).toEqual([1]);
+    expect(stateOf(a).hazardCounter).toBe(2);
+    expect(stateOf(a).colonists.every((k) => k.lastStrikeHazardId === null)).toBe(true);
+    expect(run(b, 20)).toEqual(run(a, 20));
+    expect(b.snapshot()).toEqual(a.snapshot());
+  });
+
+  it("protects already-wounded crew when a legacy save resumes mid-strike hazard", () => {
+    const c = threeCrewQuake(true);
+    const opening: ColonyEvent[] = [];
+    while (!opening.some((e) => e.type === "colonist_injured") && c.snapshot().t < 20) {
+      c.tick(0.2);
+      opening.push(...c.drainEvents());
+    }
+    expect(opening.some((e) => e.type === "colonist_injured")).toBe(true);
+
+    const save = c.serialize();
+    delete (save.state as Partial<ColonyState>).hazardCounter;
+    for (const h of save.state.hazards) delete (h as { id?: number }).id;
+    for (const k of save.state.colonists) delete (k as Partial<ColonistInstance>).lastStrikeHazardId;
+
+    const resumed = Colony.load(save);
+    const activeId = stateOf(resumed).hazards.find((h) => h.phase === "active")!.id;
+    expect(stateOf(resumed).colonists.filter((k) => k.injury > 0)
+      .every((k) => k.lastStrikeHazardId === activeId)).toBe(true);
+    const events = run(resumed, 20);
+    expect(events.filter((e) => e.type === "casualty" && e.detail === "strike")).toHaveLength(0);
+    expect(resumed.snapshot().population).toBe(3);
   });
 });
 

@@ -11,7 +11,7 @@
    piloted, mining, or hauling body is unavailable for that assignment; gather
    credits still land in the pools like resupply does, outside net flow.
    ============================================================================ */
-import type { ColonistView, DepositKind, DepositView } from "@shared/types";
+import type { BuildingState, ColonistView, DepositKind, DepositView } from "@shared/types";
 import { DEFS } from "./defs";
 import {
   WALK_SPEED, PILOT_SPEED, ARRIVE_EPS, CARRY_CAP, DEPOT_RADIUS,
@@ -107,17 +107,38 @@ function nearestMedbay(s: ColonyState, p: Pt): Pt | null {
   return best;
 }
 
+/** A connected hub/pressurized module is a shelter. Selection and protection
+ *  intentionally share this predicate so autonomous crew never run toward a
+ *  disconnected door that cannot protect them. */
+function isSealedShelter(b: BuildingState): boolean {
+  const d = DEFS[b.defId];
+  return !!d && b.connected && (d.requiresPressure === true || d.isHub === true);
+}
+
 /** nearest sealed building's access cell to a point (shelter target in a hazard) */
 function nearestShelter(s: ColonyState, p: Pt): Pt {
   let best: { defId: string; gx: number; gy: number; rot?: number } | null = null, bestD = Infinity;
   for (const b of s.buildings) {
-    const d = DEFS[b.defId];
-    if (!d || !(d.requiresPressure || d.isHub)) continue;
+    if (!isSealedShelter(b)) continue;
     const c = buildingCenter(b);
     const dist = (c.x - p.x) ** 2 + (c.y - p.y) ** 2;
     if (dist < bestD) { bestD = dist; best = b; }
   }
   return best ? accessCell(s, best) : baseCenter(s);
+}
+
+/** True only once an autonomous colonist has physically reached the access cell
+ *  of a sealed shelter. `state === "sheltering"` is deliberately insufficient:
+ *  that state is also used while walking there. A player who keeps piloting an
+ *  actor has chosen to remain exposed, even when standing at the same door. */
+export function atSealedShelter(s: ColonyState, c: ColonistInstance): boolean {
+  if (isPiloted(s, c.id) || c.state !== "sheltering") return false;
+  for (const b of s.buildings) {
+    if (!isSealedShelter(b)) continue;
+    const p = accessCell(s, b);
+    if (Math.hypot(c.x - p.x, c.y - p.y) <= ARRIVE_EPS) return true;
+  }
+  return false;
 }
 
 /** an empty cell nearest a point — where new arrivals spawn and fresh rovers
@@ -305,7 +326,9 @@ export function stepColonists(s: ColonyState, dt: number): Set<number> {
   reconcileColonists(s);
   assign(s);
 
-  const hazardActive = s.hazards.some((h) => h.phase === "active");
+  // The warning phase is real evacuation time. Waiting for activation would
+  // make the first strike land before an autonomous colonist takes one step.
+  const hazardPresent = s.hazards.length > 0;
   const day = s.tod > DAY_START && s.tod < DAY_END;
 
   // sticky gather claims this pass — every live claim held by an auto colonist
@@ -325,7 +348,7 @@ export function stepColonists(s: ColonyState, dt: number): Set<number> {
 
     let goal: Pt;
     let arriveState: ColonistInstance["state"];
-    if (hazardActive) {
+    if (hazardPresent) {
       goal = nearestShelter(s, c); arriveState = "sheltering";
     } else if (c.injury > 0) {
       // the wounded limp to triage — a treatable medbay's door, else home

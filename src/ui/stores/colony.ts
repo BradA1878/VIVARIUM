@@ -38,6 +38,7 @@ import {
 import { Hints, type Hint, type HintId } from "../hints";
 import { leaderId, boardableRover } from "../lead";
 import { alienTechFromEvent } from "../alienTech";
+import { endCopy } from "../endReport";
 
 // player preferences (persisted) — gate the director, the live narrator, render
 // quality, the audio gains, and the next run's difficulty. The deep watch below
@@ -167,8 +168,6 @@ let director: Director | null = null;
 // cross-run memory — the planet's learning across runs
 let playerModel: PlayerModel = { runs: 0, wins: 0, deaths: 0, solsSum: 0, byAxis: { power: 0, oxygen: 0, water: 0, food: 0 }, byHazard: { dust: 0, meteor: 0, flare: 0, coldsnap: 0, quake: 0 } };
 let directorBias: Record<HazardKind, number> = { dust: 1, meteor: 1, flare: 1, coldsnap: 1, quake: 1 };
-let lastCritRes: Axis | null = null;
-let lastHazard: HazardKind | null = null;
 // idle banter's quiet clock — the sim-t of the last REAL routed event
 let lastRealEventT = 0;
 // Director attribution — the strike the Director just chose, so the matching
@@ -340,8 +339,6 @@ function tearDownRun(): void {
   sentinel?.reset();
   director?.reset();
   directorBias = openingBias(playerModel);
-  lastCritRes = null;
-  lastHazard = null;
   lastRealEventT = 0;
   lastDirectedStrike = null;
   attributionCounter = 0;
@@ -419,7 +416,7 @@ async function goTo(slotKey: string, target: SaveData): Promise<boolean> {
     liveNarrationInFlight = false;
     narrationWatermarkT = -Infinity;
     council?.reset(); sentinel?.reset(); director?.reset();
-    lastCritRes = null; lastHazard = null; lastDirectedStrike = null; attributionCounter = 0;
+    lastDirectedStrike = null; attributionCounter = 0;
     dismissHint();
     dismissAlienTechReveal();
     messages.value = [];
@@ -692,13 +689,10 @@ export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "sol
     // a resupply window closing surfaces what actually banked (the live alert
     // already explains that the transfer is automatic while the pod is present)
     if (e.type === "resupply_done" && !snapshot.value?.outcome) showResupplyToast(e);
-    if (e.type === "crit_start" && e.res) lastCritRes = e.res as Axis;
-    else if (e.type === "hazard_start" && e.kind) lastHazard = e.kind;
-    else if (e.type === "victory" || e.type === "defeat") {
+    if (e.type === "victory" || e.type === "defeat") {
       recordOutcome(playerModel, {
         won: e.type === "victory",
-        lethalAxis: e.type === "defeat" ? lastCritRes ?? undefined : undefined,
-        recentHazard: lastHazard ?? undefined,
+        cause: e.type === "defeat" ? e.cause : undefined,
         sols: snapshot.value?.sol ?? 1,
       });
       saveModel(playerModel);
@@ -953,7 +947,10 @@ const controls = {
       simError.value = `Launch aborted because the colony could not be saved (${err instanceof Error ? err.message : String(err)}).`;
       return;
     }
-    const archive = { ...save, state: { ...save.state, outcome: null, outcomeReason: "" } };
+    const archive = {
+      ...save,
+      state: { ...save.state, outcome: null, outcomeReason: "", defeatCause: null },
+    };
     // log the ledger row FIRST (synchronous), so a tab-close during the remote save
     // round-trip can't orphan the world (local archive + ledger land in one tick).
     upsertColony({
@@ -1085,44 +1082,19 @@ function runHistory(): RunHistory {
   return history;
 }
 
-/** how each hazard reads when it shades a death sentence */
-const HAZARD_CLAUSE: Record<HazardKind, string> = {
-  dust: "under a sky full of dust",
-  meteor: "in the shadow of a meteor strike",
-  flare: "with the flare still in the wires",
-  coldsnap: "in the deep cold",
-  quake: "on ground that would not stay still",
-};
-
-/** one line naming the proximate cause of the end — the record's last word */
+/** one line naming the exact terminal cause supplied by the engine */
 function runEpitaph(): string {
   const s = snapshot.value;
   if (!s || !s.outcome) return "";
-  const clause = lastHazard ? HAZARD_CLAUSE[lastHazard] : null;
-  if (s.outcome === "victory") {
-    return clause
-      ? `The colony learned to breathe on its own — even ${clause}.`
-      : "The colony learned to breathe on its own.";
-  }
-  if (s.outcome === "expansion") {
-    return clause
-      ? `The pod cleared the gravity well ${clause}. This colony stands; the work goes on elsewhere.`
-      : "The pod cleared the gravity well. This colony stands on its own; the work goes on elsewhere.";
-  }
-  if (s.outcomeReason === "window") {
-    return clause
-      ? `Time ran out ${clause}, with the colony still short of standing alone.`
-      : "Time ran out with the colony still short of standing alone.";
-  }
-  const failed = lastCritRes ? `The ${lastCritRes} failed last` : "Everything failed at once";
-  return clause ? `${failed}, ${clause}.` : `${failed}.`;
+  return endCopy(s).epitaph;
 }
 
 /** the planet's cross-run learning, shaped for the end screen's dossier panel */
 export interface DirectorDossier {
   runs: number;
   wins: number;
-  deaths: number;
+  /** lost runs (not individual colonist deaths) */
+  losses: number;
   byAxis: Record<Axis, number>;
   byHazard: Record<HazardKind, number>;
   /** per-hazard opening multipliers (1 = neutral) the Director starts with */
@@ -1134,7 +1106,7 @@ function directorDossier(): DirectorDossier {
   return {
     runs: playerModel.runs,
     wins: playerModel.wins,
-    deaths: playerModel.deaths,
+    losses: playerModel.deaths,
     byAxis: { ...playerModel.byAxis },
     byHazard: { ...playerModel.byHazard },
     bias: openingBias(playerModel),

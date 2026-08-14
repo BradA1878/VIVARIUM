@@ -241,7 +241,7 @@ describe("autonomy — the field never sleeps", () => {
     const { c, s } = controlled(13);
     injectRobot(s, 10, 5);
     s.deposits = [{ id: 501, gx: 8, gy: 5, kind: "ore", amount: 45, max: 140 }];
-    s.hazards.push({ kind: "dust", phase: "active", tLeft: 40, activeDur: 40, intensity: 0.8, cadence: 0 });
+    s.hazards.push({ id: 1, kind: "dust", phase: "active", tLeft: 40, activeDur: 40, intensity: 0.8, cadence: 0 });
     const before = s.materials.amount;
 
     const robotStates = new Set<string>();

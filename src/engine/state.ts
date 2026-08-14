@@ -5,12 +5,14 @@
    counter) the tick needs but the UI doesn't.
    ============================================================================ */
 import type {
-  BuildingState, ColonistAct, DepositKind, Difficulty, HazardKind, HazardPhase,
+  BuildingState, ColonistAct, DefeatCause, DepositKind, Difficulty, HazardKind, HazardPhase,
   Outcome, Pool, Resource, Side, TradeGive, TradePhase, UfoPhase, Weather, World,
 } from "@shared/types";
 
 /** a live hazard with the bookkeeping the tick needs (the HUD sees HazardView) */
 export interface HazardInstance {
+  /** monotonic identity used to make per-colonist strike effects idempotent */
+  id: number;
   kind: HazardKind;
   phase: HazardPhase;
   /** seconds left in the current phase */
@@ -34,6 +36,9 @@ export interface ColonistInstance {
   carryAmt: number;
   /** base-seconds of recovery remaining; 0 = healthy (engine/injury.ts) */
   injury: number;
+  /** last meteor/quake instance that affected this colonist; prevents one
+   *  multi-strike hazard from wounding and then killing the same person */
+  lastStrikeHazardId: number | null;
   /** building uid this colonist is assigned to staff, or null */
   workUid: number | null;
   /** hab uid this colonist shelters in, or null */
@@ -206,6 +211,8 @@ export interface ColonyState {
   windLevel: number;
   /** live hazards (telegraph + active) */
   hazards: HazardInstance[];
+  /** next monotonic hazard identity (round-trips with saves) */
+  hazardCounter: number;
   /** seconds to the next auto-scheduled hazard (ignored when director-controlled) */
   nextHazard: number;
   /** an external Director is driving hazards → the engine scheduler stands down */
@@ -214,6 +221,8 @@ export interface ColonyState {
   timers: Record<"oxygen" | "water" | "food", number | null>;
   grace: number;
   dead: number;
+  /** hostile removals are tracked separately from deaths */
+  abducted: number;
 
   // campaign (doc §2.5)
   deadlineSol: number;
@@ -232,6 +241,10 @@ export interface ColonyState {
   selfSufficiencyGoal: number;
   outcome: Outcome;
   outcomeReason: string;
+  /** most recent event that removed a colonist; becomes terminal if population reaches zero */
+  lastLossCause: DefeatCause | null;
+  /** frozen explanation for a defeat; null while the run is active or successful */
+  defeatCause: DefeatCause | null;
 
   arrivalsLeft: number;
   nextArrival: number;
@@ -284,7 +297,8 @@ export interface SaveData {
 export function emptyColonist(id: number, x: number, y: number): ColonistInstance {
   return {
     id, x, y, facing: 0, state: "idle",
-    carryKind: null, carryAmt: 0, injury: 0, workUid: null, homeUid: null,
+    carryKind: null, carryAmt: 0, injury: 0, lastStrikeHazardId: null,
+    workUid: null, homeUid: null,
     gatherDepositId: null, gatherT: 0,
   };
 }

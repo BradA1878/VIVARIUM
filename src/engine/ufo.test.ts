@@ -38,6 +38,7 @@ function ufoState(o: Partial<{
     ufoCounter: o.ufoCounter ?? 1,
     sol: o.sol ?? 5,
     population: o.population ?? colonists.length,
+    abducted: 0,
     colonists,
     pilots: o.possessed != null ? [{ id: o.possessed, dx: 0, dy: 0 }] : [],
     buildings: o.buildings ?? [],
@@ -109,6 +110,7 @@ describe("the abduction beat (hovering → leaving)", () => {
     updateUfo(s, 0.2, rngOf(0.9), emit); // no shield → block chance 0 → grab succeeds
 
     expect(s.population).toBe(3);
+    expect(s.abducted).toBe(1);
     expect(s.colonists.find((c) => c.id === 3)).toBeUndefined();
     expect(ev.some((e) => e.type === "abducted")).toBe(true);
     expect(s.ufo?.phase).toBe("leaving");
@@ -241,6 +243,7 @@ describe("the UFO is wired through the real tick + snapshot, deterministically",
     const rest = run(c, UFO_INBOUND + UFO_HOVER + UFO_LEAVE + 1);
     expect(rest.some((e) => e.type === "abducted")).toBe(true); // undefended → taken
     expect(c.snapshot().population).toBe(pop0 - 1);
+    expect(c.snapshot().abducted).toBe(1);
     expect(c.snapshot().ufo).toBeNull();              // departed
   });
 
@@ -264,6 +267,20 @@ describe("the UFO is wired through the real tick + snapshot, deterministically",
     run(c, UFO_HOVER + UFO_LEAVE + 1);
     run(d, UFO_HOVER + UFO_LEAVE + 1);
     expect(d.snapshot()).toEqual(c.snapshot());
+  });
+
+  it("loads a legacy save without an abduction counter at zero", () => {
+    const save = new Colony(778).serialize();
+    delete (save.state as Partial<ColonyState>).abducted;
+    expect(Colony.load(save).snapshot().abducted).toBe(0);
+  });
+
+  it("normalizes an invalid abduction count at the save boundary", () => {
+    const save = new Colony(779).serialize();
+    (save.state as unknown as { abducted: unknown }).abducted = -4.5;
+    expect(Colony.load(save).snapshot().abducted).toBe(0);
+    (save.state as unknown as { abducted: unknown }).abducted = 3.8;
+    expect(Colony.load(save).snapshot().abducted).toBe(3);
   });
 });
 

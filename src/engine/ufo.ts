@@ -67,6 +67,7 @@ function resolveAbduction(s: ColonyState, u: UfoInstance, rng: RNG, emit: Emit):
   s.colonists = s.colonists.filter((c) => c.id !== victim.id);
   removePilot(s, victim.id); // safety; we never target a piloted colonist
   s.population = Math.max(0, s.population - 1);
+  s.abducted = (s.abducted ?? 0) + 1;
   emit({ type: "abducted" });
   bumpMorale(s, -MORALE_BUMP.abducted);
 }

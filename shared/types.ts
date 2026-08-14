@@ -137,6 +137,15 @@ export type HazardKind = "dust" | "meteor" | "flare" | "coldsnap" | "quake";
 
 export const HAZARD_KINDS: HazardKind[] = ["dust", "meteor", "flare", "coldsnap", "quake"];
 
+/** The engine's durable explanation for a lost run. This crosses the worker
+ *  boundary with the final snapshot/event so the UI never has to infer a death
+ *  from whichever warning happened most recently. */
+export type DefeatCause =
+  | { type: "resource"; resource: "oxygen" | "water" | "food" }
+  | { type: "strike"; hazard: "meteor" | "quake" }
+  | { type: "window" }
+  | { type: "unknown" };
+
 export type HazardPhase = "telegraph" | "active";
 
 /** a hazard as the HUD/renderer sees it */
@@ -366,6 +375,8 @@ export interface Snapshot {
   timers: Record<"oxygen" | "water" | "food", number | null>;
   grace: number;
   dead: number;
+  /** cumulative crew taken by hostile UFOs this run (not deaths) */
+  abducted: number;
   /** colony morale, clamped to [floor, 1] — scales production, never movement */
   morale: number;
   /** the active difficulty profile (chosen at reset, persisted in state) */
@@ -391,6 +402,8 @@ export interface Snapshot {
   /** set once when the campaign ends */
   outcome: Outcome;
   outcomeReason: string;
+  /** exact terminal cause for a defeat; null while active or after success */
+  defeatCause: DefeatCause | null;
 
   paused: boolean;
   speed: number;
@@ -499,6 +512,8 @@ export interface ColonyEvent {
   tech?: string;
   /** free-text detail (e.g. the Sentinel's anomalous feature, or a hazard kind) */
   detail?: string;
+  /** structured terminal cause on a defeat event */
+  cause?: DefeatCause;
   /** anomaly magnitude in standard deviations above learned-normal */
   sigma?: number;
   /** hazard kind for hazard_* events */

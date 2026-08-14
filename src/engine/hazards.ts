@@ -61,6 +61,7 @@ export function spawnHazard(s: ColonyState, kind: HazardKind, rng: RNG, intensit
   const inten = clamp01((intensity ?? m.intMin + rng.next() * m.intSpan)
     * difficultyProfile(s.difficulty).hazardIntensityMult);
   s.hazards.push({
+    id: s.hazardCounter++,
     kind, phase: "telegraph", tLeft: m.warn,
     activeDur: m.activeMin + rng.next() * m.activeSpan,
     intensity: inten, cadence: m.cadence ?? 0,
@@ -84,7 +85,10 @@ function pickKind(rng: RNG, world: World): HazardKind {
 export function updateHazards(s: ColonyState, dt: number, rng: RNG, emit: Emit): void {
   if (!s.directorControlled) {
     s.nextHazard -= dt;
-    if (s.nextHazard <= 0) {
+    // A forced/direct event can land just as the scheduler becomes due. Keep
+    // the due timer latched until the live event ends rather than stacking two
+    // identities and defeating the per-hazard injury guard.
+    if (s.nextHazard <= 0 && s.hazards.length === 0) {
       const kind = pickKind(rng, s.world);
       spawnHazard(s, kind, rng);
       emit({ type: "hazard_warn", kind, detail: kind, secs: Math.round(HAZARD_META[kind].warn) });
@@ -148,7 +152,7 @@ function applyActive(s: ColonyState, h: HazardInstance, dt: number, rng: RNG, em
       h.cadence -= dt;
       if (h.cadence <= 0) {
         h.cadence = HAZARD_META.meteor.cadence! * (1.4 - h.intensity);
-        strikeCell(s, rng, emit, METEOR_DMG * (0.6 + h.intensity), "meteor");
+        strikeCell(s, rng, emit, METEOR_DMG * (0.6 + h.intensity), { id: h.id, kind: "meteor" });
       }
       return;
     case "quake":
@@ -156,7 +160,7 @@ function applyActive(s: ColonyState, h: HazardInstance, dt: number, rng: RNG, em
       if (h.cadence <= 0) {
         h.cadence = HAZARD_META.quake.cadence! * (1.4 - h.intensity);
         // quakes target infrastructure — corridors + sealed units (break the seal)
-        strikeTarget(s, rng, emit, QUAKE_DMG * (0.6 + h.intensity), "quake",
+        strikeTarget(s, rng, emit, QUAKE_DMG * (0.6 + h.intensity), { id: h.id, kind: "quake" },
           (b) => { const d = DEFS[b.defId]; return !!d && (d.conduit === true || d.requiresPressure === true); });
       }
       return;
@@ -165,32 +169,32 @@ function applyActive(s: ColonyState, h: HazardInstance, dt: number, rng: RNG, em
 
 /** a strike at a random cell — damages a building if one is there; either way
  *  it wounds the colonists near the impact (near-misses still hurt) */
-function strikeCell(s: ColonyState, rng: RNG, emit: Emit, dmg: number, cause: HazardKind): void {
+function strikeCell(s: ColonyState, rng: RNG, emit: Emit, dmg: number, hazard: { id: number; kind: "meteor" | "quake" }): void {
   const x = (rng.next() * s.N) | 0, y = (rng.next() * s.N) | 0;
   const id = s.grid[idx(s.N, x, y)];
   if (id !== 0) {
     const b = s.buildings.find((bb) => bb.uid === id);
     if (b) {
-      damageBuilding(s, b, dmg, emit, cause);
-      emit({ type: "strike", gx: x, gy: y, hit: true, detail: cause });
-      applyStrikeInjuries(s, x, y, emit);
+      damageBuilding(s, b, dmg, emit, hazard.kind);
+      emit({ type: "strike", gx: x, gy: y, hit: true, detail: hazard.kind });
+      applyStrikeInjuries(s, x, y, hazard, emit);
       applyStrikeMachines(s, x, y, emit);
       return;
     }
   }
-  emit({ type: "strike", gx: x, gy: y, hit: false, detail: cause });
-  applyStrikeInjuries(s, x, y, emit);
+  emit({ type: "strike", gx: x, gy: y, hit: false, detail: hazard.kind });
+  applyStrikeInjuries(s, x, y, hazard, emit);
   applyStrikeMachines(s, x, y, emit);
 }
 
 /** a strike aimed at a filtered building (quakes hit infrastructure) */
-function strikeTarget(s: ColonyState, rng: RNG, emit: Emit, dmg: number, cause: HazardKind, filter: (b: BuildingState) => boolean): void {
+function strikeTarget(s: ColonyState, rng: RNG, emit: Emit, dmg: number, hazard: { id: number; kind: "meteor" | "quake" }, filter: (b: BuildingState) => boolean): void {
   const targets = s.buildings.filter(filter);
   if (!targets.length) return;
   const b = targets[(rng.next() * targets.length) | 0];
-  damageBuilding(s, b, dmg, emit, cause);
-  emit({ type: "strike", gx: b.gx, gy: b.gy, hit: true, detail: cause });
-  applyStrikeInjuries(s, b.gx, b.gy, emit);
+  damageBuilding(s, b, dmg, emit, hazard.kind);
+  emit({ type: "strike", gx: b.gx, gy: b.gy, hit: true, detail: hazard.kind });
+  applyStrikeInjuries(s, b.gx, b.gy, hazard, emit);
   applyStrikeMachines(s, b.gx, b.gy, emit);
 }
 

@@ -5,7 +5,7 @@
    deferred persistent model (doc §3.3): learning that survives a run. localStorage
    today; a Mongo adapter can drop in behind load/save later.
    ============================================================================ */
-import type { HazardKind } from "@shared/types";
+import type { DefeatCause, HazardKind } from "@shared/types";
 
 export type Axis = "power" | "oxygen" | "water" | "food";
 
@@ -13,14 +13,17 @@ export interface PlayerModel {
   runs: number;
   wins: number;
   deaths: number;
-  /** which resource was going lethal at death */
+  /** exact resource cause of a lost run (v2 data only) */
   byAxis: Record<Axis, number>;
-  /** which hazard was active/recent at death */
+  /** exact direct-impact cause of a lost run (v2 data only) */
   byHazard: Record<HazardKind, number>;
   solsSum: number;
 }
 
-const KEY = "vivarium:director:v1";
+export type PlayerModelStorage = Pick<Storage, "getItem" | "setItem">;
+
+export const PLAYER_MODEL_KEY = "vivarium:director:v2";
+export const LEGACY_PLAYER_MODEL_KEY = "vivarium:director:v1";
 
 export function emptyModel(): PlayerModel {
   return {
@@ -30,24 +33,73 @@ export function emptyModel(): PlayerModel {
   };
 }
 
-export function loadModel(): PlayerModel {
+function count(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+}
+
+function modelOf(raw: unknown, keepAttribution: boolean): PlayerModel {
+  const value = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const out = emptyModel();
+  out.runs = count(value.runs);
+  out.wins = Math.min(out.runs, count(value.wins));
+  out.deaths = Math.min(out.runs, count(value.deaths));
+  out.solsSum = typeof value.solsSum === "number" && Number.isFinite(value.solsSum)
+    ? Math.max(0, value.solsSum)
+    : 0;
+  if (!keepAttribution) return out;
+
+  const axes = (value.byAxis && typeof value.byAxis === "object"
+    ? value.byAxis : {}) as Record<string, unknown>;
+  for (const key of Object.keys(out.byAxis) as Axis[]) {
+    out.byAxis[key] = Math.min(out.deaths, count(axes[key]));
+  }
+  const hazards = (value.byHazard && typeof value.byHazard === "object"
+    ? value.byHazard : {}) as Record<string, unknown>;
+  for (const key of Object.keys(out.byHazard) as HazardKind[]) {
+    out.byHazard[key] = Math.min(out.deaths, count(hazards[key]));
+  }
+  return out;
+}
+
+function defaultStorage(): PlayerModelStorage | null {
+  try { return typeof localStorage === "undefined" ? null : localStorage; }
+  catch { return null; }
+}
+
+export function loadModel(storage?: PlayerModelStorage): PlayerModel {
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return emptyModel();
-    return { ...emptyModel(), ...(JSON.parse(raw) as PlayerModel) };
+    const target = storage ?? defaultStorage();
+    if (!target) return emptyModel();
+    const current = target.getItem(PLAYER_MODEL_KEY);
+    if (current) {
+      try { return modelOf(JSON.parse(current), true); }
+      catch { /* corrupt v2: try the legacy totals before starting fresh */ }
+    }
+
+    // v1 called the most recent warning a cause. Preserve honest run totals,
+    // but discard those unverifiable breakdowns before labeling v2 as exact.
+    const legacy = target.getItem(LEGACY_PLAYER_MODEL_KEY);
+    if (!legacy) return emptyModel();
+    let migrated: PlayerModel;
+    try { migrated = modelOf(JSON.parse(legacy), false); }
+    catch { return emptyModel(); }
+    try { target.setItem(PLAYER_MODEL_KEY, JSON.stringify(migrated)); }
+    catch { /* read-only/quota-limited storage: keep the in-memory migration */ }
+    return migrated;
   } catch {
     return emptyModel();
   }
 }
 
-export function saveModel(m: PlayerModel): void {
-  try { localStorage.setItem(KEY, JSON.stringify(m)); } catch { /* private mode */ }
+export function saveModel(m: PlayerModel, storage?: PlayerModelStorage): void {
+  try { (storage ?? defaultStorage())?.setItem(PLAYER_MODEL_KEY, JSON.stringify(modelOf(m, true))); }
+  catch { /* private mode */ }
 }
 
 export interface Outcome {
   won: boolean;
-  lethalAxis?: Axis;
-  recentHazard?: HazardKind;
+  /** exact terminal cause from the engine; absent only for legacy/unknown runs */
+  cause?: DefeatCause;
   sols: number;
 }
 
@@ -56,8 +108,8 @@ export function recordOutcome(m: PlayerModel, o: Outcome): void {
   m.solsSum += o.sols;
   if (o.won) { m.wins++; return; }
   m.deaths++;
-  if (o.lethalAxis) m.byAxis[o.lethalAxis]++;
-  if (o.recentHazard) m.byHazard[o.recentHazard]++;
+  if (o.cause?.type === "resource") m.byAxis[o.cause.resource]++;
+  if (o.cause?.type === "strike") m.byHazard[o.cause.hazard]++;
 }
 
 /** which hazards press which axis */

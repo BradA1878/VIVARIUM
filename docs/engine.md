@@ -311,11 +311,20 @@ damage. Crossing below 0.35 latches and emits `morale_low`; recovering above
 
 ## Injuries and the Med-Bay
 
-A meteor or quake strike wounds **every colonist within 1.6 cells** of the impact
-(`injury.ts`) — near-misses still hurt — and a **second hit while wounded kills**,
-through the existing casualty machinery (`casualty` with detail `"strike"`). Who
-gets hurt falls out of the strike cells the hazard system already rolls, so the
-main RNG stream is byte-identical: zero new draws.
+A meteor or quake strike wounds **every exposed colonist within 1.6 cells** of
+the impact (`injury.ts`) — near-misses still hurt. One hazard instance can affect
+a given colonist only once, so a rapid series of jolts cannot wound and then kill
+the whole crew in one event. The public trigger accepts only one live hazard at
+a time; if a new meteor/quake arrives before recovery, an impact while still wounded is
+lethal through the existing casualty machinery (`casualty` with detail
+`"strike"`). Who gets hurt falls out of the strike cells the hazard system
+already rolls, so the main RNG stream is byte-identical: zero new draws.
+
+The telegraph starts evacuation immediately. Unpiloted crew path to the nearest
+**connected** hub or pressure module, and quake impacts cannot injure them once
+they reach its access cell. Crew still walking and player-piloted crew remain
+exposed. Hazard identities and each colonist's last affected identity persist so
+a mid-hazard save cannot restore the old double-hit behavior.
 
 An injury is base-seconds of recovery (30 s fresh). Healing is a pure rate that
 runs **everywhere** — there are no stranded states — multiplied ×3 within 1.6
@@ -357,9 +366,12 @@ load defaults in `Colony.load` — `difficulty ?? "normal"`, `morale ?? 0.7`,
 `rovers`/`robots` default to empty fleets with fresh fabrication countdowns
 (`roverFab ?? 45`, `robotFab ?? 60`), `windLevel ?? 0` (recomputed next tick),
 `unlocked ?? []` (re-derived and re-announced once on the first tick), and the
-per-colonist gather fields (`gatherDepositId ?? null`, `gatherT ?? 0`). So a
-pre-release save loads as a normal-difficulty, neutral-morale, uninjured colony
-with no machines and the currently-earned schematics.
+per-colonist gather fields (`gatherDepositId ?? null`, `gatherT ?? 0`). Hazard
+ids/counters and per-colonist strike markers are deterministically backfilled;
+already-wounded crew in a legacy mid-strike save are marked as affected by that
+event. The separate abduction count and structured terminal cause default to
+zero/null. So a pre-release save loads as a normal-difficulty, neutral-morale,
+uninjured colony with no machines and the currently-earned schematics.
 
 **Vents get a special backfill.** A pre-generation-economy save carries no
 vents, but seeding them from the live env-RNG would shift its serialized state

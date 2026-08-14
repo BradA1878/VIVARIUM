@@ -178,7 +178,7 @@ describe("idle colonists work the deposit field", () => {
     expect(mover).not.toBeNull();
     expect(mover!.gatherDepositId).not.toBeNull(); // it holds a claim mid-trip
 
-    s.hazards.push({ kind: "dust", phase: "active", tLeft: 30, activeDur: 30, intensity: 0.6, cadence: 0 });
+    s.hazards.push({ id: 1, kind: "dust", phase: "active", tLeft: 30, activeDur: 30, intensity: 0.6, cadence: 0 });
     c.tick(0.2); c.drainEvents();
     expect(mover!.state).toBe("sheltering");
     expect(mover!.gatherDepositId).toBeNull(); // the claim is released while sheltering

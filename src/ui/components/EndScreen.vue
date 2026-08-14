@@ -11,6 +11,7 @@ import { useColony } from "@/ui/stores/colony";
 import { useSettings } from "@/ui/stores/settings";
 import { RES } from "@/ui/resources";
 import { destinationsFrom, WORLD_META } from "@/ui/founding";
+import { endCopy } from "@/ui/endReport";
 import Sparkline from "./Sparkline.vue";
 
 const { snapshot, controls, capabilities, runHistory, runEpitaph, directorDossier, colonies } = useColony();
@@ -24,14 +25,7 @@ const screenClass = computed(() => (won.value ? "win" : isExpansion.value ? "exp
 const headline = computed(() =>
   won.value ? "SELF-SUFFICIENT" : isExpansion.value ? "TRANSPORT POD AWAY" : "THE COLONY IS LOST",
 );
-const subline = computed(() => {
-  if (!s.value) return "";
-  if (won.value) return "It needs Earth no longer. The watch holds.";
-  if (isExpansion.value) return "This colony stands on its own. Choose where the work continues.";
-  return s.value.outcomeReason === "window"
-    ? "The launch window closed before the colony could stand on its own."
-    : "The last of them stopped breathing. Only the record remains.";
-});
+const subline = computed(() => (s.value ? endCopy(s.value).subline : ""));
 
 // ---- expansion: the next-world picker + the cross-run colonies ledger ----------
 const META = WORLD_META;
@@ -47,6 +41,7 @@ const outcomeWord = (o: Outcome): string => OUTCOME_WORD[o ?? ""] ?? "active";
 const hist = computed(() => (s.value?.outcome ? runHistory() : null));
 const epitaph = computed(() => (s.value?.outcome ? runEpitaph() : ""));
 const dossier = computed(() => (s.value?.outcome ? directorDossier() : null));
+const abducted = computed(() => s.value?.abducted ?? 0);
 
 // ---- telemetry curves ---------------------------------------------------------
 const RES_COL = Object.fromEntries(RES.map((r) => [r.k, r.col])) as Record<string, string>;
@@ -134,7 +129,11 @@ const runDiff = computed(
         <span class="sep">·</span>
         <span><b>{{ s.population }}</b> survived</span>
         <span class="sep">·</span>
-        <span :class="{ lost: s.dead > 0 }"><b>{{ s.dead }}</b> lost</span>
+        <span :class="{ lost: s.dead > 0 }"><b>{{ s.dead }}</b> dead</span>
+        <template v-if="abducted > 0">
+          <span class="sep">·</span>
+          <span class="lost"><b>{{ abducted }}</b> abducted</span>
+        </template>
       </div>
 
       <div v-if="charts.length" class="end-sec">
@@ -153,12 +152,12 @@ const runDiff = computed(
         <div class="dos-head">
           <b>{{ dossier.runs }}</b> {{ dossier.runs === 1 ? "run" : "runs" }}
           <span class="sep">·</span> <b>{{ dossier.wins }}</b> won
-          <span class="sep">·</span> <b>{{ dossier.deaths }}</b> lost
+          <span class="sep">·</span> <b>{{ dossier.losses }}</b> lost {{ dossier.losses === 1 ? "run" : "runs" }}
           <span class="sep">·</span> avg <b>{{ avgSols }}</b> sols
         </div>
         <div class="dos-cols">
           <div class="dos-col">
-            <div class="dos-sub">DEATHS BY RESOURCE</div>
+            <div class="dos-sub">LOST RUNS BY RESOURCE</div>
             <div v-for="row in axisRows" :key="row.k" class="dos-row">
               <span class="dos-k">{{ row.k }}</span>
               <span class="dos-bar"><span class="dos-fill axis" :style="{ width: row.pct + '%' }" /></span>
@@ -166,7 +165,7 @@ const runDiff = computed(
             </div>
           </div>
           <div class="dos-col">
-            <div class="dos-sub">DEATHS BY HAZARD</div>
+            <div class="dos-sub">LOST RUNS BY DIRECT HAZARD</div>
             <div v-for="row in hazardRows" :key="row.k" class="dos-row">
               <span class="dos-k">{{ row.k }}</span>
               <span class="dos-bar"><span class="dos-fill hazard" :style="{ width: row.pct + '%' }" /></span>

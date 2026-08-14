@@ -4,7 +4,7 @@ import { useColony } from "@/ui/stores/colony";
 import { fmt } from "@/ui/format";
 import { DEFS } from "@/engine";
 import type { HazardKind } from "@shared/types";
-import { resupplyAlertCopy } from "./alerts";
+import { quakeAlertSub, resupplyAlertCopy } from "./alerts";
 
 interface AlertItem {
   k: string;
@@ -37,7 +37,9 @@ const items = computed<AlertItem[]>(() => {
       k: "hz-" + h.kind,
       sev: incoming ? 3 : h.kind === "dust" || h.kind === "coldsnap" ? 2 : 3,
       txt: incoming ? `${meta.name} — INBOUND` : meta.name,
-      sub: incoming
+      sub: h.kind === "quake"
+        ? quakeAlertSub(h.remaining, incoming)
+        : incoming
         ? `impact in ${fmt(h.remaining)}s`
         : h.kind === "dust"
           ? `solar at ${fmt(cur.solarMul * 100)}% · ${fmt(h.remaining)}s`
@@ -99,12 +101,11 @@ const items = computed<AlertItem[]>(() => {
 
 <template>
   <div
-    v-if="s && items.length"
     class="alerts"
     role="status"
     aria-live="polite"
     aria-atomic="false"
-    aria-relevant="additions text"
+    aria-relevant="additions"
   >
     <div v-for="it in items" :key="it.k" :class="'alert sev' + it.sev">
       <span class="alert-bar" aria-hidden="true" />

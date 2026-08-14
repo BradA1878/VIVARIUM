@@ -174,6 +174,13 @@ onBeforeUnmount(() => {
           </ol>
         </section>
 
+        <section class="help-section help-hazards" aria-labelledby="help-hazards-title">
+          <h3 id="help-hazards-title">SHELTER + INJURIES</h3>
+          <p>
+            When a hazard warning appears, unpiloted crew automatically head for the nearest connected, sealed shelter. Shelter protects them from quake jolts once they arrive; <b>piloted crew remain exposed until released</b>, even at a shelter door. One event cannot hit the same crew member twice. If a new meteor or quake arrives before a wound heals, another hit can be lethal. Wounded crew leave work and seek a powered, connected <b>Med-Bay</b> for faster treatment.
+          </p>
+        </section>
+
         <div class="help-columns">
           <section class="help-section compact" aria-labelledby="help-build-title">
             <h3 id="help-build-title">BUILDING</h3>
@@ -399,6 +406,12 @@ kbd {
 .first-watch { display: grid; gap: 7px; margin: 0; padding-left: 22px; }
 .first-watch li { padding-left: 3px; }
 .first-watch li::marker { color: var(--cyan); font-variant-numeric: tabular-nums; }
+
+.help-hazards p {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--rust);
+}
 
 .help-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 .help-section.compact { min-width: 0; }

@@ -4,7 +4,8 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, Difficulty, LegacyManifest, Resource, ShipmentManifest, Side, Snapshot, World,
+  BuildingDef, BuildingState, ColonyEvent, DefeatCause, Difficulty, HazardKind,
+  LegacyManifest, Resource, ShipmentManifest, Side, Snapshot, World,
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
@@ -17,9 +18,8 @@ import { canPlace, cellsFor, idx, inBounds, migrateGrid } from "./grid";
 import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
 import { recomputeCaps } from "./caps";
-import { spawnHazard, hazardViews, SCHED_FIRST } from "./hazards";
-import type { HazardKind } from "@shared/types";
-import type { ColonyState, SaveData, Pilot } from "./state";
+import { spawnHazard, hazardViews, HAZARD_META, SCHED_FIRST } from "./hazards";
+import type { ColonyState, SaveData, Pilot, HazardInstance } from "./state";
 import { buildingFunctional, addPilot, removePilot } from "./state";
 import { emptyBuilding, emptyColonist } from "./state";
 import {
@@ -185,6 +185,7 @@ export class Colony {
     if (!pod) return; // need a working pod to leave
     this.s.outcome = "expansion";
     this.s.outcomeReason = "expansion";
+    this.s.defeatCause = null;
     this.s.paused = true;
     this.emit({ type: "expansion" });
   }
@@ -289,8 +290,11 @@ export class Colony {
   // ---- hazards (the living environment) -------------------------------------
   /** spawn a hazard now (used by the storm button and the agent-layer Director) */
   triggerHazard(kind: HazardKind, intensity?: number): void {
+    // Hazard identity uses a single per-colonist marker, so the public engine
+    // contract is one event at a time (the Director already observes this rule).
+    if (this.s.hazards.length > 0 || this.s.outcome !== null) return;
     const inten = spawnHazard(this.s, kind, this.rng, intensity);
-    this.emit({ type: "hazard_warn", kind, detail: kind, secs: 6 });
+    this.emit({ type: "hazard_warn", kind, detail: kind, secs: HAZARD_META[kind].warn });
     void inten;
   }
   /** hand hazard control to an external Director (engine scheduler stands down) */
@@ -425,6 +429,7 @@ export class Colony {
       timers: { ...s.timers },
       grace: s.grace,
       dead: s.dead,
+      abducted: s.abducted,
       morale: s.morale,
       difficulty: s.difficulty,
       world: s.world,
@@ -437,6 +442,7 @@ export class Colony {
       selfSufficiencyGoal: s.selfSufficiencyGoal,
       outcome: s.outcome,
       outcomeReason: s.outcomeReason,
+      defeatCause: s.defeatCause ? { ...s.defeatCause } : null,
       paused: s.paused,
       speed: s.speed,
       t: s.t,
@@ -481,6 +487,8 @@ export class Colony {
         unlocked: [...this.s.unlocked],
         timers: { ...this.s.timers },
         hazards: this.s.hazards.map((h) => ({ ...h })),
+        lastLossCause: this.s.lastLossCause ? { ...this.s.lastLossCause } : null,
+        defeatCause: this.s.defeatCause ? { ...this.s.defeatCause } : null,
       },
     };
   }
@@ -490,6 +498,7 @@ export class Colony {
     c.rng.setState(data.rngState);
     if (data.envRngState !== undefined) c.envRng.setState(data.envRngState);
     const st = data.state;
+    const strikeState = loadStrikeState(st);
     // A save can outlive a removed/renamed tech definition. Cancel that stale
     // offer rather than presenting a deal that could charge materials for an
     // inert id; known resource and tech offers resume exactly where they were.
@@ -524,6 +533,14 @@ export class Colony {
       colonists: (st.colonists ?? []).map((c2) => ({
         ...c2,
         injury: c2.injury ?? 0,
+        // A pre-feature save may have been captured after the first impact of
+        // an active quake/meteor. Treat its already-wounded crew as affected by
+        // that backfilled hazard so resume cannot recreate the old double-hit.
+        lastStrikeHazardId: validHazardId(c2.lastStrikeHazardId)
+          ? c2.lastStrikeHazardId
+          : (c2.injury ?? 0) > 0
+            ? strikeState.legacyActiveStrikeId
+            : null,
         gatherDepositId: c2.gatherDepositId ?? null,
         gatherT: c2.gatherT ?? 0,
       })),
@@ -545,6 +562,7 @@ export class Colony {
       ufoCounter: st.ufoCounter ?? 1,
       morale: st.morale ?? MORALE_START,
       moraleLatch: st.moraleLatch ?? false,
+      abducted: loadCount(st.abducted),
       difficulty: st.difficulty ?? "normal",
       world: st.world ?? "mars", // legacy saves predate worlds → the anchor
       // Acquired tech is authoritative data, not a cached effect list. Normal
@@ -555,6 +573,8 @@ export class Colony {
       settlementEstablished: st.settlementEstablished ?? false,
       arrivalReadyFor: st.arrivalReadyFor ?? 0,
       hazardsSurvived: st.hazardsSurvived ?? 0,
+      lastLossCause: loadDefeatCause(st.lastLossCause),
+      defeatCause: loadDefeatCause(st.defeatCause),
       selfSufficiencyBalance: st.selfSufficiencyBalance
         ? { ...st.selfSufficiencyBalance }
         : { power: 0, water: 0, oxygen: 0, food: 0 },
@@ -562,7 +582,8 @@ export class Colony {
       // first tick, re-announcing the new buildings once (engine/unlocks.ts)
       unlocked: [...(st.unlocked ?? [])],
       timers: { ...st.timers },
-      hazards: (st.hazards ?? []).map((h) => ({ ...h })),
+      hazards: strikeState.hazards,
+      hazardCounter: strikeState.hazardCounter,
     };
     // legacy backfill: a pre-generation-economy save carries no vents. Seed them
     // from a DERIVED rng — never the live envRng, whose serialized state must
@@ -598,6 +619,72 @@ function loadPilots(st: ColonyState): Pilot[] {
   return leg.possessed != null
     ? [{ id: leg.possessed, dx: leg.moveIntent?.dx ?? 0, dy: leg.moveIntent?.dy ?? 0 }]
     : [];
+}
+
+function validHazardId(v: unknown): v is number {
+  return typeof v === "number" && Number.isSafeInteger(v) && v > 0 && v < Number.MAX_SAFE_INTEGER;
+}
+
+function loadCount(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+}
+
+/** Treat save payloads as data, even though SaveData is typed at compile time.
+ *  Old or hand-edited local saves must not smuggle an impossible cause into the
+ *  final report. */
+function loadDefeatCause(raw: unknown): DefeatCause | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as { type?: unknown; resource?: unknown; hazard?: unknown };
+  if (value.type === "window" || value.type === "unknown") return { type: value.type };
+  if (
+    value.type === "resource"
+    && (value.resource === "oxygen" || value.resource === "water" || value.resource === "food")
+  ) {
+    return { type: "resource", resource: value.resource };
+  }
+  if (value.type === "strike" && (value.hazard === "meteor" || value.hazard === "quake")) {
+    return { type: "strike", hazard: value.hazard };
+  }
+  return null;
+}
+
+/** Backfill identities for pre-feature saves without perturbing either RNG.
+ *  Existing valid ids round-trip exactly; missing/duplicate ids are assigned in
+ *  stable array order, and the counter also advances past retired ids remembered
+ *  by colonists so a future hazard can never accidentally reuse one. */
+function loadStrikeState(st: ColonyState): {
+  hazards: HazardInstance[];
+  hazardCounter: number;
+  legacyActiveStrikeId: number | null;
+} {
+  const used = new Set<number>();
+  let legacyActiveStrikeId: number | null = null;
+  let next = 1;
+  const hazards = (st.hazards ?? []).map((raw) => {
+    const saved = (raw as Partial<HazardInstance>).id;
+    let id: number;
+    if (validHazardId(saved) && !used.has(saved)) id = saved;
+    else {
+      while (used.has(next)) next++;
+      id = next;
+      if (
+        legacyActiveStrikeId == null
+        && raw.phase === "active"
+        && (raw.kind === "meteor" || raw.kind === "quake")
+      ) legacyActiveStrikeId = id;
+    }
+    used.add(id);
+    next = Math.max(next, id + 1);
+    return { ...raw, id };
+  });
+
+  const savedCounter = (st as Partial<ColonyState>).hazardCounter;
+  if (validHazardId(savedCounter)) next = Math.max(next, savedCounter);
+  for (const c of st.colonists ?? []) {
+    const previous = c.lastStrikeHazardId;
+    if (validHazardId(previous)) next = Math.max(next, previous + 1);
+  }
+  return { hazards, hazardCounter: next, legacyActiveStrikeId };
 }
 
 function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState {
@@ -649,11 +736,13 @@ function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState 
     solarMul: 0,
     windLevel: 0,
     hazards: [],
+    hazardCounter: 1,
     nextHazard: SCHED_FIRST,
     directorControlled: false,
     timers: { oxygen: null, water: null, food: null },
     grace: prof.grace,
     dead: 0,
+    abducted: 0,
     deadlineSol: prof.deadlineSol,
     targetPop: TARGET_POP,
     settlementSustainableFor: 0,
@@ -665,6 +754,8 @@ function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState 
     selfSufficiencyGoal: SELF_SUFFICIENCY_GOAL,
     outcome: null,
     outcomeReason: "",
+    lastLossCause: null,
+    defeatCause: null,
     arrivalsLeft: ARRIVALS_TOTAL,
     nextArrival: ARRIVAL_FIRST,
     nextResupply: RESUPPLY_FIRST,

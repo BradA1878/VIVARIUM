@@ -69,7 +69,13 @@ onUnmounted(cancelReset);
       </button>
 
       <template v-if="canManageSimulation">
-        <button class="ctl" type="button" title="Force a dust storm" @click="controls.storm()">⛈ storm</button>
+        <button
+          class="ctl"
+          type="button"
+          title="Force a dust storm"
+          :disabled="s.hazards.length > 0"
+          @click="controls.storm()"
+        >⛈ storm</button>
         <div class="reset-wrap">
           <button
             class="ctl"

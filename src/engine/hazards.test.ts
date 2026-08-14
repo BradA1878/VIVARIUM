@@ -19,6 +19,39 @@ function step(c: Colony, seconds: number, dt = 0.2): ColonyEvent[] {
 const stateOf = (c: Colony): ColonyState => (c as unknown as { s: ColonyState }).s;
 
 describe("hazard lifecycle", () => {
+  it("reports the actual kind-specific warning time", () => {
+    const c = new Colony(1);
+    c.setDirector(true);
+    c.triggerHazard("quake", 1);
+    expect(c.drainEvents()).toContainEqual(expect.objectContaining({
+      type: "hazard_warn", kind: "quake", secs: 4,
+    }));
+  });
+
+  it("rejects a second public trigger while another hazard is live", () => {
+    const c = new Colony(2);
+    c.setDirector(true);
+    c.triggerHazard("quake", 1);
+    c.drainEvents();
+    c.triggerHazard("meteor", 1);
+    expect(c.drainEvents()).toEqual([]);
+    expect(c.snapshot().hazards.map((h) => h.kind)).toEqual(["quake"]);
+  });
+
+  it("holds a due scheduler event until a forced hazard has ended", () => {
+    const c = new Colony(3);
+    const s = stateOf(c);
+    s.nextHazard = 0.1;
+    c.forceStorm();
+    c.drainEvents();
+
+    const during = step(c, 1);
+
+    expect(during.filter((e) => e.type === "hazard_warn")).toHaveLength(0);
+    expect(c.snapshot().hazards.map((h) => h.kind)).toEqual(["dust"]);
+    expect(s.nextHazard).toBeLessThanOrEqual(0);
+  });
+
   it("telegraphs, goes active (weather=dust), then ends", () => {
     const c = new Colony(1);
     c.setDirector(true); // stop the auto-scheduler so we only see our hazard

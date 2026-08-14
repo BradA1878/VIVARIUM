@@ -65,17 +65,29 @@ export class ChroniclerVoice implements Voice {
       }
 
       case "defeat": {
-        const window = e.detail === "window";
-        const variants = window
-          ? [
-              `Sol ${snap.sol}. The window closed first. ${snap.population} stranded, ${snap.dead} lost. The record ends incomplete.`,
-              `Final entry: launch window missed. Living: ${snap.population}. Dead: ${snap.dead}. Filed with the settlements that did not last.`,
-            ]
-          : [
-              `Final entry: zero living. ${snap.dead} in the dead ledger. The record closes.`,
-              `Colony ended. Count: none breathing, ${snap.dead} lost. The watch is over.`,
-            ];
-        return this.say(window ? "defeat:w" : "defeat:c", variants, 6);
+        if (e.cause?.type === "window" || e.detail === "window") {
+          return this.say("defeat:w", [
+            `Sol ${snap.sol}. The window closed first. ${snap.population} stranded, ${snap.dead} dead. The record ends incomplete.`,
+            `Final entry: launch window missed. Living: ${snap.population}. Dead: ${snap.dead}. Filed with the settlements that did not last.`,
+          ], 6);
+        }
+        if (e.cause?.type === "resource") {
+          return this.say(`defeat:r:${e.cause.resource}`, [
+            `Final entry: ${e.cause.resource} exhausted. Living: 0. Dead: ${snap.dead}.`,
+            `Colony ended after the ${e.cause.resource} reserve reached zero. Dead ledger: ${snap.dead}.`,
+          ], 6);
+        }
+        if (e.cause?.type === "strike") {
+          const event = e.cause.hazard === "quake" ? "marsquake" : "meteor";
+          return this.say(`defeat:h:${e.cause.hazard}`, [
+            `Final entry: ${event} impact. Living: 0. Dead: ${snap.dead}.`,
+            `Colony ended by ${event} strike. Dead ledger: ${snap.dead}.`,
+          ], 6);
+        }
+        return this.say("defeat:u", [
+          `Final entry: zero living. ${snap.dead} in the dead ledger. Cause unconfirmed.`,
+          `Colony ended. Living: 0. Dead: ${snap.dead}. The terminal cause is unconfirmed.`,
+        ], 6);
       }
 
       // a violent death is the archivist's to enter; the slow ones stay VIVARIUM's

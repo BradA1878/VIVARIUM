@@ -130,6 +130,23 @@ describe("the new event banks", () => {
     expect(u!.line.toLowerCase()).toContain("breath");
   });
 
+  it("the final entry names the engine's terminal cause without inventing suffocation", () => {
+    const snap = new Colony().snapshot();
+    snap.population = 0;
+    snap.dead = 3;
+    const quake = new Council().observe(ev("defeat", 20, {
+      cause: { type: "strike", hazard: "quake" },
+    }), snap, 20);
+    expect(quake?.register).toBe("chronicler");
+    expect(quake!.line.toLowerCase()).toContain("marsquake");
+    expect(quake!.line.toLowerCase()).not.toContain("breath");
+
+    const oxygen = new Council().observe(ev("defeat", 20, {
+      cause: { type: "resource", resource: "oxygen" },
+    }), snap, 20);
+    expect(oxygen!.line.toLowerCase()).toContain("oxygen");
+  });
+
   it("bootLines vary by difficulty and thread through Council.bootLine", () => {
     expect(bootLines("easy")[0]).not.toBe(bootLines()[0]);
     expect(bootLines("hard")[0]).not.toBe(bootLines()[0]);

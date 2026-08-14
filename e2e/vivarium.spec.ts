@@ -77,6 +77,13 @@ test("fresh start is keyboard- and screen-reader-ready", async ({ page }, testIn
   await expect(help).toContainText("EARTH RESUPPLY");
   await expect(help).toContainText("automatically adds power, water, oxygen, and food");
   await expect(help).toContainText("No action is required");
+  await expect(help.getByRole("heading", { name: "SHELTER + INJURIES" })).toBeVisible();
+  await expect(help).toContainText("unpiloted crew automatically head for the nearest connected, sealed shelter");
+  await expect(help).toContainText("Shelter protects them from quake jolts once they arrive");
+  await expect(help).toContainText("piloted crew remain exposed until released");
+  await expect(help).toContainText("One event cannot hit the same crew member twice");
+  await expect(help).toContainText("If a new meteor or quake arrives before a wound heals, another hit can be lethal");
+  await expect(help).toContainText("powered, connected Med-Bay");
   await expect(help).toContainText("TRADERS + ALIEN TECH");
   await expect(help).toContainText("the exact effect starts immediately");
   await expect(help.getByRole("button", { name: /field guide/i })).toHaveCount(0);
@@ -105,6 +112,161 @@ test("fresh start is keyboard- and screen-reader-ready", async ({ page }, testIn
     .analyze();
   const blocking = results.violations.filter((v) => v.impact === "critical" || v.impact === "serious");
   expect(blocking, blocking.map((v) => `${v.id}: ${v.help}`).join("\n")).toEqual([]);
+});
+
+test("the normal HUD exposes a wounded-crew status without overflowing its rail", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "desktop colony HUD");
+  await page.setViewportSize({ width: 760, height: 600 });
+  await reachStartScreen(page);
+  await page.getByRole("button", { name: "BEGIN" }).click();
+  await expect(page.locator(".topbar")).toBeVisible();
+
+  const closeGuide = page.getByRole("button", { name: /close field guide/i });
+  if (await closeGuide.isVisible()) await closeGuide.click();
+
+  // The live region exists before a warning is inserted, so assistive tech can
+  // announce the later addition without hearing every countdown mutation.
+  await expect(page.locator(".alerts")).toHaveCount(1);
+
+  await page.evaluate(async () => {
+    type InjurySave = {
+      state: {
+        paused: boolean;
+        colonists: { injury: number }[];
+        hazardCounter: number;
+        hazards: {
+          id: number;
+          kind: "quake";
+          phase: "telegraph";
+          tLeft: number;
+          activeDur: number;
+          intensity: number;
+          cadence: number;
+        }[];
+      };
+    };
+    type DebugBridge = {
+      save(): Promise<InjurySave>;
+      load(save: InjurySave): Promise<unknown>;
+    };
+    const bridge = (window as Window & { __viv?: { bridge?: DebugBridge } }).__viv?.bridge;
+    if (!bridge) throw new Error("No debug bridge is available");
+    const save = await bridge.save();
+    const colonist = save.state.colonists[0];
+    if (!colonist) throw new Error("No crew member is available to wound");
+    save.state.paused = true;
+    colonist.injury = 30;
+    save.state.hazards = [{
+      id: save.state.hazardCounter++,
+      kind: "quake",
+      phase: "telegraph",
+      tLeft: 4,
+      activeDur: 10,
+      intensity: 0.8,
+      cadence: 1.6,
+    }];
+    await bridge.load(save);
+  });
+
+  const status = page.locator(".crew-injury");
+  await expect(status).toBeVisible();
+  await expect(status).toHaveAttribute("role", "status");
+  await expect(status).toHaveAttribute("aria-live", "polite");
+  await expect(status).toContainText("1 WOUNDED");
+  await expect(status).toContainText("OFF SHIFT");
+  await expect(status).toContainText("MED-BAY SPEEDS RECOVERY");
+
+  const quakeAlert = page.locator(".alerts .alert").filter({ hasText: "MARSQUAKE" });
+  await expect(quakeAlert).toContainText("crew evacuating");
+  await expect(quakeAlert).toContainText("release any pilot to shelter");
+  await expect(quakeAlert).toContainText("exposed crew can be injured");
+  await expect(quakeAlert).toContainText("seals at risk");
+  await expect(page.locator(".alerts")).toHaveAttribute("aria-relevant", "additions");
+  await expect(page.getByRole("button", { name: /storm/i })).toBeDisabled();
+
+  const [railBox, statusBox, alertRailBox, alertBox] = await Promise.all([
+    page.locator(".left-col").boundingBox(),
+    status.boundingBox(),
+    page.locator(".right-col").boundingBox(),
+    quakeAlert.boundingBox(),
+  ]);
+  if (!railBox || !statusBox || !alertRailBox || !alertBox) throw new Error("HUD geometry is unavailable");
+  expect(statusBox.x).toBeGreaterThanOrEqual(railBox.x);
+  expect(statusBox.x + statusBox.width).toBeLessThanOrEqual(railBox.x + railBox.width + 1);
+  expect(alertBox.x).toBeGreaterThanOrEqual(alertRailBox.x);
+  expect(alertBox.x + alertBox.width).toBeLessThanOrEqual(alertRailBox.x + alertRailBox.width + 1);
+
+  const results = await new AxeBuilder({ page })
+    .include(".crew-injury")
+    .withTags(["wcag2a", "wcag2aa"])
+    .analyze();
+  const blocking = results.violations.filter((v) => v.impact === "critical" || v.impact === "serious");
+  expect(blocking, blocking.map((v) => `${v.id}: ${v.help}`).join("\n")).toEqual([]);
+});
+
+test("a quake defeat reports the impact while preserving the resource record", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "desktop end-of-run report");
+  await page.setViewportSize({ width: 760, height: 600 });
+  await reachStartScreen(page);
+  await page.getByRole("button", { name: "BEGIN" }).click();
+
+  const closeGuide = page.getByRole("button", { name: /close field guide/i });
+  if (await closeGuide.isVisible()) await closeGuide.click();
+
+  await page.evaluate(async () => {
+    type EndSave = {
+      state: {
+        paused: boolean;
+        outcome: "defeat" | null;
+        outcomeReason: string;
+        defeatCause: { type: "strike"; hazard: "quake" } | null;
+        population: number;
+        dead: number;
+        abducted: number;
+        colonists: unknown[];
+        pools: Record<"power" | "water" | "oxygen" | "food", { amount: number; capacity: number }>;
+        timers: Record<"water" | "oxygen" | "food", number | null>;
+      };
+    };
+    type DebugBridge = {
+      save(): Promise<EndSave>;
+      load(save: EndSave): Promise<unknown>;
+    };
+    const bridge = (window as Window & { __viv?: { bridge?: DebugBridge } }).__viv?.bridge;
+    if (!bridge) throw new Error("No debug bridge is available");
+    const save = await bridge.save();
+    save.state.paused = true;
+    save.state.outcome = "defeat";
+    save.state.outcomeReason = "colony";
+    save.state.defeatCause = { type: "strike", hazard: "quake" };
+    save.state.population = 0;
+    save.state.dead = 3;
+    save.state.abducted = 1;
+    save.state.colonists = [];
+    for (const pool of Object.values(save.state.pools)) pool.amount = pool.capacity;
+    save.state.timers = { oxygen: null, water: null, food: null };
+    await bridge.load(save);
+  });
+
+  const report = page.locator(".endscreen");
+  await expect(report).toBeVisible();
+  await expect(report.locator(".end-mark")).toHaveText("THE COLONY IS LOST");
+  await expect(report.locator(".end-sub")).toHaveText("The final crew member was lost to a marsquake strike.");
+  await expect(report.locator(".end-epitaph")).toHaveText(
+    "A marsquake strike claimed the final crew member. All resource reserves remained above zero.",
+  );
+  await expect(report.locator(".end-stats")).toContainText("0 survived");
+  await expect(report.locator(".end-stats")).toContainText("3 dead");
+  await expect(report.locator(".end-stats")).toContainText("1 abducted");
+  await expect(report).not.toContainText(/everything failed|stopped breathing/i);
+  const [reportBox, statsBox] = await Promise.all([
+    report.locator(".end-inner").boundingBox(),
+    report.locator(".end-stats").boundingBox(),
+  ]);
+  if (!reportBox || !statsBox) throw new Error("End-report geometry is unavailable");
+  expect(statsBox.x).toBeGreaterThanOrEqual(reportBox.x);
+  expect(statsBox.x + statsBox.width).toBeLessThanOrEqual(reportBox.x + reportBox.width + 1);
+  expect(await report.locator(".end-stats").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
 });
 
 test("launch, help, and form input survive global shortcuts", async ({ page }, testInfo) => {

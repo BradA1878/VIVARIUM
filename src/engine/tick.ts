@@ -267,6 +267,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
           const lost = Math.min(s.population, 1);
           s.population -= lost;
           s.dead += lost;
+          if (lost > 0) s.lastLossCause = { type: "resource", resource: k };
           s.timers[k] = s.grace * 0.5;
           emit({ type: "casualty", res: k, n: lost });
           bumpMorale(s, -MORALE_BUMP.casualty);
@@ -394,21 +395,26 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
       else if (s.hazardsSurvived > 0 && buffered) {
         s.outcome = "victory";
         s.outcomeReason = "self-sufficient";
+        s.defeatCause = null;
         s.paused = true;
         emit({ type: "victory" });
       }
     }
 
     if (s.outcome === null && s.population <= 0) {
+      const cause = s.lastLossCause ?? { type: "unknown" as const };
       s.outcome = "defeat";
       s.outcomeReason = "colony";
+      s.defeatCause = cause;
       s.paused = true;
-      emit({ type: "defeat", detail: "colony" });
+      emit({ type: "defeat", detail: "colony", cause });
     } else if (s.outcome === null && s.sol >= s.deadlineSol) {
+      const cause = { type: "window" as const };
       s.outcome = "defeat";
       s.outcomeReason = "window";
+      s.defeatCause = cause;
       s.paused = true;
-      emit({ type: "defeat", detail: "window" });
+      emit({ type: "defeat", detail: "window", cause });
     }
   }
 }

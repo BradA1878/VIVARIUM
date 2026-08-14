@@ -111,7 +111,7 @@
 .endscreen.win .end-mark { color: #d7eef5; text-shadow: 0 0 30px rgba(127, 212, 232, 0.5); }
 .endscreen.lose .end-mark { color: #f0b49a; text-shadow: 0 0 30px rgba(232, 120, 79, 0.4); }
 .end-sub { font-family: var(--serif); font-style: italic; font-size: 16px; color: var(--dim); line-height: 1.5; margin-bottom: 26px; }
-.end-stats { font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em; color: var(--ink); display: flex; gap: 12px; justify-content: center; margin-bottom: 30px; }
+.end-stats { font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em; color: var(--ink); display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: center; margin-bottom: 30px; }
 .end-stats b { color: #e6eef1; font-weight: 500; }
 .end-stats .sep { color: var(--faint); }
 .end-stats .lost b { color: var(--crit); }
