@@ -18,6 +18,33 @@ npm run build          # typecheck + vite build
 
 The game needs no backend or keys. Backend env (all optional, see `.env.example`): `ANTHROPIC_API_KEY` enables the live narrator (server-side only); `VITE_LIVE_NARRATOR=1` opts the *client* into calling it; `MONGODB_URI` enables networked saves (falls back to localStorage). Mongo currently runs locally on this machine.
 
+## Model routing
+
+Main session is the architect and the only thing trusted. Subagents are hands. Everything below is scoped to this repo. If a change looks like it needs edits elsewhere, stop and say so instead of reaching.
+
+**Investigate.** Fan out parallel read-only subagents (model: sonnet) to map the territory. Synthesis stays in the main session. Before writing the spec, the main session does its own targeted read of the seams the change touches so the plan rests on first-hand reading, not on someone else's summary.
+
+**Plan.** Main session writes the plan as self-contained task briefs: files in scope, interfaces, conventions to follow, acceptance criteria, do-not-touch list. If a brief needs a follow-up question to execute, it isn't finished. Sequence the work into phases: shared plumbing first >> per-unit fan-out on disjoint files >> adversarial review.
+
+**Implement.** Delegate well-specified mechanical tasks to write-capable subagents (model: sonnet). Parallel only when tasks touch disjoint files, otherwise serialize. Novel, cross-cutting, or judgment-heavy work stays in the main session.
+
+**Checkpoint each phase.** Main session runs the build and tests itself, reads the actual `git diff`, then commits. A subagent saying "done" or "tests pass" is a claim, not evidence. Verify the claim before verifying the work, then verify the work.
+
+**Adversarial review.** Fan out reviewers against the briefs and the diff, looking for missed criteria, stubbed or faked implementations, and regressions. Their findings are leads. Main session confirms each one in the code before acting.
+
+**Final audit.** Main session reads the full diff end to end, runs the whole suite, and checks the result against the original acceptance criteria personally.
+
+**Skip all of this** when the work is a single file with no interface change. Direct work is cheaper than orchestration overhead.
+
+### Verification commands
+
+Build:  npm run build
+Test:   npm test
+Lint:   Not configured
+Types:  npm run typecheck
+
+"Verify" means running these, not reasoning about whether they would pass.
+
 ## The one architectural rule everything hangs on
 
 There is a **hard wall** between two layers, and almost every design decision follows from it:
