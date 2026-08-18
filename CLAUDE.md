@@ -91,3 +91,28 @@ The fastest correctness loop is `npm run typecheck && npm test`. For anything vi
 ## Scope note
 
 Treat `docs/planning/vivarium-design.md` as the project's *starting point*, not a spec — the codebase has deliberately grown past it. The deeper guides in `docs/` (architecture, engine, agent-layer, gameplay, rendering, development — indexed in `docs/README.md`) document the system as it actually is. Don't gate ideas as "out of scope." Surface genuine engineering tradeoffs (above all, anything that would compromise engine determinism) as informed choices, not vetoes.
+
+## Boy Scout rule
+
+Leave every file cleaner than you found it, and fix real bugs wherever you
+find them.
+
+**Cleanup - scoped to files you're already in.** Dead code, stale comments,
+misleading names, unused imports, lint noise, formatting drift. Cleanup never
+changes behavior: tests pass before and after, same API, same output. No
+refactoring crusades - don't restructure working code because you'd have
+written it differently.
+
+**Bugs - fix them even when unrelated to the task.** A bug is observably wrong
+behavior: wrong output, crash, race, leak, off-by-one, unhandled failure path.
+Code you merely dislike is not a bug. If the fix is small and you're confident,
+fix it, add or update a test that proves the bug existed and is gone, and put
+it in its own commit. If it's large, risky, or you're not certain the behavior
+is wrong, leave a TODO with context and flag it instead of fixing it.
+
+**Surface everything.** Every out-of-scope fix and every flagged suspicion goes
+in your summary. A silent behavior change buried in a feature diff is worse
+than the bug it fixed.
+
+**Keep the diff legible.** Ride-along cleanup is fine, but bug fixes get their
+own commits, and anything that would drown the actual change gets split out.
