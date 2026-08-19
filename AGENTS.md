@@ -1,0 +1,118 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+VIVARIUM is a 3D Mars-colony survival sim (a hidden Easter egg for bradanderson.org), narrated by a council of AI voices. It is a Vite + Vue 3 + TypeScript app with a three.js renderer, a sim that runs in a Web Worker, optional ML, and an optional Node/Hono backend.
+
+## Commands
+
+```bash
+npm run dev            # Vite dev server → http://localhost:5180 (game is fully playable with no backend)
+npm run server         # Hono backend on :8787 (live narrator + Mongo); Vite proxies /api → here
+npm test               # Vitest: all *.test.ts under src/ and shared/
+npx vitest run src/engine/engine.test.ts          # one test file
+npx vitest run -t "brownout sheds the lowest"     # tests matching a name
+npm run typecheck      # vue-tsc --noEmit  (run this after edits — it covers src/, shared/, server/)
+npm run build          # typecheck + vite build
+```
+
+The game needs no backend or keys. Backend env (all optional, see `.env.example`): `ANTHROPIC_API_KEY` enables the live narrator (server-side only); `VITE_LIVE_NARRATOR=1` opts the *client* into calling it; `MONGODB_URI` enables networked saves (falls back to localStorage). Mongo currently runs locally on this machine.
+
+## Model routing
+
+Main session is the architect and the only thing trusted. Subagents are hands. Everything below is scoped to this repo. If a change looks like it needs edits elsewhere, stop and say so instead of reaching.
+
+**Investigate.** Fan out parallel read-only subagents (model chosen to fit the task) to map the territory. Synthesis stays in the main session. Before writing the spec, the main session does its own targeted read of the seams the change touches so the plan rests on first-hand reading, not on someone else's summary.
+
+**Plan.** Main session writes the plan as self-contained task briefs: files in scope, interfaces, conventions to follow, acceptance criteria, do-not-touch list. If a brief needs a follow-up question to execute, it isn't finished. Sequence the work into phases: shared plumbing first >> per-unit fan-out on disjoint files >> adversarial review.
+
+**Implement.** Delegate well-specified mechanical tasks to write-capable subagents (model chosen to fit the task). Parallel only when tasks touch disjoint files, otherwise serialize. Novel, cross-cutting, or judgment-heavy work stays in the main session.
+
+**Checkpoint each phase.** Main session runs the build and tests itself, reads the actual `git diff`, then commits. A subagent saying "done" or "tests pass" is a claim, not evidence. Verify the claim before verifying the work, then verify the work.
+
+**Adversarial review.** Fan out reviewers against the briefs and the diff, looking for missed criteria, stubbed or faked implementations, and regressions. Their findings are leads. Main session confirms each one in the code before acting.
+
+**Final audit.** Main session reads the full diff end to end, runs the whole suite, and checks the result against the original acceptance criteria personally.
+
+**Skip all of this** when the work is a single file with no interface change. Direct work is cheaper than orchestration overhead.
+
+### Verification commands
+
+Build:  npm run build
+Test:   npm test
+Lint:   Not configured
+Types:  npm run typecheck
+
+"Verify" means running these, not reasoning about whether they would pass.
+
+## The one architectural rule everything hangs on
+
+There is a **hard wall** between two layers, and almost every design decision follows from it:
+
+1. **The Engine** (`src/engine/`) — a **deterministic, synchronous** simulation. Same seed + same inputs → same future. It runs inside a **Web Worker** and imports **no** three.js, Vue, DOM, `fetch`, `await`, `Math.random`, `Date.now`, or `@tensorflow/*`. This purity is load-bearing: it powers replay, exact save/resume, and the determinism tests. **Adding any of those to `src/engine/` breaks the guarantees and the tests will catch you.** Use the seeded RNG (`engine/rng.ts`), not `Math.random`.
+2. **The Agent layer + UI** (everything else, main thread) — only ever *observe* the worker's output (a serializable `Snapshot` + a `ColonyEvent` stream) and issue typed `Command`s back. They never reach into the tick.
+
+`shared/types.ts` is the neutral vocabulary spoken across the wall (`Snapshot`, `ColonyEvent`, `BuildingDef`, `Side`, …) — it imports nothing from either side.
+
+The multi-world features (below) hold this rule on purpose, and are the template for extending it: world differences are tuning **numbers** (profiles), not engine branches; anything seed- or time-derived is computed **main-side** and handed to the engine as plain data (`Colony.fastForward` takes a step *count*, never a clock; founding seeds come from `ui/founding.ts`); and cross-colony transfers debit/credit as deterministic **seed-state**, never a live reach across colonies.
+
+Co-op multiplayer (below) extends the same rule across the network: the host's worker stays the **single authoritative sim**, and `src/net/` is just another **main-thread** observer/command-source (like the agent layer) — N players' inputs merge into the one `Command` stream the tick already consumes, with no new RNG or clock in the engine, so determinism, replay, and save/resume stay intact.
+
+## Data flow
+
+```
+worker (sim.worker.ts → SimHost → Colony)        main thread
+  Colony.tick() mutates ColonyState     ──snapshot/events──▶  SimBridge ──▶ renderer (three.js) + Vue store + Council
+  applies Commands (place/route/...)    ◀──── Command ───────  store.controls / placement / palette
+```
+
+- `worker/protocol.ts` defines every `Command` (place, remove, rotate, move, route, triggerHazard, setDirector, possess, moveIntent, respondTrade, setPaused, setSpeed, forceStorm, reset, load, save, start, launchPtp, switchColony, dispatchShipment) and `Outbound` message (snapshot, events, saved, catchupReport, error — surfaced failures: the boundary never wedges silently). **To add a player/agent action, add a Command here, handle it in `worker/host.ts`, expose it on `worker/bridge.ts`.** The worker is authoritative; the main thread predicts (e.g. `engine/predict.ts`, `engine/route.ts`) only for ghost previews.
+- The Vue side is one reactive store: `src/ui/stores/colony.ts` (module singletons, `useColony()`). Components read `snapshot`; `controls.*` issue commands. There is no Pinia.
+- The renderer (`src/render/renderer.ts`) reconciles building meshes against each snapshot and never touches the worker except through `SimBridge`. (`SimBridge` and a guest's `NetBridge` share a `BridgeCore` base, so that one seam serves both the worker wall and co-op's network — see Co-op multiplayer below.)
+
+## Key subsystems
+
+- **Buildings are data, not code.** The whole tech tree is `src/engine/defs.ts`; all balance knobs live in `src/engine/tuning.ts`. The engine just runs recipes against resource pools. Edit numbers, not engine logic, to rebalance.
+- **The tick** (`engine/tick.ts`) is ordered passes (hazards → resupply → generation: solar + wind/steady → power-by-priority brownout shedding → production gates (incl. the reactor recipe + the printer's `producesMat`) → colonist demand → shortfall→grace-timer→casualty → embodied/automation passes → unlock latching → campaign win/lose), not one equation. Buffers (pools) decouple the passes.
+- **The Council** (`src/agent/council/`) is the narrator: four voices (VIVARIUM/Watcher/Strategist/Chronicler), each a stateless `Voice.consider(ctx)`; `Council` (index.ts) arbitrates by severity + cooldowns. Live generation goes through `agent/client.ts` → Hono `/api/narrate` with a **per-persona** prompt (`server/mxf/prompt.ts`); it falls back to scripted lines on any failure and has a circuit breaker, so the game never depends on it.
+- **Causal world model** (`src/agent/worldmodel/`) — pure, deterministic graph of the colony; `diagnoseShortfall()` traces a shortfall to its root cause down the cascade. The Watcher narrates from it.
+- **Sentinel / TensorFlow.js** (`src/agent/sentinel/`) — an autoencoder that learns "normal" telemetry and flags anomalies. It is **non-deterministic and main-thread only** (never in the engine); tf.js is lazy-imported so it stays out of the main bundle. Degrades to a no-op if it fails to load.
+- **The Director** (`src/agent/director/`) — the antagonist, and the cleanest illustration of the wall. It watches snapshots and, on its own pacing, picks the hazard that presses the colony's weakest seam, escalating gap + intensity over the sols — biased by cross-run **memory** (`director/memory.ts`) of how this player tends to die and by the Sentinel's **comfort** signal (it presses harder when you're settled). Because it is *not* the engine it may use `Math.random`; it proposes via a `triggerHazard` Command (toggle the whole thing with `setDirector`) that the deterministic tick applies and logs — so the core stays pure even though its adversary improvises.
+- **Doors / rotation / corridors** — pressure buildings have a `door` side (`engine/doors.ts`) that turns with `BuildingState.rot`; the Corridor palette tile is a 2-click auto-route mode (`engine/route.ts`, BFS door→door). Corridors render as neighbour-aware arms (`render/three/kit/corridor.ts`), not fixed meshes. Doors are routing + visual only; the engine's pressure-seal rule is unchanged.
+- **Embodied colony** — colonists are real engine entities (`engine/colonists.ts`): `ColonistInstance` with continuous grid coords, count == population. Press **F** for the commander chain (`ui/lead.ts`, store `possessToggle`): possess the **commander** (the lowest *living* colonist id — amber rank accents, automatic succession), press again beside a functional rover to **board it**, again to release. **Piloting locks construction** (palette, store `pick`/demolish, and placement clicks all guard on `snapshot.possessed`). **WASD** sends a continuous `moveIntent` Command the tick integrates; **P** (`interact`) explicitly picks up from a surface **deposit** in reach (`engine/deposits.ts`: ice→water, ore→materials, cache→food) and drops at the depot. Unpossessed colonists follow a tod/hazard AI and **route around buildings** via a deterministic BFS (`engine/pathfind.ts`) to a building's door/access cell. WASD is **camera-aligned** (App.vue rotates the input to the iso basis). **Materials** is a build currency (`BuildingDef.matCost`, gated in `grid.ts canPlace`/`predict.ts`). **Alien traders** (`engine/trade.ts`) arrive on a window like resupply; `respondTrade{accept}` swaps pools or grants permanent **alien tech** (`engine/techs.ts`: capacity/passive-power/demand upgrades, bought with materials, applied via `caps.ts` + the tick). Takes are clamped to storable capacity. Determinism is preserved by a **separate env-RNG** (deposits + vents + trades + UFO) so the main hazard/arrival stream is byte-identical, and movement/pathing use no RNG. The renderer (`render/three/kit/astronaut.ts`, `kit/deposit.ts`, `alienship.ts`) interpolates colonist positions and runs a follow-cam (colonists ∪ rovers) off `snapshot.possessed`.
+- **Homeostasis: automation, generation, unlocks** — the colony can run itself once built well, with **zero new RNG** anywhere. **Auto-gather** (`engine/gather.ts`): idle colonists run a shared pick/haul/drop brain with **sticky claims** over one shared per-tick claim set (colonists resolve first in id order, then robots) and **need-aware fresh claims** (`kindsByNeed`: the scarcest pool eats first). The **rover** (`engine/rover.ts`) is a possessable bulk hauler (multi-kind cargo, strike-dented, self-repairing, never destroyed), built by the Rover Bay; **mining robots** (`engine/robots.ts`) are non-possessable gatherers that work sol+night, stunned by flares, scrapped by close strikes. Both draw ids from `colonistCounter` (the **unified actor id space**), so `possess{id}` needed no protocol change. The **Fabricator** (`engine/fabricator.ts`, spec `docs/add-ons/fabricator-spec.md`) is rung 4: a building whose def `replicates` **itself** on a per-instance countdown (`BuildingState.replicateT`, rides snapshots/saves via the wholesale spread), placing copies on adjacent ground through unmodified `canPlace` with the fee = the target's own `matCost` at completion — growth is 1→2→4→8, throttled by brownouts (priority 10, shed first), materials, the grid, and the `FAB_MAX_LINEAGE` freeze; stalls narrate once per episode (stateless edge), `remove` is the kill switch, and the Sentinel watches lineage size as feature index 10. **Generation** (`engine/wind.ts` + tick pass 2): wind is a **pure curve** anti-correlated with solar (peaks at night/in dust); the geothermal tap is flat and **only seats on a vent** (world-gen terrain off the env-RNG; legacy saves backfill from a derived `RNG(seed ^ salt)`, never the live stream); the reactor and materials printer are ordinary pass-4 recipes (`produces` / `producesMat`). **Unlocks** (`engine/unlocks.ts`): the six expansion defs latch open exactly once via pure predicates, enforced in `canPlace`. Hazard pacing was calmed ~2× (engine scheduler 180 s then 150–280 s gaps; Director 220 s first strike, 340→200 s gaps). UI/render side: the narrator is a bottom-edge **ticker** + **L** log (the council rewritten to a dry ≤140-char telemetry register — scripted banks *and* live persona prompts; the tests substring-match the prose), reaction **bubbles** pop over colonists (`render/three/bubbles.ts`), and graphics quality is **auto|low|high** — AUTO (the default) hands fps/ratio/bloom/shadows to the `PerfGovernor` ladder (`render/perf.ts`), LOW/HIGH pin it.
+- **Multi-world: persistence, planet-hopping, parallel colonies** — specs/plans in `docs/superpowers/{specs,plans}/`. The `World = mars|ceres|io|titan` axis is **orthogonal to difficulty**: per-world *sim* levers (solar/wind/vents/deposit mix/hazard weights/start pools) live in `WORLDS` (`engine/tuning.ts`, **Mars == today's constants = the determinism anchor**, applied via `worldProfile()` after the rng draw so draw counts stay byte-identical); per-world *visual* look (terrain seed/relief/rock scatter/material + sky tint) in `render/three/worldlook.ts` (renderer re-themes via `swapWorld()` when `snapshot.world` changes). **Persistence** (`src/persistence/`, NOT engine — main-thread meta state): slot-keyed saves (`local.ts` namespaced keys + `remote.ts` Mongo, orchestrated by `index.ts`, degrade-to-local) so each settled world is its own SLOT; the **Colonies ledger** (`colonies.ts`) holds one `ColonyRecord` per slot **plus an inter-planet `Shipment` queue**; the store's `activeSlot` (persisted) points persistence at the live world. **Founding channel**: `start`/`reset` carry `seed?/world?/legacy?`; seeds + elapsed-time are derived **main-side** (`ui/founding.ts`: `nextSeedFrom`, `slotId`, `catchupSteps`, `WORLD_META`) and passed to the engine as data. **PTP** (planet-hopping): a Transport Pod (`defs.ts` + a `unlocks.ts` gate) ends a run as the `expansion` outcome (`Colony.launchPtp`) and founds the next world on a derived seed, carrying a couple of veterans + a tech (`LegacyManifest`, applied as seed-state in `seedColony`). **Parallel colonies**: `switchColony` makes another slot live — load it, `Colony.fastForward(steps)` replays the **real seeded tick** in fixed `CATCHUP_STEP` sub-steps (the step count is computed main-side and is *chunking-invariant*, so an away colony catches up deterministically and can die off-screen), then resume; a "while you were away" digest (`catchupReport` → `AwayDigest.vue`) diffs before/after. **Inter-planet logistics**: `dispatchShipment` debits the live colony in its tick; the shipment rides the ledger queue (main-thread, transit by wall-clock); the destination is **credited as seed-state** (`Colony.creditShipment`, capacity-clamped, crew at fresh ids) on switch — never a cross-colony live write, and the queue row + its pool effect share one durability boundary so mass survives a tab-close.
+- **Co-op multiplayer: shared colony, P2P** — the newest layer; a **host** plays *architect* (builds, overview) while a small group of friends each drive an *astronaut* on the SAME colony, connected by a serverless room code (no game server; solo stays backend-free). **Engine** — single-possession became N-possession: `ColonyState.pilots[]` (one `{id,dx,dy}` per piloted actor, replacing the scalar `possessed`+`moveIntent`) with helpers `isPiloted`/`pilotOf`/`addPilot`/`removePilot` (`engine/state.ts`); the pilot loop, gather-claim skip, UFO/injury targeting, and `reconcileColonists` all read the SET. `possess`/`moveIntent`/`interact` gained optional `id`/`on` (the host stamps each guest's input; solo callers omit them — `possess(id)` still replaces to one). `snapshot.possessed` stays `number|null` (emitted as `pilots[0]?.id`) so **solo is byte-identical** and legacy saves migrate `possessed`+`moveIntent` → `pilots[]` on load. **No new RNG/clock in the engine** — it's still plain data through typed Commands. **Transport** (`src/net/`, main-thread, NOT engine): `BridgeCore` (extracted from `SimBridge`) holds the subscriptions + synchronous predictors, so a guest's `NetBridge` is the SAME bridge over a Trystero data channel — **the bridge is the network seam**, and the renderer/store can't tell them apart. `room.ts` wraps Trystero (default Nostr signalling, optional TURN); `hostRelay.ts` is the authority boundary — it claims a free colonist per guest, attributes each guest's input to it, **drops build commands from astronauts**, broadcasts snapshots/events, and on death hands a colonist back to **spectate** (re-embodying the guest on the next arrival). **Roles fall out of the existing construction-lock**: the architect never pilots (so can build) and astronauts always pilot (so can't); `BridgeCore.localActor` re-derives `snapshot.possessed` per client (`null` for the architect, the claimed id for a guest), so the follow-cam / build-lock / audio needed no change. UI: `Lobby.vue` (host/join by code + roster), `render/three/nametags.ts` (a callsign billboard over each astronaut, reusing the bubble pattern). **Phones join as astronauts** (tier 2 mobile): below the 560×440 floor the ViewportGate is a **join fork** — the Field Console (`components/fieldconsole.ts` pure logic + `ui/viewport.ts` `belowFloor`, `?join=CODE` prefills an invite link) — and a connected guest gets the `hud--phone` cockpit (`VitalsStrip` + PilotBar touch quad + ticker; rails/hints hidden); founding still needs a wider console. The whole layer leans on two things already true — **engine determinism** (multi-input is just more Commands merged at the host) and the **bridge abstraction**.
+
+## Verifying changes
+
+The fastest correctness loop is `npm run typecheck && npm test`. For anything visual or interactive, drive the real app with Playwright against `npm run dev`: a dev-only hook exposes `window.__viv = { renderer, bridge, settings, … }` (and `window.__sentinel`) so you can call `bridge.place/route/rotate/reset/start(diff,seed,world)/switchColony`, read `bridge.latest`, and screenshot. This is how the renderer, placement, narrator, campaign, and the multi-world flows were validated — prefer it over assuming UI/3D behaviour. Multi-world note: saves + the Colonies ledger + `activeSlot` all live in **localStorage** (keys `vivarium:save:v1*`, `vivarium:colonies:v1`, `vivarium:activeslot:v1`), so a clean slate is *clear localStorage **then reload*** — clearing mid-session doesn't reset the already-running worker/store, and driving `bridge.start` directly bypasses the store's slot/ledger bookkeeping (use the UI for end-to-end ledger flows). Co-op note: a second dev hook `window.__net = { host(code,name), join(code,name) }` drives a session; validate with **two browser tabs/contexts** joining the same code — the guest's `moveIntent` must move its colonist on the HOST's authoritative `bridge.latest`, and the host must stay `possessed:null` (architect, can build) while a guest pilots. The host-side multi-possession is unit-tested offline via two `possess(id,true)` + per-actor `moveIntent` calls (no network). Trystero signalling needs internet (Nostr relays); a guest runs no worker.
+
+## Scope note
+
+Treat `docs/planning/vivarium-design.md` as the project's *starting point*, not a spec — the codebase has deliberately grown past it. The deeper guides in `docs/` (architecture, engine, agent-layer, gameplay, rendering, development — indexed in `docs/README.md`) document the system as it actually is. Don't gate ideas as "out of scope." Surface genuine engineering tradeoffs (above all, anything that would compromise engine determinism) as informed choices, not vetoes.
+
+## Boy Scout rule
+
+Leave every file cleaner than you found it, and fix real bugs wherever you
+find them.
+
+**Cleanup - scoped to files you're already in.** Dead code, stale comments,
+misleading names, unused imports, lint noise, formatting drift. Cleanup never
+changes behavior: tests pass before and after, same API, same output. No
+refactoring crusades - don't restructure working code because you'd have
+written it differently.
+
+**Bugs - fix them even when unrelated to the task.** A bug is observably wrong
+behavior: wrong output, crash, race, leak, off-by-one, unhandled failure path.
+Code you merely dislike is not a bug. If the fix is small and you're confident,
+fix it, add or update a test that proves the bug existed and is gone, and put
+it in its own commit. If it's large, risky, or you're not certain the behavior
+is wrong, leave a TODO with context and flag it instead of fixing it.
+
+**Surface everything.** Every out-of-scope fix and every flagged suspicion goes
+in your summary. A silent behavior change buried in a feature diff is worse
+than the bug it fixed.
+
+**Keep the diff legible.** Ride-along cleanup is fine, but bug fixes get their
+own commits, and anything that would drown the actual change gets split out.
