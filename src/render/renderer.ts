@@ -645,6 +645,9 @@ export class ThreeRenderer {
           this.hazardFx.ringPulse(c, FX_CYAN, 1.2);
         }
       }
+      if (entry.gx !== b.gx || entry.gy !== b.gy) {
+        entry.mesh.object.position.copy(this.grid.footprintCenter(DEFS[b.defId], b.gx, b.gy));
+      }
       entry.gx = b.gx;
       entry.gy = b.gy;
       // facing: turn the building by its rotation (corridors stay at rot 0)
