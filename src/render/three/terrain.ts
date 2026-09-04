@@ -2,13 +2,14 @@
    The colony's surface — a continuous displaced plane (no checkerboard) with
    instanced boulders scattered past the play grid. Noise + colour ported from
    render.js (fbm / drawTerrain). InstancedMesh for the rock field (doc §1). The
-   seeds + palette + rock/monolith tints are per-WORLD (worldlook.ts); Mars is
-   the anchor and reproduces today's rust plane exactly.
+   seeds + palette + rock/monolith tints are per-WORLD (worldlook.ts); the faint
+   soil finish adds shading detail without changing the surface or its colors.
    ============================================================================ */
 import * as THREE from "three";
 import type { World } from "@shared/types";
 import { CELL, GridSpace } from "./coords";
 import { worldLook, type WorldLook } from "./worldlook";
+import { createSurfaceDetail, roughnessWithDetail } from "./surface-detail";
 
 function hash(x: number, y: number): number {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -45,7 +46,7 @@ export class Terrain {
   readonly surfaceStep = CELL;
   readonly surfaceHalfSpan: number;
   private readonly surfaceHeights: Float32Array;
-  private disposables: (THREE.BufferGeometry | THREE.Material)[] = [];
+  private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
   /** displaced surface at world (x, z): base noise flattened over the play
    *  grid plus the far ridged relief — shared by the plane verts and the
    *  rock/monolith scatter so everything sits on the same ground. */
@@ -97,20 +98,27 @@ export class Terrain {
       const c = groundLo.clone().lerp(groundHi, Math.min(1, s.n * 0.72 + s.dune * 0.28));
       c.lerp(accent, s.dune * 0.3);
       // ridge tops/faces fall toward dark shadowed rock so the far relief reads
-      // against the fog (vertex colours only — no textures)
+      // against the fog (the color remains entirely vertex-driven)
       if (s.ridge > 0) c.lerp(ridgeColor, Math.min(0.7, s.ridge * 0.38));
       colors.push(c.r, c.g, c.b);
     }
     geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
     geo.computeVertexNormals();
+    const detail = createSurfaceDetail("soil", look.rockSeed ^ 0x5011);
+    const tileSpan = 8 * CELL;
+    detail.texture.repeat.set(span / tileSpan, span / tileSpan);
+    // Plane UVs run +X/-Z. Anchor the tile to world zero so changing the grid
+    // size or terrain margin keeps each ripple at the same scale and position.
+    detail.texture.offset.set(-edge / tileSpan, -edge / tileSpan);
     const mat = new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: look.mat.rough, metalness: look.mat.metal,
+      vertexColors: true, ...roughnessWithDetail(look.mat.rough, detail), metalness: look.mat.metal,
+      bumpMap: detail.texture, bumpScale: 0.02 * CELL,
       emissive: new THREE.Color(look.ground.accent), emissiveIntensity: look.mat.emissive, // 0 for mars (no glow); Io's faint lava
     });
     const ground = new THREE.Mesh(geo, mat);
     ground.receiveShadow = true;
     this.group.add(ground);
-    this.disposables.push(geo, mat);
+    this.disposables.push(geo, mat, detail.texture);
 
     // ---- instanced boulders past the play grid ----
     this.scatterRocks(grid, margin, look);

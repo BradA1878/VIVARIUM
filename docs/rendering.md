@@ -50,6 +50,20 @@ ring light — breathing hot white-cyan while the pile runs, guttering offline,
 rust when hurt. The **wind turbine** (`kit/wind.ts`) is the one kit driven by
 the weather itself — see `KitEnv` below.
 
+The shared material library owns one small, seeded roughness map for metal
+and frosted domes. Its measured mean compensates the material roughness, keeping
+the original finish and base colors. Individual kits own their materials;
+`MaterialLib.dispose()` releases the shared map after all kits are retired.
+Solar panels and signal materials retain their existing finish.
+
+Industrial motion uses render-side active time (`KitEnv.dt`): the printer tray
+retracts slightly, the robotics/reclaimer carriage carries its beam, cable,
+and tool together, and the fabricator's small extruder travels below its beam.
+The phase starts from the building seed and freezes exactly when paused or
+offline. The fabricator also holds at completion or the lineage cap; the
+Robotics Bay holds at the fleet cap (`working:false`). The existing core and
+progress lights retain their meanings.
+
 Corridors are special: rather than a fixed mesh, they render as **neighbour-aware
 arms** (`kit/corridor.ts`) that connect to adjacent corridors, hub, and habs, so a
 routed run reads as one continuous pressurized link.
@@ -125,7 +139,7 @@ warning, never bloom into a halo.
 ## PostFx and the quality switch
 
 `render/three/postfx.ts` is the high-quality render path: a composer chain of
-**RenderPass → UnrealBloomPass → OutputPass**, paired with **ACESFilmic tone
+**RenderPass → UnrealBloomPass → OutputPass → FXAA**, paired with **ACESFilmic tone
 mapping** at exposure 1.15. The bloom **threshold is 1.0 by design**: only
 emissives deliberately pushed above 1.0 bloom (the composer's HalfFloat targets
 carry those values into the threshold test), so there are no layers or masks —
@@ -133,9 +147,15 @@ kits opt surfaces into glow by pushing intensity. A solar flare drives
 `setFlare(level)` from `snap.hazards`, pulsing exposure and bloom strength in
 short spikes.
 
-The **composer is allocated lazily** on the first enabled render and its GPU
-targets are released on disable; disabled is the **pixel-identical pre-postfx
-path** (NoToneMapping, exposure 1.0, direct `renderer.render`).
+Both quality paths now share the final **ACES / sRGB output step**, so fog,
+background, and materials keep the same color treatment when bloom is disabled.
+The composer is allocated lazily and released/rebuilt on a bloom toggle; Low
+allocates no bloom mip-chain. A final FXAA pass cleans up small panel frames,
+antennae, and corridor rings after tone mapping. The scene target is HDR; the
+output target is 8-bit with no depth attachment. The final canvas does not
+need its own MSAA. Flare exposure and its cadence survive quality
+changes. The common output path adds scene/output targets and two fullscreen
+passes on Low; it prevents the old direct-render path from changing the palette.
 
 ## The PerfGovernor — adaptive quality
 
@@ -145,7 +165,7 @@ owns the clocks and the levers) that walks a **ladder** of quality steps, each
 a `{fps, pixel-ratio, bloom, shadows}` tuple. The ladder is finer than the old
 tiers: from `60 fps / 1.5 / bloom / shadows` at the top, through 30 fps and
 ratio steps, down to `30 / 1.0 / no bloom / no shadows` at the bottom. Two
-indices are pinned as the legacy tiers — `STEP_HIGH` (30 fps, 1.5, bloom,
+indices are pinned as the legacy tiers — `STEP_HIGH` (60 fps, 1.5, bloom,
 shadows — also the starting step) and `STEP_LOW` (the bottom rung).
 
 Each frame the renderer measures the cost of the **frame body** — the time
@@ -168,15 +188,33 @@ drives, and **AUTO is the default**: it un-pins the governor and lets it walk
 the ladder; **HIGH** and **LOW** `pin()` it to the legacy steps (a pinned
 governor keeps measuring but never moves). When the step changes, the renderer
 applies the levers in one place: the render-loop fps cap, the device pixel
-ratio, the composer toggle (the pixel-identical path above), and shadow maps —
+ratio, the optional bloom pass, and shadow maps —
 materials recompiled on the spot so the shadow flip takes hold immediately.
 The sim is untouched by all of this: the worker ticks at its fixed cadence
 whatever the render rate does. `renderer.perfInfo()` exposes the live read
 (step, EMA, pinned, calibrating) for DEV.
 
+## Ground contact and night definition
+
+`ground-details.ts` batches contact darkening, faint base dust, and healthy
+night door/window spill into at most three draws for the colony. The patches
+share the actual terrain triangles (`Terrain.heightAt`), use soft alpha masks,
+and depth-test against structures. They follow building position/rotation,
+retire on removal, and rebuild on world changes. Night level only updates
+material opacity; footprint changes rebuild geometry, while operating-state
+changes rebuild only spill. Heights come from the cached terrain vertices.
+Dust fades after sundown rather than glowing.
+
+Door groups and warm portholes mark their source with `userData.groundLight`.
+Spill uses those positions and the building's existing healthy status, adding
+no real lights per building and no rust warning halos. A modest increase in
+the existing hemisphere fill lifts night silhouettes without changing the
+world palette or daylight. The sun retains its 1024² shadow map with a tighter
+depth range and small bias adjustment.
+
 ## Camera
 
-- An **isometric** camera framed on the colony (the buildable area is 15×15).
+- An **isometric** camera framed on the colony (the buildable area is 25×25).
 - WASD input in the HUD is **camera-aligned**: `App.vue` rotates the player's intent
   into the iso basis so "up" is up on screen regardless of camera angle.
 - When you possess a colonist, the renderer runs a **follow-cam** off
@@ -203,6 +241,10 @@ whatever the render rate does. `renderer.perfInfo()` exposes the live read
   silhouettes. The monoliths draw from their own seeded stream, and the boulder
   scatter still consumes its legacy keep-rolls, so the pre-existing rock field is
   byte-stable.
+- A small world-seeded bump/roughness map adds faint soil ripples at a fixed
+  eight-cell repeat. It changes shading only: vertex colors, relief, build
+  surface, and rock placement are unchanged. Terrain owns and releases this
+  map on world changes.
 - `atmosphere.ts` handles sky/lighting and the day-night feel as the sol turns.
 - `stormfx.ts` is the **kinetic layer of a dust storm**: pooled **dust devils**
   (four rigs of nested counter-rotating shells; an active storm wakes two to four

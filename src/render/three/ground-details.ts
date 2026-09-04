@@ -128,7 +128,7 @@ export class GroundDetails {
       this.dirty = false;
       this.lightsDirty = false;
     }
-    this.spill.material.opacity = 0.2 * night;
+    this.spill.material.opacity = 0.065 * night;
     // Dust is reflected soil color, not an emissive ring after sundown.
     this.dust.material.opacity = 0.1 * (1 - 0.9 * night);
     this.spill.visible = night > 0.01 && this.spill.geometry.attributes.position.count > 0;

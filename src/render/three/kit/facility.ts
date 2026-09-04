@@ -2,12 +2,12 @@
    Facility — one builder for the industrial fabrication family, switched by a
    specFor(id) the way tank.ts keys its vessels:
 
-     printer     — a boxy fabricator with a row of status-bar lights across the
-                   front face (they pulse in sequence while it runs)
+     printer     — a boxy fabricator with a reciprocating out-feed tray and
+                   front status-bar lights that pulse while it runs
      roverbay    — a garage: a wide low box with a recessed emissive door slab
                    on the def's door side and a shallow ramp out of it
      roboticsbay — a gantry: four corner posts under a top frame, with a tool
-                   block hanging from the crossbeam over the work floor
+                   and crossbeam traversing the rails over the work floor
      fabricator  — the self-replicator: twin extruder towers over an emissive
                    core, with a front gauge that FILLS with replication
                    progress (status.fill) instead of chasing
@@ -59,6 +59,13 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
   const lightMat = materials.glow();
   const barMats: THREE.MeshStandardMaterial[] = [];
 
+  // Independent starting positions without consuming a shared random stream.
+  // Integrating only active time keeps stops/resumes continuous and makes the
+  // motion independent of both render frame rate and the status-light pulse.
+  let motionPhase = ((Math.imul(ctx.seed, 0x9e3779b1) >>> 0) / 4294967296) * Math.PI * 2;
+  let motionRate = 0;
+  let poseMotion: ((phase: number) => void) | undefined;
+
   const box = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, cast = true): THREE.Mesh => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
@@ -84,7 +91,13 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
       group.add(seg);
     }
     // out-feed tray under the bars — where the materials trickle out
-    box(new THREE.BoxGeometry(bodyW * 0.6, cell * 0.04, cell * 0.16), trimMat, 0, bodyH * 0.3, bodyD / 2 + cell * 0.07, false);
+    const tray = box(new THREE.BoxGeometry(bodyW * 0.6, cell * 0.04, cell * 0.16), trimMat, 0, bodyH * 0.3, bodyD / 2 + cell * 0.07, false);
+    tray.name = "facility-outfeed";
+    motionRate = 1.1;
+    poseMotion = (phase) => {
+      // Retract into the housing; the extended position is the old silhouette.
+      tray.position.z = bodyD / 2 + cell * (0.07 - 0.025 * (1 + Math.sin(phase)));
+    };
   } else if (spec.kind === "roverbay") {
     // --- garage: a wide low box, recessed lit door slab on +Z, a low ramp -----
     const bodyW = w * 0.9, bodyH = cell * 0.6, bodyD = d * 0.72;
@@ -112,6 +125,14 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
     box(towerGeo, trimMat, -bodyW * 0.32, bodyH + cell * 0.31, -bodyD * 0.18);
     box(towerGeo, trimMat, bodyW * 0.32, bodyH + cell * 0.31, -bodyD * 0.18);
     box(new THREE.BoxGeometry(bodyW * 0.78, cell * 0.07, cell * 0.14), trimMat, 0, bodyH + cell * 0.58, -bodyD * 0.18); // gantry beam
+    // A compact extruder rides below the beam, clear of the core and towers.
+    const extruder = new THREE.Group();
+    extruder.name = "facility-extruder";
+    group.add(extruder);
+    extruder.add(box(new THREE.BoxGeometry(cell * 0.11, cell * 0.07, cell * 0.1), metalMat, 0, bodyH + cell * 0.51, -bodyD * 0.18));
+    extruder.add(box(new THREE.BoxGeometry(cell * 0.035, cell * 0.05, cell * 0.035), trimMat, 0, bodyH + cell * 0.45, -bodyD * 0.18));
+    motionRate = 0.8;
+    poseMotion = (phase) => { extruder.position.x = cell * 0.08 * Math.sin(phase); };
     // the core — where the copy takes shape; shares the beacon glow material
     const core = new THREE.Mesh(new THREE.BoxGeometry(cell * 0.26, cell * 0.26, cell * 0.26), lightMat);
     core.position.set(0, bodyH + cell * 0.24, -bodyD * 0.18);
@@ -139,15 +160,22 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
     // top frame: two rails + a crossbeam
     box(new THREE.BoxGeometry(spanW + cell * 0.08, cell * 0.07, cell * 0.1), metalMat, 0, postH, -spanD / 2);
     box(new THREE.BoxGeometry(spanW + cell * 0.08, cell * 0.07, cell * 0.1), metalMat, 0, postH, spanD / 2);
-    box(new THREE.BoxGeometry(cell * 0.1, cell * 0.07, spanD), trimMat, 0, postH, 0);
+    const carriage = new THREE.Group();
+    carriage.name = "facility-gantry";
+    group.add(carriage);
+    carriage.add(box(new THREE.BoxGeometry(cell * 0.1, cell * 0.07, spanD), trimMat, 0, postH, 0));
     // the tool block hangs from the crossbeam over a work floor
-    box(new THREE.BoxGeometry(cell * 0.04, cell * 0.18, cell * 0.04), trimMat, 0, postH - cell * 0.12, 0, false); // hoist cable
+    carriage.add(box(new THREE.BoxGeometry(cell * 0.04, cell * 0.18, cell * 0.04), trimMat, 0, postH - cell * 0.12, 0, false)); // hoist cable
     const tool = new THREE.Mesh(new THREE.BoxGeometry(cell * 0.22, cell * 0.16, cell * 0.22), lightMat);
     tool.position.set(0, postH - cell * 0.29, 0);
     tool.castShadow = true;
-    group.add(tool);
+    carriage.add(tool);
+    motionRate = 0.45;
+    poseMotion = (phase) => { carriage.position.x = spanW * 0.24 * Math.sin(phase); };
     box(new THREE.BoxGeometry(spanW * 0.9, cell * 0.04, spanD * 0.9), trimMat, 0, cell * 0.02, 0, false); // work floor
   }
+
+  poseMotion?.(motionPhase);
 
   // a small shared status beacon for the variants whose "screen" is dim
   // geometry otherwise (the printer's bars double as its beacon; the
@@ -159,6 +187,13 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
   }
 
   function setStatus(status: BuildingStatus, pulse: number, env?: KitEnv): void {
+    const dt = env?.dt ?? 0;
+    const working = (status.working ?? status.alive) && status.alive && !env?.paused
+      && (spec.kind !== "fabricator" || (status.fill ?? 0) < 1);
+    if (poseMotion && working && Number.isFinite(dt) && dt > 0) {
+      motionPhase = (motionPhase + motionRate * dt) % (Math.PI * 2);
+      poseMotion(motionPhase);
+    }
     const night = env?.night ?? 0;
     const color = statusGlow(status.alive, status.hurt);
     const intensity = (0.35 + 0.55 * pulse) * (status.alive ? 1 + 1.2 * night : 1);

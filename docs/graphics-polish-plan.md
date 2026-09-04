@@ -17,8 +17,8 @@ dependency changes.
 - `renderer.ts` / `kit/contract.ts`: wire ground details and optional paused
   context; retain the observer/command wall and existing kit compatibility.
 
-Acceptance: clean thin edges; matching High/Low color treatment; subtle night
-body definition; ground contact visible on Low; no per-building real lights,
+Acceptance: subtle night body definition; ground contact visible on Low;
+no per-building real lights,
 no ground clipping, no stale details after scene changes.
 
 ## Phase 2 — disjoint rendering and asset work
@@ -34,12 +34,14 @@ no ground clipping, no stale details after scene changes.
   owns shared maps and exposes `dispose()`; renderer disposes it after kits.
 - Machinery: `kit/facility.ts`. Small functional motion for printer,
   robotics bay/reclaimer gantry, and fabricator within current silhouettes.
-  Integrate using `KitEnv.dt`; stop while paused/offline and at a completed
-  stalled fabrication cycle. Keep the existing status lights/progress gauge.
+  Integrate using `KitEnv.dt`; stop while paused/offline. Hold the fabricator
+  at completion/lineage cap and Robotics Bay at the fleet cap. Keep the
+  existing status lights/progress gauge.
 
-Acceptance: surfaces retain their palette at overview zoom; machinery motion
-stays inside its housing, is frame-rate independent, and follows operating
-state. No changes to other kits or gameplay required.
+Acceptance: clean thin edges and matching High/Low color treatment; surfaces
+retain their palette at overview zoom; machinery motion stays inside its
+housing, is frame-rate independent, and follows operating state. No changes
+to other kits or gameplay required.
 
 ## Verification and review
 
@@ -50,3 +52,22 @@ and every world. Inspect machinery active/paused/offline and check resource
 counts through quality/world changes. Measure frame pacing on the same
 browser workload before/after. Independent reviewers check the final diff
 against this brief; root confirms findings and performs the final audit.
+
+## Implementation and validation
+
+- FXAA follows the shared ACES/sRGB output pass. It was cheaper than scene
+  MSAA and SMAA in the same headless browser workload. The final pipeline uses
+  one HDR scene target, one depthless 8-bit output target, and no canvas MSAA.
+  These comparative timings do not establish native-device frame rates.
+- A GPU browser regression verifies byte-identical High/Low color treatment
+  with bloom strength zero at the same resolution. Another regression proves
+  moved building meshes follow the authoritative footprint; that pre-existing
+  bug was fixed in its own commit.
+- Production build, typecheck, and all 652 unit tests pass. The full Playwright
+  suite passes 16 tests; 16 are intentionally skipped for the opposite device
+  class. Browser fixtures cover all four worlds, day/night/storm, active and
+  paused/offline machinery, and fleet/lineage holds without WebGL errors.
+- Three complete world/quality cycles return to the same geometry and texture
+  counts (252/19 in the test colony). A final viewport/DPR change keeps FXAA
+  resolution matched to the drawing buffer. Night spill was softened in the
+  final visual pass to preserve the dark, quiet setting.

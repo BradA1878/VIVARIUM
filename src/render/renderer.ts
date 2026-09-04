@@ -28,7 +28,7 @@ import { buildVent, type VentMesh } from "./three/kit/vent";
 import { buildAquifer, type AquiferMesh } from "./three/kit/aquifer";
 import { buildRover, type RoverMesh } from "./three/kit/rover";
 import { buildRobot, type RobotMesh } from "./three/kit/robot";
-import { ROVER_CARGO_CAP } from "@/engine/tuning";
+import { FAB_MAX_LINEAGE, ROBOT_CAP, ROVER_CARGO_CAP } from "@/engine/tuning";
 import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
 import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
@@ -612,6 +612,9 @@ export class ThreeRenderer {
     const now = performance.now();
     const seen = this.scratchSeen;
     seen.clear();
+    let fabricators = 0;
+    for (const b of snap.buildings) if (b.defId === "fabricator") fabricators++;
+    const lineageFull = fabricators >= FAB_MAX_LINEAGE;
 
     // occupancy map for corridor neighbour masks (only built if needed)
     let cellOwner: Map<string, BuildingState> | null = null;
@@ -666,7 +669,9 @@ export class ThreeRenderer {
         ? snap.pools.power.amount / snap.pools.power.capacity
         : rep ? 1 - (b.replicateT ?? rep.buildS) / rep.buildS
         : undefined;
-      entry.mesh.setStatus({ ...st, fill }, pulse, this.env);
+      const working = st.alive && (!rep || !lineageFull) &&
+        (b.defId !== "roboticsbay" || snap.robots.length < ROBOT_CAP);
+      entry.mesh.setStatus({ ...st, fill, working }, pulse, this.env);
       this.groundDetails.syncBuilding(b.uid, DEFS[b.defId], entry.mesh.object, st.alive);
 
       // corridors orient to neighbours: an arm toward each adjacent corridor or
@@ -1246,6 +1251,7 @@ export class ThreeRenderer {
     this.clearDebugUfo();
     if (this.depot) { this.depot.dispose(); this.depot = null; }
     if (this.supplyPod) { this.supplyPod.dispose(); this.supplyPod = null; }
+    this.materials.dispose();
     this.terrain.dispose();
     this.groundDetails.dispose();
     this.scene.dispose();

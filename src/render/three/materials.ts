@@ -5,6 +5,7 @@
    prototype's metalRamp / glowColor (render.js).
    ============================================================================ */
 import * as THREE from "three";
+import { createSurfaceDetail, roughnessWithDetail } from "./surface-detail";
 
 /** signal accent — VIVARIUM's cyan; rust = warning/hurt (doc §4.1) */
 export const CYAN = new THREE.Color("#7fd4e8");
@@ -21,14 +22,19 @@ export interface MaterialLib {
   panel(): THREE.MeshStandardMaterial;
   /** an emissive "service light / hatch" material; update with setGlow() */
   glow(color?: THREE.ColorRepresentation): THREE.MeshStandardMaterial;
+  /** Release the shared finish map after the individual kit materials. */
+  dispose(): void;
 }
 
 export function createMaterials(): MaterialLib {
+  // Individual materials belong to their kits; this one map belongs to the
+  // library and survives building removal and world changes.
+  const detail = createSurfaceDetail("metal", 0x6d657461);
   return {
     metal(base = "#7a828c", opts = {}) {
       return new THREE.MeshStandardMaterial({
         color: new THREE.Color(base),
-        roughness: opts.rough ?? 0.62,
+        ...roughnessWithDetail(opts.rough ?? 0.62, detail),
         metalness: opts.metal ?? 0.72,
         flatShading: false,
       });
@@ -36,7 +42,7 @@ export function createMaterials(): MaterialLib {
     frostedDome(base = "#787f8a") {
       return new THREE.MeshStandardMaterial({
         color: new THREE.Color(base),
-        roughness: 0.4,
+        ...roughnessWithDetail(0.4, detail),
         metalness: 0.35,
         transparent: true,
         opacity: 0.92,
@@ -59,6 +65,9 @@ export function createMaterials(): MaterialLib {
         roughness: 0.5,
         metalness: 0.2,
       });
+    },
+    dispose() {
+      detail.texture.dispose();
     },
   };
 }

@@ -7,7 +7,7 @@
 
    Convention: build geometry around the local origin with the structure's base
    sitting on y = 0 and growing +Y. The renderer positions the group at the
-   building's footprint center and never rotates it. Size to the footprint using
+   building's footprint center and applies its facing. Size to the footprint using
    ctx.cell × ctx.def.foot.
    ============================================================================ */
 import * as THREE from "three";
@@ -21,6 +21,8 @@ export interface BuildingStatus {
   hurt: boolean;
   /** 0..1, e.g. battery charge for the drum LEDs or pool fill */
   fill?: number;
+  /** render-side machinery gate for a healthy but stalled production cycle */
+  working?: boolean;
 }
 
 export interface KitContext {

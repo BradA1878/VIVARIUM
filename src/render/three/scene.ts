@@ -55,7 +55,9 @@ export class SceneManager {
   private sky: SkyLook = worldLook("mars").sky;
 
   constructor(canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    // Every quality tier antialiases in PostFx; multisampling the final
+    // fullscreen canvas would add cost without smoothing the scene edges.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     // cap the device pixel ratio at 1.5: on a Retina display 2.0 renders 4× the
     // pixels of 1×, a big GPU/battery cost for low-poly iso art that reads fine
     // at 1.5 (≈2.25× pixels). Saves ~45% of fill vs 2.0.
@@ -102,7 +104,7 @@ export class SceneManager {
     const r = Math.min(cap, window.devicePixelRatio || 1);
     if (r === this.renderer.getPixelRatio()) return;
     this.renderer.setPixelRatio(r);
-    this.postfx.setPixelRatio(r); // a LIVE bloom chain re-targets to match
+    this.postfx.setPixelRatio(r); // live post-processing targets resize to match
     this.resize(); // re-applies the drawing-buffer size at the new pixel ratio
   }
 
@@ -138,15 +140,14 @@ export class SceneManager {
   }
 
   /** re-theme the sky/sun/ambient tint for a world. Only changes the colour
-   *  endpoints update() lerps between — the day/night CURVE (and mars's exact
-   *  values) are unchanged. The renderer calls this when snapshot.world changes. */
+   *  endpoints update() lerps between; the day/night curve is shared across
+   *  worlds. The renderer calls this when snapshot.world changes. */
   setWorld(world: World): void {
     this.sky = worldLook(world).sky;
   }
 
-  /** drive sun/sky/ambient from the time of day + weather (render.js parity).
-   *  The tint endpoints are the active world's (this.sky) — mars reproduces the
-   *  original hardcoded constants exactly. */
+  /** Drive sun/sky/ambient from time of day and weather. The active world's
+   *  tint endpoints preserve the established palette, with a little night fill. */
   update(tod: number, dust: boolean): void {
     const amb = ambientLevel(tod, dust);
     const sk = this.sky;
