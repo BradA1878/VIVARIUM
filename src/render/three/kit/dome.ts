@@ -102,6 +102,7 @@ export const buildDome: KitBuilder = (ctx): KitMesh => {
     const win = new THREE.Mesh(windowGeo, windowMat);
     win.position.set(Math.sin(a) * radius * 1.02, collarHeight * (0.45 + 0.25 * wrng()), Math.cos(a) * radius * 1.02);
     win.rotation.y = a; // face outward
+    win.userData.groundLight = 0xffd9a0;
     group.add(win);
   }
 

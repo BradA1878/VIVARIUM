@@ -74,7 +74,9 @@ export class SceneManager {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
     this.sun.shadow.camera.near = 1;
-    this.sun.shadow.camera.far = 120;
+    this.sun.shadow.camera.far = 85;
+    this.sun.shadow.bias = -0.00008;
+    this.sun.shadow.normalBias = 0.015;
     const sc = this.sun.shadow.camera as THREE.OrthographicCamera;
     sc.left = -20; sc.right = 20; sc.top = 20; sc.bottom = -20;
     this.scene.add(this.sun);
@@ -115,7 +117,7 @@ export class SceneManager {
     });
   }
 
-  /** bloom + ACES as one switch (PostFx dedupes and frees its targets when off) */
+  /** optional bloom; color grading stays consistent across quality tiers */
   setBloom(on: boolean): void {
     this.postfx.setEnabled(on);
   }
@@ -168,7 +170,9 @@ export class SceneManager {
 
     this.ambientLight.intensity = 0.18 + amb * 0.5;
     this.ambientLight.color.copy(lerpColor(sk.ambient.low, sk.ambient.high, amb));
-    this.hemi.intensity = 0.2 + amb * 0.45;
+    // Lift night silhouettes with the existing hemisphere tint. Daylight and
+    // the world palette stay intact; emissive warning colors are untouched.
+    this.hemi.intensity = 0.2 + amb * 0.45 + 0.2 * nightLevel(tod, dust);
   }
 
   /** point the iso camera at `focus` (world space) with the given ortho extent.

@@ -42,6 +42,9 @@ const smooth01 = (t: number): number => {
 
 export class Terrain {
   readonly group = new THREE.Group();
+  readonly surfaceStep = CELL;
+  readonly surfaceHalfSpan: number;
+  private readonly surfaceHeights: Float32Array;
   private disposables: (THREE.BufferGeometry | THREE.Material)[] = [];
   /** displaced surface at world (x, z): base noise flattened over the play
    *  grid plus the far ridged relief — shared by the plane verts and the
@@ -60,6 +63,7 @@ export class Terrain {
     const segs = grid.N + margin * 2;
     const half = grid.half();
     const edge = span / 2;
+    this.surfaceHalfSpan = edge;
 
     this.sample = (x, z) => {
       // grid-space sample coords (match render.js scale loosely)
@@ -83,11 +87,13 @@ export class Terrain {
     const geo = new THREE.PlaneGeometry(span, span, segs, segs);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position as THREE.BufferAttribute;
+    this.surfaceHeights = new Float32Array(pos.count);
     const colors: number[] = [];
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
       const s = this.sample(x, z);
       pos.setY(i, s.h);
+      this.surfaceHeights[i] = s.h;
       const c = groundLo.clone().lerp(groundHi, Math.min(1, s.n * 0.72 + s.dune * 0.28));
       c.lerp(accent, s.dune * 0.3);
       // ridge tops/faces fall toward dark shadowed rock so the far relief reads
@@ -111,6 +117,26 @@ export class Terrain {
 
     // ---- distant monoliths on the far relief ----
     this.scatterMonoliths(edge, look);
+  }
+
+  /** Height on the rendered triangles, not the underlying continuous noise.
+   *  Ground decals must share these planes to avoid cutting through the soil. */
+  heightAt(x: number, z: number): number {
+    const half = this.surfaceHalfSpan;
+    const cells = (half * 2) / CELL;
+    const gx = Math.max(0, Math.min(cells, (x + half) / CELL));
+    const gz = Math.max(0, Math.min(cells, (z + half) / CELL));
+    const ix = Math.min(cells - 1, Math.floor(gx));
+    const iz = Math.min(cells - 1, Math.floor(gz));
+    const fx = gx - ix, fz = gz - iz;
+    const row = cells + 1, index = iz * row + ix;
+    const h00 = this.surfaceHeights[index];
+    const h10 = this.surfaceHeights[index + 1];
+    const h01 = this.surfaceHeights[index + row];
+    const h11 = this.surfaceHeights[index + row + 1];
+    return fx + fz <= 1
+      ? h00 + (h10 - h00) * fx + (h01 - h00) * fz
+      : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
   }
 
   private scatterRocks(grid: GridSpace, margin: number, look: WorldLook): void {

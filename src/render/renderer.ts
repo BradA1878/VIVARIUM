@@ -13,6 +13,7 @@ import type { BridgeCore } from "@/worker/bridge";
 import { PerfGovernor, STEP_HIGH, STEP_LOW, snapHz } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
+import { GroundDetails } from "./three/ground-details";
 import { CELL, GridSpace } from "./three/coords";
 import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh, type KitEnv } from "./three/kit";
@@ -120,6 +121,7 @@ export class ThreeRenderer {
   readonly scene: SceneManager;
   readonly grid: GridSpace;
   private terrain: Terrain;
+  private groundDetails = new GroundDetails();
   private buildingsGroup = new THREE.Group();
   private materials = createMaterials();
   private placed = new Map<number, Placed>();
@@ -237,6 +239,7 @@ export class ThreeRenderer {
     this.grid = new GridSpace(gridN);
     this.terrain = new Terrain(this.grid);
     this.scene.scene.add(this.terrain.group);
+    this.scene.scene.add(this.groundDetails.group);
     this.scene.scene.add(this.buildingsGroup);
     this.scene.scene.add(this.depositsGroup);
     this.scene.scene.add(this.ventsGroup);
@@ -539,6 +542,7 @@ export class ThreeRenderer {
     this.env.night = nightLevel(snap.tod, snap.weather === "dust");
     this.env.wind = snap.windLevel;
     this.env.dt = dt;
+    this.env.paused = snap.paused;
     this.doorGlowMat.emissiveIntensity = 0.5 + 0.7 * this.env.night;
     this.doorSillMat.emissiveIntensity = 0.7 + 0.9 * this.env.night;
     this.airlockMat.emissiveIntensity = 0.7 + 0.9 * this.env.night;
@@ -663,6 +667,7 @@ export class ThreeRenderer {
         : rep ? 1 - (b.replicateT ?? rep.buildS) / rep.buildS
         : undefined;
       entry.mesh.setStatus({ ...st, fill }, pulse, this.env);
+      this.groundDetails.syncBuilding(b.uid, DEFS[b.defId], entry.mesh.object, st.alive);
 
       // corridors orient to neighbours: an arm toward each adjacent corridor or
       // sealed building, so a run reads as one connected pipe meeting the airlocks
@@ -678,6 +683,8 @@ export class ThreeRenderer {
         entry.mesh.setNeighbors(mask);
       }
     }
+
+    this.groundDetails.update(seen, this.terrain, snap.world, this.env.night);
 
     // airlocks render where a corridor actually meets a sealed building, so they
     // line up with the corridor arms instead of floating on a fixed door side
@@ -718,6 +725,7 @@ export class ThreeRenderer {
     door.position.set(dx * (half + 0.01), 0, dy * (half + 0.01));
     door.lookAt(door.position.x + dx, 0, door.position.z + dy); // face outward
     door.name = "door";
+    door.userData.groundLight = 0x7fd4e8;
     group.add(door);
   }
 
@@ -1239,6 +1247,7 @@ export class ThreeRenderer {
     if (this.depot) { this.depot.dispose(); this.depot = null; }
     if (this.supplyPod) { this.supplyPod.dispose(); this.supplyPod = null; }
     this.terrain.dispose();
+    this.groundDetails.dispose();
     this.scene.dispose();
   }
 }

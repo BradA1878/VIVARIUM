@@ -164,6 +164,7 @@ export const buildTank: KitBuilder = (ctx: KitContext): KitMesh => {
       Math.sin(a) * radius,
     );
     port.rotation.y = Math.PI / 2 - a; // face outward
+    port.userData.groundLight = 0xffd9a0;
     group.add(port);
   }
 

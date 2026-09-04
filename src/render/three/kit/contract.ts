@@ -41,6 +41,8 @@ export interface KitEnv {
   wind?: number;
   /** seconds since the last frame — for kits that integrate motion (rotor spin) */
   dt?: number;
+  /** stop functional machinery while the simulation is paused */
+  paused?: boolean;
 }
 
 export interface KitMesh {
