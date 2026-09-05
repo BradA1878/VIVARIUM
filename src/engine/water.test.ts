@@ -337,10 +337,13 @@ describe("determinism with the water tier + adaptive resupply in play", () => {
   it("two same-seed colonies stay in lockstep through several resupply windows", () => {
     const a = new Colony(24611);
     const b = new Colony(24611);
-    // place a reclaimer in both so the new pass actually runs (corridor reaches it)
+    // Place a reclaimer directly beside the hub so the new pass actually runs.
     for (const col of [a, b]) {
-      col.place("corridor", 6, 7);
-      col.place("reclaimer", 6, 8);
+      stateOf(col).unlocked.push("reclaimer");
+      const hub = col.snapshot().buildings.find((b) => b.defId === "hub")!;
+      expect(col.place("reclaimer", hub.gx - 1, hub.gy, 1)).toBe(true);
+      run(col, 0.2);
+      expect(col.snapshot().buildings.find((building) => building.defId === "reclaimer")!.online).toBe(true);
     }
     const evA = run(a, 700); // past RESUPPLY_FIRST (180) + a couple of gaps (280)
     const evB = run(b, 700);

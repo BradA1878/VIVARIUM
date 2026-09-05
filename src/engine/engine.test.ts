@@ -5,6 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { Colony, DEFS } from "./index";
 import type { ColonyEvent, Snapshot } from "@shared/types";
+import type { ColonyState } from "./state";
 
 /** advance a colony by `seconds` in fixed 0.2s steps (5 Hz), collecting events */
 function run(c: Colony, seconds: number, step = 0.2): ColonyEvent[] {
@@ -60,20 +61,25 @@ describe("the seeded starter colony", () => {
 describe("the pressure gate (doc §2.3)", () => {
   it("a sealed unit cut off from the hub goes offline; reconnecting brings it back", () => {
     const c = new Colony();
-    // electrolysis at (5,7) is sealed (requiresPressure). It connects via the
-    // corridor chain to the hub in the seed layout.
+    // Electrolysis connects via the corridor chain to the hub in the seed layout.
     run(c, 2);
     let elec = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
     expect(DEFS.electrolysis.requiresPressure).toBe(true);
     expect(elec.connected).toBe(true);
 
     // remove both corridors that carry the seal toward it
-    c.removeAt(4, 6);
-    c.removeAt(5, 6);
+    const corridors = c.snapshot().buildings.filter((b) => b.defId === "corridor");
+    expect(corridors).toHaveLength(2);
+    for (const b of corridors) expect(c.removeAt(b.gx, b.gy)).toBe(true);
     run(c, 2);
     elec = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
     expect(elec.connected).toBe(false);
     expect(elec.online).toBe(false); // pressure gate forces it offline
+    for (const b of corridors) expect(c.place("corridor", b.gx, b.gy)).toBe(true);
+    run(c, 2);
+    elec = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
+    expect(elec.connected).toBe(true);
+    expect(elec.online).toBe(true);
   });
 });
 
@@ -82,19 +88,33 @@ describe("brownout sheds the lowest priority first (doc §2.4 pass 3)", () => {
     const c = new Colony(42);
     // Build a greenhouse next to the sealed cluster and starve the grid by
     // running deep into the night with heavy draw and little battery.
-    // Place greenhouse adjacent to a corridor so it can be connected.
-    c.place("corridor", 6, 7);
-    c.place("greenhouse", 6, 8); // 2x2 sealed, pri 30, big draw
-    // Run until night drains power hard.
-    run(c, 200);
-    const s = c.snapshot();
-    const elec = s.buildings.find((b) => b.defId === "electrolysis")!;
-    const green = s.buildings.find((b) => b.defId === "greenhouse")!;
-    // If the grid is power-limited at any tick, the higher-priority electrolysis
-    // must never be the one shed while the greenhouse still runs.
-    const shedInversion = elec.online === false && green.online === true &&
-      green.connected === true && green.staffed === true && green.fed === true;
-    expect(shedInversion).toBe(false);
+    // The northern corridor meets the hub directly; habs do not extend a seal.
+    const hub = c.snapshot().buildings.find((b) => b.defId === "hub")!;
+    expect(c.place("corridor", hub.gx, hub.gy - 1)).toBe(true);
+    expect(c.place("greenhouse", hub.gx, hub.gy - 3)).toBe(true);
+    c.setDirector(true); // isolate the power gate from random strikes
+    run(c, 0.2);
+    expect(c.snapshot().buildings.find((b) => b.defId === "greenhouse")!.connected).toBe(true);
+    const state = (c as unknown as { s: ColonyState }).s;
+    let sawGreenhouseShed = false;
+    for (let i = 0; i < 200 / 0.2; i++) {
+      // Hold non-power inputs available: a water-starved electrolysis unit is
+      // a recipe failure, not evidence of the wrong brownout priority.
+      for (const resource of ["water", "oxygen", "food"] as const) {
+        state.pools[resource].amount = state.pools[resource].capacity;
+      }
+      c.tick(0.2); c.drainEvents();
+      const s = c.snapshot();
+      const elec = s.buildings.find((b) => b.defId === "electrolysis")!;
+      const green = s.buildings.find((b) => b.defId === "greenhouse")!;
+      const shedInversion = elec.online === false && green.online === true &&
+        green.connected === true && green.staffed === true && green.fed === true;
+      expect(shedInversion).toBe(false);
+      if (elec.online && !green.online && green.connected && green.staffed && green.fed) {
+        sawGreenhouseShed = true;
+      }
+    }
+    expect(sawGreenhouseShed).toBe(true); // the test actually reached a brownout
   });
 
   it("priority ordering is strict: power is allocated high→low", () => {
@@ -110,7 +130,8 @@ describe("shortfalls become timers, not instant death (doc §2.4 pass 6)", () =>
   it("an emptied oxygen pool starts a grace countdown, then takes a colonist", () => {
     const c = new Colony(9);
     // Demolish oxygen sources so O2 only drains. Remove electrolysis + greenhouse-less
-    c.removeAt(5, 7); // electrolysis
+    const electrolysis = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
+    expect(c.removeAt(electrolysis.gx, electrolysis.gy)).toBe(true);
     const events: ColonyEvent[] = [];
     // run long enough to empty O2 (cap 40 + tank none; pop 4 draws 0.88/s) and
     // then exhaust the 55s grace.
@@ -135,7 +156,8 @@ describe("shortfalls become timers, not instant death (doc §2.4 pass 6)", () =>
 describe("Earth resupply windows (doc §2.5)", () => {
   it("a resupply window opens, fires an event, and tops up a drained pool", () => {
     const c = new Colony(3);
-    c.removeAt(8, 8); // remove the ice extractor so water only drains
+    const extractor = c.snapshot().buildings.find((b) => b.defId === "extractor")!;
+    expect(c.removeAt(extractor.gx, extractor.gy)).toBe(true); // water only drains
     let fired = false;
     let sawOpenWindow = false;
     const step = 0.2;
@@ -163,7 +185,8 @@ describe("snapshot is a pure value (no shared refs into engine state)", () => {
 describe("placement", () => {
   it("rejects overlapping placement and out-of-bounds", () => {
     const c = new Colony();
-    expect(c.canPlace("hab", 4, 4)).toBe(false); // hub occupies (4,4)
+    const hub = c.snapshot().buildings.find((b) => b.defId === "hub")!;
+    expect(c.canPlace("hab", hub.gx, hub.gy)).toBe(false);
     expect(c.canPlace("hab", -1, 0)).toBe(false);
     expect(c.canPlace("hab", 0, 0)).toBe(true);
   });
