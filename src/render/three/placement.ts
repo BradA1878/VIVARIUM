@@ -159,17 +159,16 @@ export class PlacementController {
 
   private onClick(e: MouseEvent): void {
     if (this.bridge.latest?.possessed != null) return; // piloting locks construction (place/demolish/route/select/move)
+    // A mouse move and click can arrive before update() resolves the ghost.
+    // Every click picks its own point; touch/pen still compare the previous aim.
+    this.onMove(e as PointerEvent);
+    const cell = this.cellAtNdc();
+    if (!cell) { this.hover = null; return; }
+    const aimed = this.hover != null && this.hover.gx === cell.gx && this.hover.gy === cell.gy;
+    this.hover = cell;
     const pt = (e as PointerEvent).pointerType;
-    if (pt === "touch" || pt === "pen") {
-      this.onMove(e as PointerEvent); // no pointermove preceded the tap — adopt its point as the cursor
-      const cell = this.cellAtNdc();
-      if (!cell) { this.hover = null; return; }
-      const aimed = this.hover != null && this.hover.gx === cell.gx && this.hover.gy === cell.gy;
-      this.hover = cell;
-      if (!aimed && this.clickMutates(cell)) return; // first tap on this cell: aim the ghost only
-    }
-    if (!this.hover) return;
-    const { gx, gy } = this.hover;
+    if ((pt === "touch" || pt === "pen") && !aimed && this.clickMutates(cell)) return; // first tap aims only
+    const { gx, gy } = cell;
     if (!this.tool) { this.onSelectClick(gx, gy); return; }
     if (this.tool.kind === "demolish") { this.bridge.remove(gx, gy); return; }
     if (this.tool.kind === "place") { this.bridge.place(this.tool.defId, gx, gy, this.ghostRot); return; }
