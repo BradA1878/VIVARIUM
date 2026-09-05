@@ -6,7 +6,7 @@
    5 Hz sim split). Placement raycasting is layered on in Phase 4.
    ============================================================================ */
 import * as THREE from "three";
-import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, Snapshot, World } from "@shared/types";
+import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, DepositKind, Snapshot, World } from "@shared/types";
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { BridgeCore } from "@/worker/bridge";
@@ -179,7 +179,7 @@ export class ThreeRenderer {
   // embodied colony: astronauts, deposits, vents, machines, the trader saucer
   private colonists = new Map<number, ColonistRec>();
   private colonistsGroup = new THREE.Group();
-  private deposits = new Map<number, DepositMesh>();
+  private deposits = new Map<number, DepositMesh & { kind: DepositKind }>();
   private depositsGroup = new THREE.Group();
   private vents = new Map<number, VentMesh>();
   private ventsGroup = new THREE.Group();
@@ -943,13 +943,20 @@ export class ThreeRenderer {
     for (const d of snap.deposits) {
       seen.add(d.id);
       let mesh = this.deposits.get(d.id);
+      // IDs restart on founding/load. A surviving ID may now name a different
+      // resource, so its old geometry/materials must retire before replacement.
+      if (mesh && mesh.kind !== d.kind) {
+        this.depositsGroup.remove(mesh.object);
+        mesh.dispose();
+        this.deposits.delete(d.id);
+        mesh = undefined;
+      }
       if (!mesh) {
-        mesh = buildDeposit(d.kind, d.id * 2654435761);
-        const c = this.grid.cellCenter(d.gx, d.gy);
-        mesh.object.position.copy(c);
+        mesh = { ...buildDeposit(d.kind, d.id * 2654435761), kind: d.kind };
         this.depositsGroup.add(mesh.object);
         this.deposits.set(d.id, mesh);
       }
+      mesh.object.position.copy(this.grid.cellCenter(d.gx, d.gy));
       mesh.setAmount(d.max > 0 ? d.amount / d.max : 0);
       mesh.setPulse(pulse);
     }
@@ -962,8 +969,8 @@ export class ThreeRenderer {
     }
   }
 
-  /** geothermal vents: static fumaroles (they never move or deplete) with a
-   *  per-frame ember/heat-shimmer pulse — the deposit template minus setAmount */
+  /** geothermal vents are static within a colony, but a loaded colony may
+   *  reuse an ID at another position. Pulse and position follow the snapshot. */
   private reconcileVents(snap: Snapshot, now: number): void {
     const seen = this.scratchSeen;
     seen.clear();
@@ -973,11 +980,10 @@ export class ThreeRenderer {
       let mesh = this.vents.get(v.id);
       if (!mesh) {
         mesh = buildVent(v.id * 2654435761);
-        const c = this.grid.cellCenter(v.gx, v.gy);
-        mesh.object.position.copy(c);
         this.ventsGroup.add(mesh.object);
         this.vents.set(v.id, mesh);
       }
+      mesh.object.position.copy(this.grid.cellCenter(v.gx, v.gy));
       mesh.setPulse(pulse);
     }
     for (const [id, mesh] of this.vents) {
@@ -1001,11 +1007,10 @@ export class ThreeRenderer {
       let mesh = this.aquifers.get(a.id);
       if (!mesh) {
         mesh = buildAquifer(a.id * 2654435761);
-        const c = this.grid.cellCenter(a.gx, a.gy);
-        mesh.object.position.copy(c);
         this.aquifersGroup.add(mesh.object);
         this.aquifers.set(a.id, mesh);
       }
+      mesh.object.position.copy(this.grid.cellCenter(a.gx, a.gy));
       mesh.setPulse(pulse);
     }
     for (const [id, mesh] of this.aquifers) {
