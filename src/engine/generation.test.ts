@@ -410,7 +410,8 @@ describe("the fission reactor — a pass-4 producer behind every existing gate",
     const { c, s } = controlled(71);
     s.materials.amount = 300;
     expect(c.place("reactor", 0, 0)).toBe(true);
-    c.removeAt(8, 8); // the extractor — no water source refills the pool mid-pass
+    const extractor = c.snapshot().buildings.find((b) => b.defId === "extractor")!;
+    expect(c.removeAt(extractor.gx, extractor.gy)).toBe(true); // no water source mid-pass
     s.pools.water.amount = 0;
     s.tod = 0.9;
     c.tick(0.2); c.drainEvents();
@@ -438,7 +439,8 @@ describe("the fission reactor — a pass-4 producer behind every existing gate",
   it("a free engineer claims the reactor in the role-match pass", () => {
     const { c, s } = controlled(73);
     s.materials.amount = 300;
-    c.removeAt(5, 7); // the electrolysis unit — frees the engineer
+    const electrolysis = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
+    expect(c.removeAt(electrolysis.gx, electrolysis.gy)).toBe(true); // frees the engineer
     expect(c.place("reactor", 0, 0)).toBe(true);
     c.tick(0.2); c.drainEvents(); // assign() runs inside the tick
     const reactorUid = s.buildings.find((b) => b.defId === "reactor")!.uid;

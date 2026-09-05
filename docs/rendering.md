@@ -209,12 +209,14 @@ Door groups and warm portholes mark their source with `userData.groundLight`.
 Spill uses those positions and the building's existing healthy status, adding
 no real lights per building and no rust warning halos. A modest increase in
 the existing hemisphere fill lifts night silhouettes without changing the
-world palette or daylight. The sun retains its 1024² shadow map with a tighter
-depth range and small bias adjustment.
+world palette or daylight. The sun retains its 1024² shadow map and its original
+direction. Its frustum covers the entire terrain so new edge structures cast
+shadows at every pan/zoom position, including at dawn and dusk.
 
 ## Camera
 
-- An **isometric** camera framed on the colony (the buildable area is 25×25).
+- An **isometric** camera framed on the colony (the buildable area is 41×41).
+  Default zoom and building scale are unchanged; panning reaches every edge.
 - WASD input in the HUD is **camera-aligned**: `App.vue` rotates the player's intent
   into the iso basis so "up" is up on screen regardless of camera angle.
 - When you possess a colonist, the renderer runs a **follow-cam** off
@@ -233,14 +235,13 @@ depth range and small bias adjustment.
 
 ## Terrain, atmosphere, and hazards
 
-- `terrain.ts` builds the Mars ground the colony sits on — a displaced rust plane
-  spanning the grid plus a 10-cell margin. The **play grid is flattened** (15% of
-  the displacement inside the grid, smoothstepped back to full within ~3 cells)
-  so placement stays readable, while **ridged dunes and mesas** rise past the
-  grid toward the fog line and **~7 basalt monoliths** stand on the far relief as
-  silhouettes. The monoliths draw from their own seeded stream, and the boulder
-  scatter still consumes its legacy keep-rolls, so the pre-existing rock field is
-  byte-stable.
+- `terrain.ts` builds the ground the colony sits on: a 41×41 construction grid
+  with a two-cell scenic margin, retaining the previous 45×45 terrain footprint
+  and mesh density. The **play grid is flattened** to 15% displacement across
+  the entire square, including its corners. **Ridged dunes and mesas** rise only
+  in the scenic border. Seeded rocks and monoliths retain each world's palette
+  and silhouettes; their full transformed bounds fit outside construction cells
+  and inside the terrain. Rock counts follow the remaining border area.
 - A small world-seeded bump/roughness map adds faint soil ripples at a fixed
   eight-cell repeat. It changes shading only: vertex colors, relief, build
   surface, and rock placement are unchanged. Terrain owns and releases this

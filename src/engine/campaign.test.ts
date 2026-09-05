@@ -43,7 +43,8 @@ interface PolicyResult {
  *  build a reactor once the latched gate opens. It never touches private state. */
 function runLegalPolicy(difficulty: Difficulty): PolicyResult {
   const c = new Colony(2, difficulty);
-  expect(c.place("greenhouse", 2, 4)).toBe(true); // directly pressure-connected
+  const { gx: hx, gy: hy } = c.snapshot().buildings.find((b) => b.defId === "hub")!;
+  expect(c.place("greenhouse", hx - 2, hy)).toBe(true); // directly pressure-connected
   expect(placeFirst(c, "extractor")).toBe(true);
 
   let firstPop8 = 0, firstHazardEnd = 0, ptpUnlockedAt = 0;
@@ -55,17 +56,17 @@ function runLegalPolicy(difficulty: Difficulty): PolicyResult {
       snap.buildings.some((b) => b.defId === id && b.gx === gx && b.gy === gy);
 
     // Repair campaign-critical infrastructure before expanding.
-    if (count(c, "hub") < 1) c.place("hub", 4, 4);
-    else if (!hasAt("corridor", 4, 6) && mat >= 2) c.place("corridor", 4, 6);
-    else if (!hasAt("corridor", 5, 6) && mat >= 2) c.place("corridor", 5, 6);
+    if (count(c, "hub") < 1) c.place("hub", hx, hy);
+    else if (!hasAt("corridor", hx, hy + 2) && mat >= 2) c.place("corridor", hx, hy + 2);
+    else if (!hasAt("corridor", hx + 1, hy + 2) && mat >= 2) c.place("corridor", hx + 1, hy + 2);
     else if (count(c, "electrolysis") < 1 && mat >= (DEFS.electrolysis.matCost ?? 0)) {
-      c.place("electrolysis", 5, 7, 2);
+      c.place("electrolysis", hx + 1, hy + 3, 2);
     } else if (count(c, "greenhouse") < 1 && mat >= (DEFS.greenhouse.matCost ?? 0)) {
-      c.place("greenhouse", 2, 4);
+      c.place("greenhouse", hx - 2, hy);
     } else if (count(c, "solar") < 4 && mat >= (DEFS.solar.matCost ?? 0)) {
       placeFirst(c, "solar");
     } else if (snap.housing < 12 && mat >= (DEFS.hab.matCost ?? 0)) {
-      c.place("hab", 4, 3); // the hub's north-west edge, pressure-connected
+      c.place("hab", hx, hy - 1); // the hub's north-west edge, pressure-connected
     } else if (count(c, "extractor") < 3 && mat >= (DEFS.extractor.matCost ?? 0)) {
       placeFirst(c, "extractor");
     } else if (count(c, "battery") < 2 && mat >= (DEFS.battery.matCost ?? 0)) {
@@ -113,7 +114,8 @@ describe("the campaign", () => {
 
   it("population-8 self-sufficiency is a visible one-shot milestone, not an ending", () => {
     const c = new Colony(2);
-    expect(c.place("greenhouse", 2, 4)).toBe(true);
+    const hub = c.snapshot().buildings.find((b) => b.defId === "hub")!;
+    expect(c.place("greenhouse", hub.gx - 2, hub.gy)).toBe(true);
     expect(placeFirst(c, "extractor")).toBe(true);
     const s = stateOf(c);
     s.population = 8;
@@ -145,7 +147,8 @@ describe("the campaign", () => {
 
   it("an arrival needs a sustained post-arrival margin, not one lucky tick", () => {
     const c = new Colony(2);
-    expect(c.place("greenhouse", 2, 4)).toBe(true);
+    const hub = c.snapshot().buildings.find((b) => b.defId === "hub")!;
+    expect(c.place("greenhouse", hub.gx - 2, hub.gy)).toBe(true);
     expect(placeFirst(c, "extractor")).toBe(true);
     const s = stateOf(c);
     s.nextArrival = 0;
@@ -200,7 +203,8 @@ describe("the campaign", () => {
 
   it("losing the whole colony is a defeat", () => {
     const c = new Colony(9);
-    c.removeAt(5, 7); // electrolysis — no oxygen production
+    const oxygen = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
+    c.removeAt(oxygen.gx, oxygen.gy); // no oxygen production
     // run long enough for repeated suffocation to wipe the colony
     const evs = runCollecting(c, 600);
     const s = c.snapshot();

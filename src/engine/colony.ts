@@ -9,7 +9,7 @@ import type {
 } from "@shared/types";
 import { DEFS } from "./defs";
 import {
-  BASE_CAP, GRID_N, SOL_LENGTH, START_TOD, CATCHUP_STEP,
+  BASE_CAP, GRID_N, FOUNDING_GRID_N, SOL_LENGTH, START_TOD, CATCHUP_STEP,
   ARRIVALS_TOTAL, ARRIVAL_FIRST, RESUPPLY_FIRST,
   TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
@@ -381,6 +381,9 @@ export class Colony {
     seedAquifers(this.s, this.envRng); // aquifer sites next (off vents) — deposits avoid them too
     seedDeposits(this.s, this.envRng); // scatter the resource field
     this.recomputeCaps();
+    // Grow the established opening symmetrically: more construction space
+    // without scattering its first resources farther away or consuming RNG.
+    migrateGrid(this.s, GRID_N);
     // seeding emits build events; the colony isn't "speaking" yet, so clear them
     this.events = [];
   }
@@ -688,7 +691,7 @@ function loadStrikeState(st: ColonyState): {
 }
 
 function freshState(difficulty: Difficulty, world: World = "mars"): ColonyState {
-  const N = GRID_N;
+  const N = FOUNDING_GRID_N;
   const prof = DIFFICULTY[difficulty];
   const wp = worldProfile(world); // world start pools (mars == START_AMOUNT)
   return {

@@ -8,6 +8,7 @@
 import { describe, it, expect } from "vitest";
 import { findPath } from "./pathfind";
 import type { ColonyState } from "./state";
+import { GRID_N } from "./tuning";
 
 /** a minimal state: N and an occupancy grid (uid 99 marks a blocked cell) */
 function state(N: number, blocked: [number, number][] = []): ColonyState {
@@ -60,6 +61,22 @@ describe("findPath — shape and rules", () => {
     expect(findPath(s, 3, 3, 0, 0)).toBeNull();
     expect(findPath(s, 0, 0, 3, 3)).toBeNull(); // and from inside it, outward
   });
+
+  it("reaches the expanded far edge to detour around a wall, without stepping outside it", () => {
+    const wallX = Math.floor(GRID_N / 2);
+    const wall: [number, number][] = Array.from({ length: GRID_N - 1 }, (_, y) => [wallX, y]);
+    const s = state(GRID_N, wall);
+    const path = findPath(s, wallX - 1, 0, wallX + 1, 0)!;
+    expect(path).not.toBeNull();
+    expect(path).toHaveLength(2 * (GRID_N - 1) + 3);
+    expect(path).toContainEqual([wallX, GRID_N - 1]);
+    for (const [x, y] of path) {
+      expect(x >= 0 && y >= 0 && x < GRID_N && y < GRID_N).toBe(true);
+      expect(s.grid[y * GRID_N + x]).toBe(0);
+    }
+    expect(findPath(s, 0, 0, GRID_N, 0)).toBeNull();
+    expect(findPath(s, 0, 0, 0, GRID_N)).toBeNull();
+  });
 });
 
 describe("findPath — determinism and scratch isolation", () => {
@@ -80,14 +97,18 @@ describe("findPath — determinism and scratch isolation", () => {
     expect(pb2).toEqual(pb1);
   });
 
-  it("grid-size changes between calls are safe (small → large → small)", () => {
+  it("grid-size changes between calls are safe (small → old grid → expanded grid → old grid → small)", () => {
     const small = state(4);
-    const large = state(25);
+    const old = state(25);
+    const large = state(GRID_N);
     const p1 = findPath(small, 0, 0, 3, 3);
-    const p2 = findPath(large, 0, 0, 24, 24);
+    const oldPath = findPath(old, 0, 0, 24, 24);
+    const p2 = findPath(large, 0, 0, GRID_N - 1, GRID_N - 1);
+    expect(findPath(old, 0, 0, 24, 24)).toEqual(oldPath);
     const p3 = findPath(small, 0, 0, 3, 3);
     expect(len(p1)).toBe(7);
-    expect(len(p2)).toBe(49);
+    expect(len(oldPath)).toBe(49);
+    expect(len(p2)).toBe(2 * GRID_N - 1);
     expect(p3).toEqual(p1);
   });
 

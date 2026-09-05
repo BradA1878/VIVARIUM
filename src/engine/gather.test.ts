@@ -17,6 +17,11 @@ import { AUTO_CARRY, DAY_START, DAY_END, GATHER_NEED_FRAC } from "./tuning";
 /** reach the engine's private state (the suite's seam for injecting/inspecting) */
 const stateOf = (c: Colony): ColonyState => (c as unknown as { s: ColonyState }).s;
 
+/** Place a controlled field node relative to the seeded collection depot. */
+function fieldCell(s: ColonyState, dx: number, dy: number): { gx: number; gy: number } {
+  return { gx: s.depot.gx + dx, gy: s.depot.gy + dy };
+}
+
 /** advance a colony, collecting events */
 function run(c: Colony, seconds: number, step = 0.2): ColonyEvent[] {
   const events: ColonyEvent[] = [];
@@ -66,8 +71,8 @@ function freeColonists(s: ColonyState): ColonistInstance[] {
 describe("idle colonists work the deposit field", () => {
   it("an unstaffed colonist completes deterministic trips crediting the exact pool", () => {
     const { c, s } = controlled(11);
-    // an ore node near the depot (6,5): two trips at AUTO_CARRY=12 → 12 + 6
-    s.deposits = [{ id: 501, gx: 9, gy: 5, kind: "ore", amount: 18, max: 140 }];
+    // an ore node three cells east of the depot: two trips at AUTO_CARRY=12 → 12 + 6
+    s.deposits = [{ id: 501, ...fieldCell(s, 3, 0), kind: "ore", amount: 18, max: 140 }];
     const before = c.snapshot().materials.amount;
 
     const seen = new Set<string>();
@@ -94,7 +99,7 @@ describe("idle colonists work the deposit field", () => {
       s.materials.amount = s.materials.capacity;
     };
     topUp();
-    s.deposits = [{ id: 501, gx: 9, gy: 5, kind: "ore", amount: 140, max: 140 }];
+    s.deposits = [{ id: 501, ...fieldCell(s, 3, 0), kind: "ore", amount: 140, max: 140 }];
 
     let staffedTicks = 0;
     for (let i = 0; i < 250; i++) { // 50 s, entirely inside the day window
@@ -113,7 +118,7 @@ describe("idle colonists work the deposit field", () => {
   it("low stores send only idle colonists gathering; staffed workers stay on shift", () => {
     const { c, s } = staffed(11);
     // water starving, an ice node in reach — idle hands respond, station labor stays put
-    s.deposits = [{ id: 501, gx: 9, gy: 5, kind: "ice", amount: 140, max: 140 }];
+    s.deposits = [{ id: 501, ...fieldCell(s, 3, 0), kind: "ice", amount: 140, max: 140 }];
 
     const staffedGatherStates = new Set<string>();
     const idleGatherStates = new Set<string>();
@@ -137,7 +142,7 @@ describe("idle colonists work the deposit field", () => {
   it("night sends empty-handed gatherers home, but a dusk carrier banks its load first", () => {
     const { c, s } = controlled(13);
     // a far node so nobody completes a fresh pickup in the last sliver of daylight
-    s.deposits = [{ id: 501, gx: 13, gy: 13, kind: "ore", amount: 140, max: 140 }];
+    s.deposits = [{ id: 501, ...fieldCell(s, 7, 8), kind: "ore", amount: 140, max: 140 }];
     s.tod = 0.795; // ~0.75 s of day left
     c.tick(0.2); c.drainEvents(); // settle assignments
 
@@ -146,7 +151,7 @@ describe("idle colonists work the deposit field", () => {
     const carrier = free[0], walker = free[1];
     carrier.carryKind = "ore";
     carrier.carryAmt = AUTO_CARRY; // a full load, caught out in the field at dusk
-    carrier.x = 11; carrier.y = 11;
+    carrier.x = s.depot.gx + 5; carrier.y = s.depot.gy + 6;
     const before = c.snapshot().materials.amount;
 
     const walkerStates = new Set<string>();
@@ -167,7 +172,7 @@ describe("idle colonists work the deposit field", () => {
   it("an active hazard overrides gathering to sheltering mid-trip", () => {
     const { c, s } = controlled(17);
     s.pools.water.amount = s.pools.water.capacity * 0.1; // open an ice-gather need
-    s.deposits = [{ id: 501, gx: 12, gy: 12, kind: "ice", amount: 140, max: 140 }];
+    s.deposits = [{ id: 501, ...fieldCell(s, 6, 7), kind: "ice", amount: 140, max: 140 }];
 
     // let a free colonist get well into a trip
     let mover: ColonistInstance | null = null;
@@ -187,8 +192,8 @@ describe("idle colonists work the deposit field", () => {
   it("two idle colonists claim distinct deposits and stick to them (no thrash)", () => {
     const { c, s } = controlled(23);
     s.deposits = [
-      { id: 501, gx: 11, gy: 4, kind: "ore", amount: 140, max: 140 },
-      { id: 502, gx: 11, gy: 7, kind: "ore", amount: 140, max: 140 },
+      { id: 501, ...fieldCell(s, 5, -1), kind: "ore", amount: 140, max: 140 },
+      { id: 502, ...fieldCell(s, 5, 2), kind: "ore", amount: 140, max: 140 },
     ];
     c.tick(0.2); c.drainEvents(); // settle assignments
     const free = freeColonists(s);
@@ -236,8 +241,8 @@ describe("need-aware targeting — the scarcest pool eats first", () => {
     const { c, s } = controlled(11);
     starveFood(s);
     s.deposits = [
-      { id: 501, gx: 9, gy: 5, kind: "ore", amount: 140, max: 140 },     // near the base
-      { id: 502, gx: 13, gy: 13, kind: "cache", amount: 140, max: 140 }, // the far corner
+      { id: 501, ...fieldCell(s, 3, 0), kind: "ore", amount: 140, max: 140 },     // near the base
+      { id: 502, ...fieldCell(s, 7, 8), kind: "cache", amount: 140, max: 140 }, // far southeast of the base
     ];
     run(c, 2); // long enough for every free colonist to claim
     const free = freeColonists(s);
@@ -251,8 +256,8 @@ describe("need-aware targeting — the scarcest pool eats first", () => {
     const { c, s } = controlled(11);
     starveFood(s);
     s.deposits = [
-      { id: 501, gx: 9, gy: 5, kind: "ore", amount: 140, max: 140 },
-      { id: 502, gx: 12, gy: 12, kind: "cache", amount: 140, max: 140 },
+      { id: 501, ...fieldCell(s, 3, 0), kind: "ore", amount: 140, max: 140 },
+      { id: 502, ...fieldCell(s, 6, 7), kind: "cache", amount: 140, max: 140 },
     ];
     run(c, 2);
     const g = freeColonists(s)[0];
@@ -271,8 +276,8 @@ describe("need-aware targeting — the scarcest pool eats first", () => {
     s.materials.amount = s.materials.capacity * 0.05; // ore is initially most urgent
     s.pools.food.amount = s.pools.food.capacity * 0.2;
     s.deposits = [
-      { id: 501, gx: 12, gy: 12, kind: "ore", amount: 140, max: 140 },
-      { id: 502, gx: 13, gy: 13, kind: "cache", amount: 140, max: 140 },
+      { id: 501, ...fieldCell(s, 6, 7), kind: "ore", amount: 140, max: 140 },
+      { id: 502, ...fieldCell(s, 7, 8), kind: "cache", amount: 140, max: 140 },
     ];
     run(c, 1);
     const g = freeColonists(s)[0];
@@ -288,9 +293,9 @@ describe("need-aware targeting — the scarcest pool eats first", () => {
     const { c, s } = controlled(23);
     starveFood(s);
     s.deposits = [
-      { id: 501, gx: 11, gy: 4, kind: "ore", amount: 140, max: 140 }, // nearest node of all
-      { id: 502, gx: 11, gy: 7, kind: "cache", amount: 140, max: 140 },
-      { id: 503, gx: 13, gy: 9, kind: "cache", amount: 140, max: 140 },
+      { id: 501, ...fieldCell(s, 5, -1), kind: "ore", amount: 140, max: 140 }, // nearest node of all
+      { id: 502, ...fieldCell(s, 5, 2), kind: "cache", amount: 140, max: 140 },
+      { id: 503, ...fieldCell(s, 7, 4), kind: "cache", amount: 140, max: 140 },
     ];
     c.tick(0.2); c.drainEvents(); // settle assignments
     const free = freeColonists(s);
@@ -308,8 +313,8 @@ describe("need-aware targeting — the scarcest pool eats first", () => {
     const { c, s } = controlled(13);
     starveFood(s);
     s.deposits = [
-      { id: 501, gx: 9, gy: 5, kind: "ore", amount: 140, max: 140 },
-      { id: 502, gx: 9, gy: 7, kind: "cache", amount: 140, max: 140 },
+      { id: 501, ...fieldCell(s, 3, 0), kind: "ore", amount: 140, max: 140 },
+      { id: 502, ...fieldCell(s, 3, 2), kind: "cache", amount: 140, max: 140 },
     ];
     c.tick(0.2); c.drainEvents();
     const carrier = freeColonists(s)[0];
@@ -336,7 +341,7 @@ describe("auto-gather preserves the engine guarantees", () => {
 
   it("save → load mid-trip resumes bit-identically", () => {
     const { c, s } = controlled(41);
-    s.deposits = [{ id: 501, gx: 10, gy: 9, kind: "cache", amount: 140, max: 140 }];
+    s.deposits = [{ id: 501, ...fieldCell(s, 4, 4), kind: "cache", amount: 140, max: 140 }];
 
     // run until someone is mid-dwell at the node — the most fragile moment to resume
     let midDwell = false;

@@ -7,7 +7,7 @@
    ============================================================================ */
 import * as THREE from "three";
 import type { World } from "@shared/types";
-import { CELL, GridSpace } from "./coords";
+import { CELL, GridSpace, SCENIC_MARGIN } from "./coords";
 import { worldLook, type WorldLook } from "./worldlook";
 import { createSurfaceDetail, roughnessWithDetail } from "./surface-detail";
 
@@ -41,6 +41,27 @@ const smooth01 = (t: number): number => {
   return c * c * (3 - 2 * c);
 };
 
+/** Test the complete rotated silhouette, including the lean of tall spires.
+ *  A center outside the grid is not enough in a narrow scenic border. */
+function fitsScenicBorder(bounds: THREE.Box3, half: number, edge: number): boolean {
+  const gap = 0.02 * CELL;
+  const outsideGrid = bounds.max.x <= -half - gap || bounds.min.x >= half + gap
+    || bounds.max.z <= -half - gap || bounds.min.z >= half + gap;
+  return outsideGrid && bounds.min.x >= -edge + gap && bounds.max.x <= edge - gap
+    && bounds.min.z >= -edge + gap && bounds.max.z <= edge - gap;
+}
+
+/** Seeded candidates in the four perimeter strips, independent of grid size. */
+function borderPoint(rng: () => number, half: number, edge: number): { x: number; z: number } {
+  const side = Math.floor(rng() * 4);
+  const along = (rng() * 2 - 1) * edge;
+  const across = half + rng() * (edge - half);
+  return {
+    x: side < 2 ? (side === 0 ? -across : across) : along,
+    z: side < 2 ? along : (side === 2 ? -across : across),
+  };
+}
+
 export class Terrain {
   readonly group = new THREE.Group();
   readonly surfaceStep = CELL;
@@ -52,7 +73,7 @@ export class Terrain {
    *  rock/monolith scatter so everything sits on the same ground. */
   private sample: (x: number, z: number) => { h: number; ridge: number; n: number; dune: number };
 
-  constructor(grid: GridSpace, world: World = "mars", margin = 10) {
+  constructor(grid: GridSpace, world: World = "mars", margin = SCENIC_MARGIN) {
     const look = worldLook(world);
     // per-world ground palette, minted once (Mars values reproduce RUST_LO/HI,
     // OCHRE, BASALT exactly — see worldlook.ts)
@@ -71,15 +92,16 @@ export class Terrain {
       const gx = x / CELL + grid.N / 2, gy = z / CELL + grid.N / 2;
       const n = fbm(gx * 0.5 + 4, gy * 0.5 + 9);
       const dune = vnoise(gx * look.relief.duneFreq + 20, gy * look.relief.duneFreq + 3);
-      // flatten the play field so placement stays readable: 0.15 of the
-      // displacement inside the grid + half a cell, full again ~3 cells out
-      const d = Math.max(Math.abs(x), Math.abs(z));
-      const flat = 0.15 + 0.85 * smooth01((d - (half + 0.5 * CELL)) / (3 * CELL));
+      // Scenic height starts outside the square construction area, including
+      // its corners. Normalize over the actual border, even when it is short;
+      // with no border the whole surface keeps its gentle 15% base variation.
+      const outside = Math.max(0, Math.max(Math.abs(x), Math.abs(z)) - half);
+      const ramp = margin > 0 ? smooth01(outside / (margin * CELL)) : 0;
+      const flat = 0.15 + 0.85 * ramp;
       const base = ((n - 0.5) * look.relief.noise + (dune - 0.5) * look.relief.dune) * flat;
-      // far relief: a ridged band past ~N/2 + 4 cells, ramping toward the fog
+      // The familiar ridged profile now lives entirely in that scenic border.
       const rn = vnoise(gx * 0.22 + 40, gy * 0.22 + 17);
       const crest = (1 - Math.abs(2 * rn - 1)) ** 2;
-      const ramp = smooth01((Math.hypot(x, z) - (half + 4 * CELL)) / (edge - half - 4 * CELL));
       const ridge = crest * look.relief.ridge * ramp;
       return { h: base + ridge, ridge, n, dune };
     };
@@ -121,10 +143,10 @@ export class Terrain {
     this.disposables.push(geo, mat, detail.texture);
 
     // ---- instanced boulders past the play grid ----
-    this.scatterRocks(grid, margin, look);
+    this.scatterRocks(half, edge, look);
 
     // ---- distant monoliths on the far relief ----
-    this.scatterMonoliths(edge, look);
+    this.scatterMonoliths(half, edge, look);
   }
 
   /** Height on the rendered triangles, not the underlying continuous noise.
@@ -147,9 +169,11 @@ export class Terrain {
       : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
   }
 
-  private scatterRocks(grid: GridSpace, margin: number, look: WorldLook): void {
+  private scatterRocks(half: number, edge: number, look: WorldLook): void {
     const rng = mulberry(look.rockSeed);
-    const count = look.rocks.count;
+    // The authored count was a whole-plane candidate budget. Keep that area
+    // density when concentrating candidates into the remaining scenic strips.
+    const count = Math.round(look.rocks.count * (1 - (half / edge) ** 2));
     const rockGeo = new THREE.IcosahedronGeometry(1, look.rocks.detail); // detail 0 = jagged shards, 1+ = rounder
     // rough up the rock a touch
     const rp = rockGeo.attributes.position as THREE.BufferAttribute;
@@ -158,30 +182,27 @@ export class Terrain {
       rp.setXYZ(i, rp.getX(i) * f, rp.getY(i) * f * look.rocks.squash, rp.getZ(i) * f);
     }
     rockGeo.computeVertexNormals();
+    rockGeo.computeBoundingBox();
     const rockMat = new THREE.MeshStandardMaterial({ color: look.rockColor, roughness: 0.95, metalness: 0.03 });
     const mesh = new THREE.InstancedMesh(rockGeo, rockMat, count);
+    mesh.name = "scenic-rocks";
     mesh.castShadow = true;
     mesh.receiveShadow = true;
 
-    const lo = -margin, hi = grid.N + margin;
     const dummy = new THREE.Object3D();
+    const bounds = new THREE.Box3();
     let placed = 0;
-    for (let i = 0; i < count; i++) {
-      const gx = lo + rng() * (hi - lo);
-      const gy = lo + rng() * (hi - lo);
-      // the play field is ALWAYS kept clear now — but still consume the legacy
-      // keep-roll (+ transform draws when it "survived") so the rng stream and
-      // therefore the rest of the field keep their exact layout
-      if (gx > -1 && gx < grid.N && gy > -1 && gy < grid.N) {
-        if (rng() >= 0.7) { rng(); rng(); rng(); rng(); }
-        continue;
-      }
-      const p = grid.cellCenter(gx, gy);
+    // Aim at the scenic border so enlarging the build area does not empty the
+    // rock field. Bound retries: a narrower border may simply fit fewer rocks.
+    for (let attempt = 0; attempt < count * 20 && placed < count && edge > half; attempt++) {
+      const p = borderPoint(rng, half, edge);
       const s = look.rocks.min + rng() * (look.rocks.max - look.rocks.min);
-      dummy.position.set(p.x, this.sample(p.x, p.z).h + s * 0.4 - 0.1, p.z);
+      dummy.position.set(p.x, this.heightAt(p.x, p.z) + s * 0.4 - 0.1, p.z);
       dummy.rotation.set(rng() * 0.4, rng() * 6.28, rng() * 0.4);
       dummy.scale.set(s, s, s);
       dummy.updateMatrix();
+      bounds.copy(rockGeo.boundingBox!).applyMatrix4(dummy.matrix);
+      if (!fitsScenicBorder(bounds, half, edge)) continue;
       mesh.setMatrixAt(placed++, dummy.matrix);
     }
     mesh.count = placed;
@@ -193,27 +214,30 @@ export class Terrain {
   /** ~7 tapered five-sided basalt monoliths out on the far relief — tall
    *  silhouettes for the fog line. Their rng is a separate seeded stream, so
    *  the boulder field above is untouched by their draws. */
-  private scatterMonoliths(edge: number, look: WorldLook): void {
+  private scatterMonoliths(half: number, edge: number, look: WorldLook): void {
     const rng = mulberry(look.monolithSeed);
     const count = look.monoliths.count;
     const geo = new THREE.CylinderGeometry(0.34, 0.62, 1, 5, 1);
     geo.translate(0, 0.5, 0); // base at y = 0 so scale.y sets the height
+    geo.computeBoundingBox();
     const mat = new THREE.MeshStandardMaterial({ color: look.monolithColor, roughness: 0.92, metalness: 0.05 });
     const mesh = new THREE.InstancedMesh(geo, mat, count);
-    mesh.castShadow = false; // far outside the shadow camera — never pay for it
+    mesh.name = "scenic-monoliths";
+    mesh.castShadow = false; // scenic silhouettes need no extra shadow draws
     const dummy = new THREE.Object3D();
+    const bounds = new THREE.Box3();
     let placed = 0;
-    for (let attempt = 0; attempt < 300 && placed < count; attempt++) {
-      const a = rng() * Math.PI * 2;
-      const r = 18 + rng() * 12;
-      const x = Math.cos(a) * r, z = Math.sin(a) * r;
-      // the 18–30 ring only overlaps the plane at its corners — keep them on it
-      if (Math.max(Math.abs(x), Math.abs(z)) > edge - 1) continue;
+    for (let attempt = 0; attempt < 300 && placed < count && edge > half; attempt++) {
+      // Sample the four perimeter strips instead of a fixed-radius ring that
+      // would drift into construction cells as the grid grows.
+      const { x, z } = borderPoint(rng, half, edge);
       const h = 2.5 + rng() * 2.5;
-      dummy.position.set(x, this.sample(x, z).h - 0.3, z); // base sunk into the ridge
+      dummy.position.set(x, this.heightAt(x, z) - 0.3, z); // base sunk into the ridge
       dummy.rotation.set((rng() - 0.5) * 0.12, rng() * Math.PI * 2, (rng() - 0.5) * 0.12);
       dummy.scale.set(0.7 + rng() * 0.7, h, 0.7 + rng() * 0.7);
       dummy.updateMatrix();
+      bounds.copy(geo.boundingBox!).applyMatrix4(dummy.matrix);
+      if (!fitsScenicBorder(bounds, half, edge)) continue;
       mesh.setMatrixAt(placed++, dummy.matrix);
     }
     mesh.count = placed;

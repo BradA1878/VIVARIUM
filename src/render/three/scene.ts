@@ -54,7 +54,7 @@ export class SceneManager {
    *  the mars anchor by default (today's exact constants); re-themed by setWorld */
   private sky: SkyLook = worldLook("mars").sky;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, groundHalfExtent: number) {
     // Every quality tier antialiases in PostFx; multisampling the final
     // fullscreen canvas would add cost without smoothing the scene edges.
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
@@ -75,12 +75,16 @@ export class SceneManager {
     this.sun = new THREE.DirectionalLight(0xffe6c8, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(1024, 1024);
-    this.sun.shadow.camera.near = 1;
-    this.sun.shadow.camera.far = 85;
+    // Cover every buildable corner regardless of pan/zoom or sun azimuth.
+    // The light sits 60 units away; this range also includes tall structures.
+    const shadowExtent = groundHalfExtent * Math.SQRT2 + 2;
+    this.sun.shadow.camera.near = Math.max(1, 60 - shadowExtent - 8);
+    this.sun.shadow.camera.far = 60 + shadowExtent + 8;
     this.sun.shadow.bias = -0.00008;
     this.sun.shadow.normalBias = 0.015;
     const sc = this.sun.shadow.camera as THREE.OrthographicCamera;
-    sc.left = -20; sc.right = 20; sc.top = 20; sc.bottom = -20;
+    sc.left = -shadowExtent; sc.right = shadowExtent;
+    sc.top = shadowExtent; sc.bottom = -shadowExtent;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
 
@@ -163,8 +167,9 @@ export class SceneManager {
     const ang = (tod - 0.5) * Math.PI * 2; // noon at top
     const elev = Math.cos(ang);            // 1 at noon, negative at night
     const sx = Math.sin(ang);
-    this.sun.position.set(sx * 30 + 6, Math.max(-6, elev * 34) + 6, 18);
-    this.sun.target.position.set(0, 0, 0);
+    // Preserve the established sun direction, but keep its shadow camera far
+    // enough from the ground to include the expanded corners even at dawn.
+    this.sun.position.set(sx * 30 + 6, Math.max(-6, elev * 34) + 6, 18).setLength(60);
     const sunStrength = Math.max(0, elev);
     this.sun.intensity = (dust ? 0.35 : 1.0) * (0.15 + sunStrength * 1.35);
     this.sun.color.copy(lerpColor(sk.sun.low, dust ? sk.sun.dust : sk.sun.clear, 0.4 + amb * 0.6));

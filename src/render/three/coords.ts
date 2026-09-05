@@ -7,6 +7,8 @@ import * as THREE from "three";
 import type { BuildingDef } from "@shared/types";
 
 export const CELL = 1;
+/** Scenic terrain outside the construction grid, in cells. */
+export const SCENIC_MARGIN = 2;
 
 export class GridSpace {
   constructor(public readonly N: number) {}

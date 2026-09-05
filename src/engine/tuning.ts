@@ -27,7 +27,9 @@ export const START_AMOUNT: Record<Resource, number> = {
   food: 45,
 };
 
-export const GRID_N = 25; // buildable area (25×25 = 625 cells; was 15×15 = 225, 11×11 = 121)
+export const GRID_N = 41; // 1,681 buildable cells inside the existing landscape
+/** Keep the established opening's resource layout and RNG draws, then expand. */
+export const FOUNDING_GRID_N = 25;
 
 /** seconds per sol (compressed) */
 export const SOL_LENGTH = 150;

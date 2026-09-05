@@ -30,7 +30,8 @@ describe("root-cause diagnosis traces the cascade", () => {
   it("oxygen failing for lack of water points upstream to water", () => {
     const c = new Colony(7);
     // remove the ice extractor so water drains; electrolysis then starves
-    c.removeAt(8, 8);
+    const extractor = c.snapshot().buildings.find((b) => b.defId === "extractor")!;
+    expect(c.removeAt(extractor.gx, extractor.gy)).toBe(true);
     run(c, 80); // let water empty and electrolysis go unfed
     const s = c.snapshot();
     const d = diagnoseShortfall(s, "oxygen");
@@ -47,8 +48,9 @@ describe("root-cause diagnosis traces the cascade", () => {
     const c = new Colony(2);
     // strip generation + buffer, then gut the light: power must bottom out and
     // the cause must read environmental (the storm took the light).
-    c.removeAt(7, 3); c.removeAt(7, 6); // both solar arrays
-    c.removeAt(3, 3); // the battery
+    const generation = c.snapshot().buildings.filter((b) => b.defId === "solar" || b.defId === "battery");
+    expect(generation).toHaveLength(3);
+    for (const b of generation) expect(c.removeAt(b.gx, b.gy)).toBe(true);
     c.forceStorm();
     run(c, 18); // sample mid-storm (storms last ≥26s)
     const s = c.snapshot();
@@ -62,7 +64,8 @@ describe("root-cause diagnosis traces the cascade", () => {
 describe("risk listing", () => {
   it("flags a draining pool with its dependents", () => {
     const c = new Colony(5);
-    c.removeAt(5, 7); // electrolysis — oxygen now only drains
+    const electrolysis = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
+    expect(c.removeAt(electrolysis.gx, electrolysis.gy)).toBe(true); // oxygen only drains
     run(c, 50);
     const r = risks(c.snapshot());
     const oxy = r.find((x) => x.resource === "oxygen");

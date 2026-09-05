@@ -142,7 +142,8 @@ describe("moraleMult — the production multiplier", () => {
 describe("morale is wired through the real tick", () => {
   it("an oxygen crisis drags morale down until morale_low fires", () => {
     const c = new Colony(9);
-    c.removeAt(5, 7); // electrolysis — oxygen only drains (engine.test.ts pattern)
+    const electrolysis = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
+    expect(c.removeAt(electrolysis.gx, electrolysis.gy)).toBe(true); // oxygen only drains
     const events = run(c, 200);
     expect(events.some((e) => e.type === "crit_start" && e.res === "oxygen")).toBe(true);
     expect(events.some((e) => e.type === "morale_low")).toBe(true);
@@ -151,7 +152,8 @@ describe("morale is wired through the real tick", () => {
 
   it("a casualty steps morale down by MORALE_BUMP.casualty", () => {
     const c = new Colony(9);
-    c.removeAt(5, 7); // no oxygen production
+    const electrolysis = c.snapshot().buildings.find((b) => b.defId === "electrolysis")!;
+    expect(c.removeAt(electrolysis.gx, electrolysis.gy)).toBe(true); // no oxygen production
     const s = stateOf(c);
     s.pools.oxygen.amount = 0;
     s.timers.oxygen = 0.05; // the grace timer expires on the next tick

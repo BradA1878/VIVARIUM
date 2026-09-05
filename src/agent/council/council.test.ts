@@ -15,7 +15,8 @@ function ev(type: ColonyEvent["type"], t: number, extra: Partial<ColonyEvent> = 
 describe("the Council", () => {
   it("routes a cascade crit to the Watcher, who names the cause", () => {
     const c = new Colony(7);
-    c.removeAt(8, 8); // remove the extractor → water drains → electrolysis starves
+    const extractor = c.snapshot().buildings.find((b) => b.defId === "extractor")!;
+    expect(c.removeAt(extractor.gx, extractor.gy)).toBe(true); // water drains → electrolysis starves
     for (let i = 0; i < 80 / 0.2; i++) { c.tick(0.2); c.drainEvents(); }
     const council = new Council();
     const u = council.observe(ev("crit_start", 100, { res: "oxygen", sol: 1, tod: 0.5 }), c.snapshot(), 100);

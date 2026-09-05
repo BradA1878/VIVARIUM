@@ -28,6 +28,11 @@ const stateOf = (c: Colony): ColonyState => (c as unknown as { s: ColonyState })
 /** an rng stub returning a fixed draw (aims strikeCell at a chosen cell) */
 const rngOf = (v: number): RNG => ({ next: () => v }) as unknown as RNG;
 
+/** Place a controlled field node relative to the seeded collection depot. */
+function fieldCell(s: ColonyState, dx: number, dy: number): { gx: number; gy: number } {
+  return { gx: s.depot.gx + dx, gy: s.depot.gy + dy };
+}
+
 /** advance a colony by `seconds` in fixed `step`s, collecting events */
 function run(c: Colony, seconds: number, step = 0.2): ColonyEvent[] {
   const events: ColonyEvent[] = [];
@@ -57,8 +62,8 @@ function controlled(seed: number): { c: Colony; s: ColonyState } {
 function placeBay(c: Colony): { gx: number; gy: number } {
   const s = stateOf(c); // the gate is unlocks.test.ts's subject — open it here
   if (!s.unlocked.includes("roboticsbay")) s.unlocked.push("roboticsbay");
-  for (let gx = 9; gx <= 12; gx++) {
-    for (let gy = 9; gy <= 12; gy++) {
+  for (let gx = s.depot.gx + 3; gx <= s.depot.gx + 6; gx++) {
+    for (let gy = s.depot.gy + 4; gy <= s.depot.gy + 7; gy++) {
       if (c.place("roboticsbay", gx, gy)) { c.drainEvents(); return { gx, gy }; }
     }
   }
@@ -66,8 +71,9 @@ function placeBay(c: Colony): { gx: number; gy: number } {
 }
 
 /** push a robot straight onto the state (the rare-event injection idiom),
- *  drawing its id from the shared actor counter like the fab line does */
-function injectRobot(s: ColonyState, x: number, y: number): RobotInstance {
+ *  with a depot-relative position and an id from the shared actor counter */
+function injectRobot(s: ColonyState, dx: number, dy: number): RobotInstance {
+  const x = s.depot.gx + dx, y = s.depot.gy + dy;
   const r: RobotInstance = {
     id: s.colonistCounter++, x, y, facing: 0, state: "idle",
     carryKind: null, carryAmt: 0, faulted: 0, gatherDepositId: null, gatherT: 0,
@@ -217,8 +223,8 @@ describe("completion — the 40-material fee is drawn when the chassis finishes"
 describe("autonomy — the field never sleeps", () => {
   it("hauls at night while the colonists sleep: the ore lands in materials, exactly", () => {
     const { c, s } = controlled(11);
-    const robot = injectRobot(s, 10, 5);
-    s.deposits = [{ id: 501, gx: 8, gy: 5, kind: "ore", amount: 45, max: 140 }];
+    const robot = injectRobot(s, 4, 0);
+    s.deposits = [{ id: 501, ...fieldCell(s, 2, 0), kind: "ore", amount: 45, max: 140 }];
     s.tod = 0.85; // deep night
     const before = s.materials.amount;
 
@@ -239,8 +245,8 @@ describe("autonomy — the field never sleeps", () => {
 
   it("keeps hauling through an active dust storm while the colonists shelter — it never shelters", () => {
     const { c, s } = controlled(13);
-    injectRobot(s, 10, 5);
-    s.deposits = [{ id: 501, gx: 8, gy: 5, kind: "ore", amount: 45, max: 140 }];
+    injectRobot(s, 4, 0);
+    s.deposits = [{ id: 501, ...fieldCell(s, 2, 0), kind: "ore", amount: 45, max: 140 }];
     s.hazards.push({ id: 1, kind: "dust", phase: "active", tLeft: 40, activeDur: 40, intensity: 0.8, cadence: 0 });
     const before = s.materials.amount;
 
@@ -270,11 +276,11 @@ describe("autonomy — the field never sleeps", () => {
     // three nodes, three gatherers: two free colonists claim the near pair first;
     // the robot stands a single cell from both, yet must take the far third
     s.deposits = [
-      { id: 501, gx: 11, gy: 5, kind: "ore", amount: 140, max: 140 },
-      { id: 502, gx: 11, gy: 7, kind: "ore", amount: 140, max: 140 },
-      { id: 503, gx: 13, gy: 9, kind: "ore", amount: 140, max: 140 },
+      { id: 501, ...fieldCell(s, 5, 0), kind: "ore", amount: 140, max: 140 },
+      { id: 502, ...fieldCell(s, 5, 2), kind: "ore", amount: 140, max: 140 },
+      { id: 503, ...fieldCell(s, 7, 4), kind: "ore", amount: 140, max: 140 },
     ];
-    const robot = injectRobot(s, 11, 6);
+    const robot = injectRobot(s, 5, 1);
 
     c.tick(0.2); c.drainEvents();
     const colonistClaims = s.colonists
@@ -295,9 +301,9 @@ describe("autonomy — the field never sleeps", () => {
 describe("counterplay — the planet pushes back", () => {
   it("a flare's activation faults ALL robots for ROBOT_FLARE_FAULT seconds, halting them in place", () => {
     const { c, s } = controlled(7);
-    const a = injectRobot(s, 12, 4);
-    const b = injectRobot(s, 12, 8);
-    s.deposits = [{ id: 501, gx: 11, gy: 6, kind: "ore", amount: 600, max: 600 }];
+    const a = injectRobot(s, 6, -1);
+    const b = injectRobot(s, 6, 3);
+    s.deposits = [{ id: 501, ...fieldCell(s, 5, 1), kind: "ore", amount: 600, max: 600 }];
     run(c, 3); // both at work before the sky turns
     expect(GATHER_STATES).toContain(a.state);
     expect(GATHER_STATES).toContain(b.state);
@@ -380,7 +386,7 @@ describe("counterplay — the planet pushes back", () => {
 describe("possession", () => {
   it("possess(robotId) leaves possession null — robots are not crewable", () => {
     const { c, s } = controlled(7);
-    const robot = injectRobot(s, 10, 5);
+    const robot = injectRobot(s, 4, 0);
 
     c.possess(robot.id);
     expect(c.snapshot().possessed).toBeNull();
@@ -415,8 +421,8 @@ describe("determinism + persistence", () => {
 
   it("save → load mid-trip resumes bit-identically, gather fields and all", () => {
     const { c, s } = controlled(41);
-    injectRobot(s, 12, 12);
-    s.deposits = [{ id: 501, gx: 10, gy: 9, kind: "cache", amount: 140, max: 140 }];
+    injectRobot(s, 6, 7);
+    s.deposits = [{ id: 501, ...fieldCell(s, 4, 4), kind: "cache", amount: 140, max: 140 }];
 
     // run until the robot is mid-dwell at the node — the most fragile moment to resume
     let midDwell = false;

@@ -5,7 +5,7 @@
    solar gutting itself lives in the engine; this is the visible weather.
    ============================================================================ */
 import * as THREE from "three";
-import { GridSpace } from "./coords";
+import { GridSpace, SCENIC_MARGIN } from "./coords";
 
 const COUNT = 600;
 
@@ -20,7 +20,7 @@ export class Atmosphere {
   private storm = 0; // smoothed 0..1
 
   constructor(grid: GridSpace) {
-    const half = grid.half() + 8;
+    const half = grid.half() + SCENIC_MARGIN;
     this.spanX = half * 2;
     this.spanZ = half * 2;
     this.positions = new Float32Array(COUNT * 3);

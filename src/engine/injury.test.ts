@@ -80,10 +80,13 @@ function threeCrewQuake(exposeOne = false): Colony {
     s.pools[k].amount = s.pools[k].capacity;
   }
   if (exposeOne) {
-    // Seed 1's first quake target is (5, 6); possession keeps this actor
-    // deliberately exposed there while the autonomous crew evacuate.
-    s.colonists[0].x = 5;
-    s.colonists[0].y = 6;
+    // Seed 1 first targets the east corridor directly north of electrolysis;
+    // possession keeps this actor exposed while the autonomous crew evacuate.
+    const electrolysis = s.buildings.find((b) => b.defId === "electrolysis")!;
+    const corridor = c.buildingAt(electrolysis.gx, electrolysis.gy - 1)!;
+    expect(corridor.defId).toBe("corridor");
+    s.colonists[0].x = corridor.gx;
+    s.colonists[0].y = corridor.gy;
     c.possess(s.colonists[0].id);
   }
   c.triggerHazard("quake", 1);
@@ -299,29 +302,30 @@ describe("work eligibility + the labor pool", () => {
 });
 
 describe("triage movement", () => {
-  /** a colony with a treatable medbay at (10,9) — access cell (10,10) — and the
-   *  first colonist hurt and standing one cell south of its door */
+  /** A treatable medbay southeast of the seeded depot, with the first colonist
+   *  hurt and standing just south of its access cell. */
   function hurtWalker() {
     const c = new Colony(123);
     const s = stateOf(c);
-    expect(c.place("medbay", 10, 9)).toBe(true);
+    expect(c.place("medbay", s.depot.gx + 4, s.depot.gy + 4)).toBe(true);
     const mb = s.buildings.find((b) => b.defId === "medbay")!;
     mb.online = true; // no tick has run — make it treatable by hand
     const k = s.colonists[0];
     k.injury = INJURY_RECOVERY;
-    k.x = 10; k.y = 11.5;
-    return { c, s, k };
+    const door = accessCell(s, mb);
+    k.x = door.x; k.y = door.y + 1.5;
+    return { c, s, k, door };
   }
 
   it("walks to the medbay access cell at INJURED_SPEED, then recovers there", () => {
-    const { s, k } = hurtWalker();
+    const { s, k, door } = hurtWalker();
     const x0 = k.x, y0 = k.y;
     stepColonists(s, 0.2);
     expect(k.state).toBe("toMedbay");
     expect(Math.hypot(k.x - x0, k.y - y0)).toBeCloseTo(INJURED_SPEED * 0.2, 6);
 
     for (let i = 0; i < 60; i++) stepColonists(s, 0.2);
-    expect(Math.hypot(k.x - 10, k.y - 10)).toBeLessThanOrEqual(ARRIVE_EPS);
+    expect(Math.hypot(k.x - door.x, k.y - door.y)).toBeLessThanOrEqual(ARRIVE_EPS);
     expect(k.state).toBe("recovering");
   });
 
@@ -347,8 +351,8 @@ describe("triage movement", () => {
     const disconnected = {
       ...hub,
       uid: 999_001,
-      gx: 10,
-      gy: 10,
+      gx: hub.gx + 6,
+      gy: hub.gy + 6,
       connected: false,
     };
     s.buildings.push(disconnected);
@@ -367,22 +371,24 @@ describe("triage movement", () => {
 
   it("with no treatable medbay the wounded head home instead, still as toMedbay", () => {
     const { s, k } = hurtWalker();
+    const start = { x: k.x, y: k.y };
     s.buildings = s.buildings.filter((b) => b.defId !== "medbay");
     stepColonists(s, 0.2);
     expect(k.state).toBe("toMedbay"); // walking, at the injured pace, to a hab
-    expect(Math.hypot(k.x - 10, k.y - 11.5)).toBeGreaterThan(0);
+    expect(Math.hypot(k.x - start.x, k.y - start.y)).toBeGreaterThan(0);
   });
 
   it("a possessed injured colonist pilots at PILOT_SPEED × INJURED_PILOT_FACTOR", () => {
     const c = new Colony(5);
     const s = stateOf(c);
     const k = s.colonists[0];
-    k.x = 12; k.y = 12;
+    k.x = s.depot.gx + 6; k.y = s.depot.gy + 7;
+    const x0 = k.x;
     c.possess(k.id);
     c.setMoveIntent(1, 0);
     k.injury = INJURY_RECOVERY;
     stepColonists(s, 0.2);
-    expect(k.x - 12).toBeCloseTo(PILOT_SPEED * INJURED_PILOT_FACTOR * 0.2, 6);
+    expect(k.x - x0).toBeCloseTo(PILOT_SPEED * INJURED_PILOT_FACTOR * 0.2, 6);
     expect(k.state).toBe("piloted");
   });
 });
@@ -392,16 +398,20 @@ describe("strikes wound through the real tick (director-driven meteor)", () => {
     const c = new Colony(20260610);
     const s = stateOf(c);
     c.setDirector(true); // the scheduler stands down; we are the director
-    s.population = 49;   // enough bodies to blanket the 15×15 map
+    const latticeWidth = Math.ceil(s.N / 2);
+    s.population = latticeWidth ** 2; // enough bodies to blanket the actual map
     c.triggerHazard("meteor", 1);
 
     const events: ColonyEvent[] = [];
     for (let i = 0; i < 150; i++) { // 30s: telegraph + the active window
       // pin colonists on a 2-cell lattice so every cell is within INJURY_RADIUS
       for (let k = 0; k < s.colonists.length; k++) {
-        s.colonists[k].x = (k % 7) * 2 + 1;
-        s.colonists[k].y = Math.floor(k / 7) * 2 + 1;
+        s.colonists[k].x = (k % latticeWidth) * 2;
+        s.colonists[k].y = Math.floor(k / latticeWidth) * 2;
       }
+      // This is a strike test: feed the expanded lattice so a resource crisis
+      // cannot remove its targets before the meteor reaches them.
+      for (const pool of Object.values(s.pools)) pool.amount = pool.capacity;
       c.tick(0.2);
       events.push(...c.drainEvents());
     }

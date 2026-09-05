@@ -8,7 +8,7 @@
    ============================================================================ */
 import * as THREE from "three";
 import type { Snapshot } from "@shared/types";
-import { GridSpace } from "./coords";
+import { GridSpace, SCENIC_MARGIN } from "./coords";
 import { greebleRng } from "./kit/contract";
 
 const DUST = 0xa87850;
@@ -65,8 +65,8 @@ export class StormFx {
 
   constructor(grid: GridSpace) {
     this.group.name = "stormFx";
-    this.bound = grid.half() + 2;
-    const half = grid.half() + 8; // same margin the atmosphere scatters over
+    this.bound = grid.half(); // keep the full skirts on the terrain
+    const half = grid.half() + SCENIC_MARGIN; // same field as the atmosphere
     this.spanX = half * 2;
     this.spanZ = half * 2;
 

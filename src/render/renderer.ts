@@ -14,7 +14,7 @@ import { PerfGovernor, STEP_HIGH, STEP_LOW, snapHz } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
 import { GroundDetails } from "./three/ground-details";
-import { CELL, GridSpace } from "./three/coords";
+import { CELL, GridSpace, SCENIC_MARGIN } from "./three/coords";
 import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh, type KitEnv } from "./three/kit";
 import { PlacementController, type HoverInfo, type SelectInfo } from "./three/placement";
@@ -119,6 +119,9 @@ function buildingStatus(b: BuildingState): { alive: boolean; hurt: boolean } {
 
 export class ThreeRenderer {
   readonly scene: SceneManager;
+  // TODO(grid-size compatibility): differing Snapshot.N needs a renderer rebuild
+  // (terrain/weather/camera bounds and spatial caches). Larger-version saves and
+  // mixed-version co-op currently assume the local grid size matches the host.
   readonly grid: GridSpace;
   private terrain: Terrain;
   private groundDetails = new GroundDetails();
@@ -235,8 +238,8 @@ export class ThreeRenderer {
 
   constructor(canvas: HTMLCanvasElement, bridge: BridgeCore, gridN: number) {
     this.bridge = bridge;
-    this.scene = new SceneManager(canvas);
     this.grid = new GridSpace(gridN);
+    this.scene = new SceneManager(canvas, this.grid.half() + SCENIC_MARGIN * CELL);
     this.terrain = new Terrain(this.grid);
     this.scene.scene.add(this.terrain.group);
     this.scene.scene.add(this.groundDetails.group);
@@ -249,7 +252,7 @@ export class ThreeRenderer {
     this.scene.scene.add(this.robotsGroup);
     this.scene.scene.add(this.bubbles.group);
     this.scene.scene.add(this.nameTags.group);
-    this.cameraControls = new CameraControls(canvas, this.scene.camera, this.grid.half() + 4);
+    this.cameraControls = new CameraControls(canvas, this.scene.camera, this.grid.half());
     this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
     this.scene.scene.add(this.placement.group);
     this.atmosphere = new Atmosphere(this.grid);
