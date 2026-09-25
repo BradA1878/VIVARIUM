@@ -16,9 +16,42 @@ type DebugWindow = Window & {
       running: boolean;
       raf: number;
       placed: Map<number, { mesh: { object: { position: { x: number; z: number } } } }>;
+      setQuality(q: "auto" | "low" | "high"): void;
     };
   };
 };
+
+/** Every visible point between the ground and the tallest structures must
+ *  fall inside the sun's fitted shadow camera, at dawn, noon and dusk. The
+ *  check casts its own rays through the four screen corners rather than
+ *  reusing the renderer's fitting math. */
+async function visibleGroundShadowed(page: Page): Promise<{ worst: number; mapSize: number[] }> {
+  return page.evaluate(() => {
+    const { renderer: r } = (window as DebugWindow).__viv;
+    const { sun } = r.scene as unknown as { sun: DirectionalLight };
+    const cam = r.scene.camera;
+    const V = r.camFocus.constructor as new (x?: number, y?: number, z?: number) => Vector3;
+    let worst = 0;
+    for (const tod of [0.26, 0.3, 0.5, 0.7, 0.74]) {
+      r.scene.update(tod, false);
+      r.scene.render();
+      sun.updateMatrixWorld();
+      sun.target.updateMatrixWorld();
+      sun.shadow.updateMatrices(sun);
+      for (const nx of [-1, 1]) {
+        for (const ny of [-1, 1]) {
+          const near = new V(nx, ny, -1).unproject(cam);
+          const dir = new V(nx, ny, 1).unproject(cam).sub(near).normalize();
+          for (const h of [0, 5]) {
+            const p = near.clone().addScaledVector(dir, (h - near.y) / dir.y).project(sun.shadow.camera);
+            worst = Math.max(worst, Math.abs(p.x), Math.abs(p.y), Math.abs(p.z));
+          }
+        }
+      }
+    }
+    return { worst, mapSize: sun.shadow.mapSize.toArray() };
+  });
+}
 
 async function startColony(page: Page): Promise<void> {
   await page.goto("/");
@@ -57,6 +90,8 @@ test("a moved building mesh follows the authoritative footprint", async ({ page 
 test("construction reaches all four expanded edges through the canvas", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "architect console");
   await startColony(page);
+  // pin HIGH so the governor cannot drop shadows mid-test on a slow runner
+  await page.evaluate(() => (window as DebugWindow).__viv.renderer.setQuality("high"));
   const N = await page.evaluate(() => (window as DebugWindow).__viv.bridge.latest!.N);
   expect(N).toBe(41);
   await page.getByRole("button", { name: /^Solar Array/ }).click();
@@ -80,6 +115,9 @@ test("construction reaches all four expanded edges through the canvas", async ({
       const rect = r.scene.renderer.domElement.getBoundingClientRect();
       return { x: rect.left + (p.x + 1) * rect.width / 2, y: rect.top + (1 - p.y) * rect.height / 2 };
     }, { gx, gy });
+    const shadow = await visibleGroundShadowed(page);
+    expect(shadow.worst).toBeLessThan(1);
+    expect(shadow.mapSize).toEqual([2048, 2048]);
     await page.mouse.click(point.x, point.y);
     await expect.poll(() => page.evaluate(({ gx, gy }) => {
       const { bridge, renderer } = (window as DebugWindow).__viv;
@@ -93,27 +131,6 @@ test("construction reaches all four expanded edges through the canvas", async ({
     return [bridge.canPlace("solar", n - 1, 0), bridge.canPlace("solar", 0, n - 1), bridge.canPlace("solar", -1, 0)];
   });
   expect(blocked).toEqual([false, false, false]);
-  const shadowCoverage = await page.evaluate(() => {
-    const { renderer: r } = (window as DebugWindow).__viv;
-    const { sun } = r.scene as unknown as { sun: DirectionalLight };
-    const points: number[][] = [];
-    for (const tod of [0.25, 0.3, 0.5, 0.7, 0.75]) {
-      r.scene.update(tod, false);
-      sun.updateMatrixWorld();
-      sun.target.updateMatrixWorld();
-      sun.shadow.updateMatrices(sun);
-      for (const gx of [-0.5, r.grid.N - 0.5]) {
-        for (const gy of [-0.5, r.grid.N - 0.5]) {
-          for (const height of [0, 6]) {
-            const p = r.grid.cellPoint(gx, gy).setY(height).project(sun.shadow.camera);
-            points.push(p.toArray());
-          }
-        }
-      }
-    }
-    return { covered: points.every((p) => p.every((v) => Math.abs(v) < 1)), mapSize: sun.shadow.mapSize.toArray() };
-  });
-  expect(shadowCoverage).toEqual({ covered: true, mapSize: [1024, 1024] });
 });
 
 test("quality paths grade the same frozen scene identically without bloom", async ({ page }, testInfo) => {
@@ -140,4 +157,54 @@ test("quality paths grade the same frozen scene identically without bloom", asyn
   expect(result.bytes).toBeGreaterThan(10_000);
   expect(result.exposure).toBe(1.15);
   expect(result.same).toBe(true);
+});
+
+test("GPU resources return to baseline across worlds, quality steps, and a sol of sky changes", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  const glErrors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && /webgl|GL_|shader/i.test(m.text())) glErrors.push(m.text());
+  });
+  await startColony(page);
+  const cycle = () => page.evaluate(async () => {
+    const { bridge, renderer } = (window as DebugWindow).__viv;
+    const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    for (const world of ["ceres", "io", "titan", "mars"] as const) {
+      const save = await bridge.save();
+      save.state.world = world;
+      await bridge.load(save);
+      await settle(400);
+    }
+    renderer.setQuality("low");
+    await settle(300);
+    renderer.setQuality("high");
+    await settle(600);
+    const { geometries, textures } = renderer.scene.renderer.info.memory;
+    return { geometries, textures };
+  });
+  // one full sol at 30x first: the sun sweeps the sky and the environment
+  // re-bakes, and render-side caches (bubble chip textures) warm up. The colony
+  // is restored afterwards so building counts stay comparable.
+  const bakes = await page.evaluate(async () => {
+    const { bridge, renderer } = (window as DebugWindow).__viv;
+    const before = renderer.scene.envBakes;
+    const save = await bridge.save();
+    bridge.setSpeed(30);
+    bridge.setPaused(false);
+    await new Promise((resolve) => setTimeout(resolve, 5500));
+    bridge.setPaused(true);
+    bridge.setSpeed(1);
+    await bridge.load(save);
+    await new Promise((resolve) => setTimeout(resolve, 4500)); // transient FX expire
+    return renderer.scene.envBakes - before;
+  });
+  expect(bakes).toBeGreaterThan(5);
+  // each cycle re-bakes the sky four times (one per world) and rebuilds the
+  // post chain twice; any per-bake or per-rebuild leak grows these counts
+  const first = await cycle();
+  const second = await cycle();
+  const third = await cycle();
+  expect(second).toEqual(first);
+  expect(third).toEqual(first);
+  expect(glErrors).toEqual([]);
 });
