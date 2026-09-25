@@ -36,8 +36,6 @@ export interface EnvLook {
 export interface SkyLook {
   /** horizon (fog) colour: night → {dust, clear} day */
   horizon: { night: RGB; dust: RGB; clear: RGB };
-  /** sky top colour: night → {dust, clear} day */
-  top: { night: RGB; dust: RGB; clear: RGB };
   /** directional sun tint: low → {dust, clear} (lerped at 0.4 + amb*0.6) */
   sun: { low: RGB; dust: RGB; clear: RGB };
   /** ambient fill tint: night (low) → day (high) */
@@ -92,6 +90,16 @@ export interface MatLook {
   skyFill: number;
 }
 
+/** the final display-space grade (applied inside the FXAA pass, after tone
+ *  mapping): lift raises the blacks toward a tint, gain tints the highlights,
+ *  both 0..255 per channel; saturation and vignette are plain factors. */
+export interface GradeLook {
+  lift: RGB;
+  gain: RGB;
+  saturation: number;
+  vignette: number;
+}
+
 /** everything the renderer needs to theme one world. The shape is intentionally
  *  the union of what terrain.ts + scene.ts read — nothing more. */
 export interface WorldLook {
@@ -115,11 +123,14 @@ export interface WorldLook {
   monolithColor: number;
   /** sky/sun/ambient tint endpoints */
   sky: SkyLook;
+  /** final grade */
+  grade: GradeLook;
 }
 
 export const WORLD_LOOKS: Record<World, WorldLook> = {
   // ---- the ANCHOR: today's exact constants (Mars renders byte-for-byte as before)
   mars: {
+    grade: { lift: [8, 5, 12], gain: [255, 250, 240], saturation: 1.05, vignette: 0.2 },
     rockSeed: 98213,
     monolithSeed: 0x77aa,
     ground: { lo: 0x36_1c_15, hi: 0x78_40_2a, accent: 0x6c_3a_22, ridge: 0x18_0d_0b }, // RUST_LO/RUST_HI/OCHRE/BASALT
@@ -131,7 +142,6 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
     monolithColor: 0x2a1a16,
     sky: {
       horizon: { night: [16, 12, 13], dust: [128, 70, 42], clear: [158, 92, 60] },
-      top: { night: [8, 10, 14], dust: [44, 28, 20], clear: [22, 24, 32] },
       sun: { low: [90, 70, 60], dust: [200, 120, 70], clear: [255, 226, 190] },
       ambient: { low: [30, 28, 44], high: [120, 120, 150] },
       env: {
@@ -145,6 +155,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
 
   // ---- ceres: icy / pale blue-white, a weak pale sun, no dust to redden the sky
   ceres: {
+    grade: { lift: [5, 8, 12], gain: [248, 252, 255], saturation: 1.0, vignette: 0.18 },
     rockSeed: 0x1ce5,
     monolithSeed: 0x5ced,
     ground: { lo: 0x3a_44_4e, hi: 0xc8_d6_e2, accent: 0x9a_ae_c0, ridge: 0x26_2e_38 }, // slate → pale ice, blue-grey dune, deep shadow
@@ -157,7 +168,6 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
     sky: {
       // pale, washed-out blue-white; "dust" (none on Ceres) reads as a faint haze
       horizon: { night: [14, 18, 24], dust: [120, 140, 160], clear: [176, 200, 222] },
-      top: { night: [8, 12, 18], dust: [40, 52, 66], clear: [120, 150, 184] },
       sun: { low: [70, 84, 96], dust: [150, 170, 190], clear: [206, 224, 240] }, // cold, weak white
       ambient: { low: [26, 32, 46], high: [150, 165, 190] },
       env: {
@@ -171,6 +181,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
 
   // ---- io: volcanic / dark basalt + sulfur-yellow tints, harsh
   io: {
+    grade: { lift: [9, 7, 3], gain: [255, 250, 236], saturation: 1.04, vignette: 0.2 },
     rockSeed: 0x10_a0,
     monolithSeed: 0x10_b0,
     ground: { lo: 0x18_14_0e, hi: 0x8a_6e_1e, accent: 0xc0_98_24, ridge: 0x0c_0a_08 }, // near-black basalt → sulfur yellow
@@ -183,7 +194,6 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
     sky: {
       // a harsh sulfur sky over dark rock; "dust" reads as an angry yellow-brown pall
       horizon: { night: [18, 14, 8], dust: [150, 116, 36], clear: [186, 150, 52] },
-      top: { night: [12, 9, 6], dust: [52, 40, 16], clear: [54, 44, 22] },
       sun: { low: [96, 80, 44], dust: [210, 170, 70], clear: [248, 226, 130] }, // hot, yellow-white
       ambient: { low: [34, 28, 16], high: [150, 134, 80] },
       env: {
@@ -197,6 +207,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
 
   // ---- titan: hazy gold-orange, thick murky atmosphere, dim sun
   titan: {
+    grade: { lift: [10, 7, 4], gain: [255, 247, 232], saturation: 1.03, vignette: 0.22 },
     rockSeed: 0x71_7a,
     monolithSeed: 0x71_8b,
     ground: { lo: 0x2c_22_10, hi: 0x7e_64_2e, accent: 0x9c_7c_3a, ridge: 0x18_12_08 }, // dark tholin → murky gold
@@ -209,7 +220,6 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
     sky: {
       // the thick orange haze never fully clears, even at "night"; dim, diffuse sun
       horizon: { night: [40, 30, 16], dust: [134, 100, 44], clear: [168, 128, 60] },
-      top: { night: [26, 20, 10], dust: [70, 54, 26], clear: [96, 74, 36] },
       sun: { low: [80, 64, 34], dust: [180, 142, 76], clear: [216, 178, 110] }, // dim, muddy gold
       ambient: { low: [38, 30, 16], high: [140, 116, 70] },
       env: {

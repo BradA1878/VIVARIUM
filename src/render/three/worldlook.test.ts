@@ -17,9 +17,18 @@ describe("world environment palettes", () => {
       expect(valid(env.lowSunGlow)).toBe(true);
       expect(env.bounce).toBeGreaterThan(0);
       expect(env.bounce).toBeLessThanOrEqual(3);
-      // the lit sky is brighter than the dark void the fog/background paints at the
-      // top of the frame, so upward-facing metal does not reflect black
-      expect(lum(env.zenith.clear)).toBeGreaterThan(lum(look.sky.top.clear));
+      // the lit zenith is a real sky, not a dark void, so upward-facing metal
+      // does not reflect black
+      expect(lum(env.zenith.clear)).toBeGreaterThan(0.35 * lum(env.horizon.clear));
+      // the grade stays subtle
+      const g = look.grade;
+      expect(valid(g.lift) && valid(g.gain)).toBe(true);
+      expect(Math.max(...g.lift)).toBeLessThanOrEqual(24);
+      expect(Math.min(...g.gain)).toBeGreaterThanOrEqual(220);
+      expect(g.saturation).toBeGreaterThanOrEqual(0.9);
+      expect(g.saturation).toBeLessThanOrEqual(1.15);
+      expect(g.vignette).toBeGreaterThanOrEqual(0);
+      expect(g.vignette).toBeLessThanOrEqual(0.35);
     });
   }
 });

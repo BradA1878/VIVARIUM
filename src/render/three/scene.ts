@@ -11,6 +11,7 @@ import * as THREE from "three";
 import type { World } from "@shared/types";
 import { PostFx } from "./postfx";
 import { worldLook, type RGB, type SkyLook } from "./worldlook";
+import type { Grade } from "./grade-fxaa";
 import { SkyEnvironment, envIntensity, type SkyState } from "./environment";
 import { SHADOW_LIGHT_DISTANCE, emptyOrthoView, emptyShadowFit, fitShadow, orthoViewOf } from "./shadow-fit";
 
@@ -31,6 +32,13 @@ const AMBIENT_DAY = 0.06;
 /** the sun's gain over the original curve, balanced with the sky environment's
  *  ENV_BASE so shadows read against the fill */
 const SUN_GAIN = 1.5;
+/** fog distances from the camera: clear air, and a dust storm closing in */
+const FOG_NEAR = 38;
+const FOG_FAR = 86;
+const FOG_NEAR_DUST = 22;
+const FOG_FAR_DUST = 70;
+/** storm haze eases in and out over roughly two seconds */
+const FOG_EASE = 0.6;
 
 /** ported from render.js ambient(): brightness 0.07..1 across the sol */
 export function ambientLevel(tod: number, dust: boolean): number {
@@ -76,8 +84,12 @@ export class SceneManager {
   private sky: SkyLook = worldLook("mars").sky;
   // per-frame scratch for update() (the render hot path stays allocation-free)
   private readonly horizon = new THREE.Color();
-  private readonly top = new THREE.Color();
   private readonly background = new THREE.Color();
+  /** the active world's final grade, pushed into PostFx on a world change */
+  private readonly grade: Grade = { lift: new THREE.Color(), gain: new THREE.Color(1, 1, 1), saturation: 1, vignette: 0 };
+  /** 0..1 eased storm haze factor (fog pulls in during dust) */
+  private stormHaze = 0;
+  private lastUpdateMs: number | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     // Every quality tier antialiases in PostFx; multisampling the final
@@ -95,7 +107,7 @@ export class SceneManager {
     this.camera.position.copy(this.isoOffset);
     this.camera.lookAt(0, 0, 0);
 
-    this.scene.fog = new THREE.Fog(0x0b0e12, 38, 86);
+    this.scene.fog = new THREE.Fog(0x0b0e12, FOG_NEAR, FOG_FAR);
     this.scene.background = this.background;
 
     // The sun keeps its established direction; render() wraps its shadow map
@@ -115,6 +127,7 @@ export class SceneManager {
     this.skyEnv = new SkyEnvironment(new THREE.PMREMGenerator(this.renderer));
 
     this.postfx = new PostFx(this.renderer, this.scene, this.camera);
+    this.setWorld("mars");
 
     this.resize();
   }
@@ -187,8 +200,15 @@ export class SceneManager {
    *  endpoints update() lerps between; the day/night curve is shared across
    *  worlds. The renderer calls this when snapshot.world changes. */
   setWorld(world: World): void {
-    this.sky = worldLook(world).sky;
+    const look = worldLook(world);
+    this.sky = look.sky;
     this.skyState.world = world;
+    const g = look.grade;
+    this.grade.lift.setRGB(g.lift[0] / 255, g.lift[1] / 255, g.lift[2] / 255, THREE.LinearSRGBColorSpace);
+    this.grade.gain.setRGB(g.gain[0] / 255, g.gain[1] / 255, g.gain[2] / 255, THREE.LinearSRGBColorSpace);
+    this.grade.saturation = g.saturation;
+    this.grade.vignette = g.vignette;
+    this.postfx.setGrade(this.grade);
   }
 
   /** Drive sun/sky/ambient from time of day and weather: the fog and background
@@ -197,11 +217,19 @@ export class SceneManager {
     const amb = ambientLevel(tod, dust);
     const sk = this.sky;
 
-    // sky / fog: dark void at top, tinted horizon — collapse to a single fog+bg
+    // fog and background share the horizon tint: the ground runs out to a far
+    // field that fades fully into the fog, so whatever lies past it is haze too
     lerpColor(sk.horizon.night, dust ? sk.horizon.dust : sk.horizon.clear, amb, this.horizon);
-    lerpColor(sk.top.night, dust ? sk.top.dust : sk.top.clear, amb, this.top);
-    this.background.copy(this.top).lerp(this.horizon, 0.5);
-    (this.scene.fog as THREE.Fog).color.copy(this.horizon);
+    this.background.copy(this.horizon);
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.copy(this.horizon);
+    // a dust storm pulls the haze in; eased so weather changes don't snap
+    const now = performance.now();
+    const dt = this.lastUpdateMs === null ? 0 : Math.min(0.25, (now - this.lastUpdateMs) / 1000);
+    this.lastUpdateMs = now;
+    this.stormHaze += ((dust ? 1 : 0) - this.stormHaze) * Math.min(1, dt * FOG_EASE);
+    fog.near = lerp(FOG_NEAR, FOG_NEAR_DUST, this.stormHaze);
+    fog.far = lerp(FOG_FAR, FOG_FAR_DUST, this.stormHaze);
 
     // sun arcs across the sky with tod; below horizon at night. render() moves
     // the light with the fitted shadow box, keeping this direction.
@@ -224,7 +252,7 @@ export class SceneManager {
     s.daylight = amb;
     s.dust = dust;
     s.sunElev = elev;
-    this.skyEnv.update(s, performance.now());
+    this.skyEnv.update(s, now);
     this.scene.environment = this.skyEnv.texture;
     this.scene.environmentIntensity = envIntensity(s);
   }
