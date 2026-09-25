@@ -314,7 +314,7 @@ from the box center, and the near plane reaches far enough toward the sun to
 include off-screen structures whose shadows fall into view. At default zoom
 (view 13, 16:10, noon) a 2048² map gives a texel of 0.032 against the old
 whole-terrain 1024² map's 0.066 — about twice the detail (the unit test
-asserts at least 2×); fully zoomed in, about 10×.
+asserts at least 2×); fully zoomed in (view 3), 0.0098, about 7×.
 
 ## Camera
 
