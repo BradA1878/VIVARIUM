@@ -176,7 +176,10 @@ standard material then gets reflections plus a sky/ground fill from it.
   or weather change; otherwise when the sun has moved more than 5° (ignored
   while it is below the horizon) or daylight has moved 0.04 — never more than
   four times a second. At 1× that is roughly one bake every two seconds. Each
-  replaced map is disposed. `scene.envBakes` exposes the count for DEV.
+  replaced map is disposed. A restored WebGL context loses the map's contents,
+  so `SceneManager` calls `SkyEnvironment.invalidate()` on
+  `webglcontextrestored` and the next frame bakes again. `scene.envBakes`
+  exposes the count for DEV.
 - **Fills.** The environment replaces the old hemisphere light; the ambient
   light is reduced to a small floor. The sun keeps its direction and color curve
   with a gain (`SUN_GAIN` 1.5 against `ENV_BASE` 0.8) that keeps direct light
@@ -192,13 +195,14 @@ keeps the colony about 47.5 units away at every zoom).
 ## PostFx and the quality switch
 
 `render/three/postfx.ts` is the high-quality render path: a composer chain of
-**RenderPass → GTAO → UnrealBloomPass → OutputPass → FXAA**, paired with **ACESFilmic tone
-mapping** at exposure 1.15. The bloom **threshold is 1.0 by design**: only
-emissives deliberately pushed above 1.0 bloom (the composer's HalfFloat targets
-carry those values into the threshold test), so there are no layers or masks —
-kits opt surfaces into glow by pushing intensity. A solar flare drives
-`setFlare(level)` from `snap.hazards`, pulsing exposure and bloom strength in
-short spikes.
+**RenderPass → UnrealBloomPass → GTAO → OutputPass → FXAA**, paired with **ACESFilmic tone
+mapping** at exposure 1.15. The bloom **threshold is 1.0 by design**: kits opt
+surfaces into glow by pushing emissive intensity above 1.0 on purpose (the
+composer's HalfFloat targets carry those values into the threshold test), so
+there are no layers or masks. In daylight, specular glints on glass and
+polished shells can also cross the threshold briefly and bloom a little. A
+solar flare drives `setFlare(level)` from `snap.hazards`, pulsing exposure and
+bloom strength in short spikes.
 
 Both quality paths now share the final **ACES / sRGB output step**, so fog,
 background, and materials keep the same color treatment when bloom is disabled.
@@ -215,14 +219,22 @@ changes. The common output path adds scene/output targets and two fullscreen
 passes on Low; it prevents the old direct-render path from changing the palette.
 
 **Ambient occlusion** (`render/three/ao.ts`) is optional like bloom and runs on
-the top two ladder steps. `ColonyAOPass` extends three's `GTAOPass`
-(orthographic cameras are supported) with a stricter depth/normal pre-render:
-`aoVisible()` leaves out sprites (bubbles, name tags), points and lines,
-anything that does not write depth (decals, beams, the placement ghost), and
-transparent surfaces under 85% opacity (corridor skins, FX rings). Frosted
-domes still occlude. Its denoise noise is seeded, so a rebuilt pass renders the
-same frame. Toggling AO rebuilds the composer lazily and releases the pass's
-G-buffer and AO targets.
+the top two ladder steps. It runs after bloom: it multiplies the HDR scene in
+place, so ahead of bloom it would darken emissives before the threshold test.
+`ColonyAOPass` extends three's `GTAOPass` with a stricter depth/normal
+pre-render: `aoVisible()` leaves out sprites (bubbles, name tags), points and
+lines, anything that does not write depth (decals, beams, the placement ghost),
+transparent surfaces under 85% opacity (corridor skins, FX rings), and anything
+tagged `userData.noAO` (the placement door arrow, the astronaut and rover
+possession rings, and the depot's glows, whose pulsing opacity would otherwise
+cross the 85% cut). Frosted domes still occlude. It also corrects two things in
+three r169's GTAO: the shader's view direction is only right for a perspective
+camera, so the pass substitutes the orthographic camera's constant one (and
+throws if a three upgrade changes that line), and the pre-render turns off
+shadow-map auto-update so the sun's shadow map is drawn once per frame, not
+twice. Its denoise noise is seeded, so a rebuilt pass renders the same frame.
+Toggling AO rebuilds the composer lazily and releases the pass's G-buffer and
+AO targets.
 
 ## The PerfGovernor — adaptive quality
 
@@ -233,8 +245,12 @@ a `{fps, pixel-ratio, bloom, shadows, shadowSize, ao}` tuple. The ladder is
 finer than the old tiers: from `60 fps / 1.5 / bloom / 2048² shadows / AO` at
 the top, through 30 fps, then a step that drops to ratio 1.25 with 1024²
 shadows and no AO, down to `30 / 1.0 / no bloom / no shadows` at the bottom. Two
-indices are pinned as the legacy tiers — `STEP_HIGH` (60 fps, 1.5, bloom,
-shadows — also the starting step) and `STEP_LOW` (the bottom rung).
+indices are pinned as the legacy tiers — `STEP_HIGH` (60 fps, ratio 1.5, bloom,
+2048² shadows and AO — also the starting step on a fine pointer) and
+`STEP_LOW` (the bottom rung). A device whose primary pointer is coarse (a phone
+or tablet, `tunablesForPointer`) starts AUTO at step 2 and never auto-promotes
+above it: the governor measures only CPU frame-body time, so it cannot see a
+GPU-bound device struggling on the top steps. Pinning HIGH still reaches step 0.
 
 Each frame the renderer measures the cost of the **frame body** — the time
 spent inside the update+render work, never the inter-frame delta, which the
@@ -286,11 +302,12 @@ four corner rays of the orthographic camera are cut at the ground and at the
 tallest structures, the resulting slab is wrapped in a square box in the
 sun's frame, the box side is rounded up to 2-unit steps (zooming doesn't change
 sharpness), and its center is snapped to whole shadow texels (panning doesn't
-make edges crawl). The light sits 100 units up the sun direction from the box
-center, and the near plane reaches far enough toward the sun to include
-off-screen structures whose shadows fall into view. At default zoom a 2048²
-map gives about 2.6× the detail of the old whole-terrain 1024² map; fully
-zoomed in, about 10×.
+make edges crawl). The normal bias follows the fitted texel (1.2 texels,
+clamped to 0.01–0.12 units). The light sits 100 units up the sun direction
+from the box center, and the near plane reaches far enough toward the sun to
+include off-screen structures whose shadows fall into view. At default zoom a
+2048² map gives about 2.6× the detail of the old whole-terrain 1024² map;
+fully zoomed in, about 10×.
 
 ## Camera
 
