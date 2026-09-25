@@ -105,6 +105,12 @@ function easeOut(t: number): number {
   return 1 - (1 - t) * (1 - t);
 }
 
+/** night ramp for the airlock signal ring: a small tell, dim by day, capped
+ *  under the bloom threshold (1.0) even at full night. */
+export function airlockSignalIntensity(night: number): number {
+  return 0.35 + 0.6 * THREE.MathUtils.clamp(night, 0, 1);
+}
+
 /** prototype status(): the glow that reads a building's health */
 function buildingStatus(b: BuildingState): { alive: boolean; hurt: boolean } {
   const def = DEFS[b.defId];
@@ -128,10 +134,13 @@ export class ThreeRenderer {
   private buildingsGroup = new THREE.Group();
   private materials = createMaterials();
   private placed = new Map<number, Placed>();
-  // airlocks at corridor↔building junctions, keyed "uid:cx,cy:side"
-  private airlocks = new Map<string, THREE.Mesh>();
-  private airlockGeo = new THREE.TorusGeometry(0.22, 0.05, 8, 16);
-  private airlockMat = new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.7, roughness: 0.5 });
+  // airlocks at corridor↔building junctions, keyed "uid:cx,cy:side" — a collar
+  // (structural) plus a thin signal ring (the only part that glows)
+  private airlocks = new Map<string, THREE.Group>();
+  private airlockCollarGeo = new THREE.TorusGeometry(0.2, 0.055, 8, 20);
+  private airlockCollarMat = new THREE.MeshStandardMaterial({ color: 0x8a929c, roughness: 0.45, metalness: 0.6 });
+  private airlockSignalGeo = new THREE.TorusGeometry(0.205, 0.014, 6, 28);
+  private airlockSignalMat = new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.35, roughness: 0.5 });
   // door glows are SHARED across every door so the night ramp is one material
   // write per frame, not a write per door (detached before kit dispose)
   private doorFrameGeo = new THREE.BoxGeometry(0.34, 0.32, 0.06);
@@ -557,7 +566,7 @@ export class ThreeRenderer {
     this.env.paused = snap.paused;
     this.doorGlowMat.emissiveIntensity = 0.5 + 0.7 * this.env.night;
     this.doorSillMat.emissiveIntensity = 0.7 + 0.9 * this.env.night;
-    this.airlockMat.emissiveIntensity = 0.7 + 0.9 * this.env.night;
+    this.airlockSignalMat.emissiveIntensity = airlockSignalIntensity(this.env.night);
     // solar-flare glow: the postfx exposure/bloom pulse scales with the hazard
     // (full while active, a hint of it during the telegraph)
     let flare = 0;
@@ -762,16 +771,24 @@ export class ThreeRenderer {
             if (!n || !DEFS[n.defId]?.conduit) continue;
             const key = `${b.uid}:${cx},${cy}:${s}`;
             needed.add(key);
-            let m = this.airlocks.get(key);
-            if (!m) { m = new THREE.Mesh(this.airlockGeo, this.airlockMat); this.buildingsGroup.add(m); this.airlocks.set(key, m); }
+            let g = this.airlocks.get(key);
+            if (!g) {
+              g = new THREE.Group();
+              const collar = new THREE.Mesh(this.airlockCollarGeo, this.airlockCollarMat);
+              const ring = new THREE.Mesh(this.airlockSignalGeo, this.airlockSignalMat);
+              ring.position.z = 0.02; // toward the corridor, same side the collar faces
+              g.add(collar, ring);
+              this.buildingsGroup.add(g);
+              this.airlocks.set(key, g);
+            }
             const c = this.grid.cellCenter(cx, cy);
-            m.position.set(c.x + ox * 0.5 * CELL, 0.14, c.z + oy * 0.5 * CELL);
-            m.lookAt(m.position.x + ox, 0.14, m.position.z + oy); // torus normal → toward the corridor
+            g.position.set(c.x + ox * 0.5 * CELL, 0.14, c.z + oy * 0.5 * CELL);
+            g.lookAt(g.position.x + ox, 0.14, g.position.z + oy); // torus normal → toward the corridor
           }
         }
     }
-    for (const [key, m] of this.airlocks) {
-      if (!needed.has(key)) { this.buildingsGroup.remove(m); this.airlocks.delete(key); }
+    for (const [key, g] of this.airlocks) {
+      if (!needed.has(key)) { this.buildingsGroup.remove(g); this.airlocks.delete(key); }
     }
   }
 
@@ -1235,8 +1252,10 @@ export class ThreeRenderer {
     this.atmosphere.dispose();
     this.stormFx.dispose();
     this.hazardFx.dispose();
-    this.airlockGeo.dispose();
-    this.airlockMat.dispose();
+    this.airlockCollarGeo.dispose();
+    this.airlockCollarMat.dispose();
+    this.airlockSignalGeo.dispose();
+    this.airlockSignalMat.dispose();
     this.airlocks.clear();
     this.doorFrameGeo.dispose();
     this.doorSillGeo.dispose();
