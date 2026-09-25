@@ -18,6 +18,7 @@ type DebugWindow = Window & {
       placed: Map<number, { mesh: { object: { position: { x: number; z: number } } } }>;
       setQuality(q: "auto" | "low" | "high"): void;
       governor: { pin(index: number | null): void };
+      start(): void;
     };
   };
 };
@@ -90,6 +91,9 @@ test("a moved building mesh follows the authoritative footprint", async ({ page 
 
 test("construction reaches all four expanded edges through the canvas", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  // four pans, each with a settle and five shadow-check renders: minutes on a
+  // software-rendered CI runner
+  test.setTimeout(120_000);
   await startColony(page);
   // pin the ladder step with 1024² shadows and no AO, so the governor cannot
   // drop shadows mid-test and a software-rendered CI runner can afford every
@@ -107,37 +111,33 @@ test("construction reaches all four expanded edges through the canvas", async ({
       const target = r.grid.cellCenter(gx, gy);
       r.cameraControls.rig.setOffset(target.sub(r.camFocus), r.camFocus);
     }, { gx, gy });
-    // wait until the cell is near the middle of the screen AND the camera has
-    // stopped: the click point is read from the camera, and the colony anchor
-    // keeps easing after each placement, so a moving camera can carry the
-    // click onto a neighbor
-    let last: { x: number; y: number } | null = null;
-    await expect.poll(async () => {
-      const p = await page.evaluate(({ gx, gy }) => {
-        const { renderer: r } = (window as DebugWindow).__viv;
-        const v = r.grid.cellCenter(gx, gy).project(r.scene.camera);
-        return { x: v.x, y: v.y };
-      }, { gx, gy });
-      const still = last != null && Math.abs(p.x - last.x) < 0.002 && Math.abs(p.y - last.y) < 0.002;
-      last = p;
-      return still && Math.abs(p.x) < 0.1 && Math.abs(p.y) < 0.1;
-    }).toBe(true);
+    await expect.poll(() => page.evaluate(({ gx, gy }) => {
+      const { renderer: r } = (window as DebugWindow).__viv;
+      const p = r.grid.cellCenter(gx, gy).project(r.scene.camera);
+      return Math.abs(p.x) < 0.1 && Math.abs(p.y) < 0.1;
+    }, { gx, gy }), { timeout: 30_000 }).toBe(true);
     const shadow = await visibleGroundShadowed(page);
     expect(shadow.worst).toBeLessThan(1);
     expect(shadow.mapSize).toEqual([1024, 1024]);
-    // read the point and click with nothing in between
+    // freeze the render loop so the eased camera cannot move between reading
+    // the cell's screen point and the click that picks a cell from it (the
+    // colony anchor keeps easing after each placement); resume afterwards so
+    // the placement reconciles
     const point = await page.evaluate(({ gx, gy }) => {
       const { renderer: r } = (window as DebugWindow).__viv;
+      r.running = false;
+      cancelAnimationFrame(r.raf);
       const p = r.grid.cellCenter(gx, gy).project(r.scene.camera);
       const rect = r.scene.renderer.domElement.getBoundingClientRect();
       return { x: rect.left + (p.x + 1) * rect.width / 2, y: rect.top + (1 - p.y) * rect.height / 2 };
     }, { gx, gy });
     await page.mouse.click(point.x, point.y);
+    await page.evaluate(() => (window as DebugWindow).__viv.renderer.start());
     await expect.poll(() => page.evaluate(({ gx, gy }) => {
       const { bridge, renderer } = (window as DebugWindow).__viv;
       const b = bridge.latest!.buildings.find((b) => b.defId === "solar" && b.gx === gx && b.gy === gy);
       return !!b && renderer.placed.has(b.uid);
-    }, { gx, gy })).toBe(true);
+    }, { gx, gy }), { timeout: 30_000 }).toBe(true);
   }
   const blocked = await page.evaluate(() => {
     const { bridge } = (window as DebugWindow).__viv;
