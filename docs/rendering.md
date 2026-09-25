@@ -136,10 +136,42 @@ One hard rule across every kit: **rust "hurt" glows get no night boost.** The
 night ramp rides the healthy (cyan/warm) path only — a warning must read as a
 warning, never bloom into a halo.
 
+## Environment lighting
+
+Most building materials are metallic (`metal()` 0.72, `frostedDome()` 0.35,
+`panel()` 0.85), and a metallic `MeshStandardMaterial` takes most of its color
+from what it reflects. `render/three/environment.ts` gives them something to
+reflect: `SkyEnvironment` renders a tiny off-screen sky — a zenith-to-horizon
+gradient, the world's mean soil color bounced up from below, and a broad glow
+toward the sun — into `scene.environment` with `PMREMGenerator`. Every
+standard material then gets reflections plus a sky/ground fill from it.
+
+- **Colors** come from each world's `env` block in `worldlook.ts` (zenith and
+  horizon for night / dust / clear, a ground-bounce factor, and a low-sun glow
+  tint — blue for Mars, where sunsets glow blue around the sun). They are
+  interpolated on the same daylight curve (`ambientLevel`) as the fog.
+- **Brightness vs. hue.** A bake is normalized to unit horizon luminance;
+  `scene.environmentIntensity` (`envIntensity()`) restores the brightness every
+  frame from the continuous daylight curve. Only hue and sun angle are baked.
+- **Re-bakes** (`rebakeReason()`, pure and unit-tested): immediately on a world
+  or weather change; otherwise when the sun has moved more than 5° (ignored
+  while it is below the horizon) or daylight has moved 0.04 — never more than
+  four times a second. At 1× that is roughly one bake every two seconds. Each
+  replaced map is disposed. `scene.envBakes` exposes the count for DEV.
+- **Fills.** The environment replaces the old hemisphere light; the ambient
+  light is reduced to a small floor. The sun keeps its direction and color curve
+  with a gain (`SUN_GAIN` 1.5 against `ENV_BASE` 0.8) that keeps direct light
+  roughly three times the sky fill, so shadows read. The soil takes only part of
+  the sky fill (`mat.skyFill` per world, 0.45–0.5) so lit structures stand out
+  from the ground.
+
+The sky shader lights the scene only; the visible background and fog are
+unchanged.
+
 ## PostFx and the quality switch
 
 `render/three/postfx.ts` is the high-quality render path: a composer chain of
-**RenderPass → UnrealBloomPass → OutputPass → FXAA**, paired with **ACESFilmic tone
+**RenderPass → GTAO → UnrealBloomPass → OutputPass → FXAA**, paired with **ACESFilmic tone
 mapping** at exposure 1.15. The bloom **threshold is 1.0 by design**: only
 emissives deliberately pushed above 1.0 bloom (the composer's HalfFloat targets
 carry those values into the threshold test), so there are no layers or masks —
@@ -157,14 +189,25 @@ need its own MSAA. Flare exposure and its cadence survive quality
 changes. The common output path adds scene/output targets and two fullscreen
 passes on Low; it prevents the old direct-render path from changing the palette.
 
+**Ambient occlusion** (`render/three/ao.ts`) is optional like bloom and runs on
+the top two ladder steps. `ColonyAOPass` extends three's `GTAOPass`
+(orthographic cameras are supported) with a stricter depth/normal pre-render:
+`aoVisible()` leaves out sprites (bubbles, name tags), points and lines,
+anything that does not write depth (decals, beams, the placement ghost), and
+transparent surfaces under 85% opacity (corridor skins, FX rings). Frosted
+domes still occlude. Its denoise noise is seeded, so a rebuilt pass renders the
+same frame. Toggling AO rebuilds the composer lazily and releases the pass's
+G-buffer and AO targets.
+
 ## The PerfGovernor — adaptive quality
 
 Quality is no longer a two-position switch. `render/perf.ts` is a
 **pure, unit-testable policy module** (no DOM or three imports — the renderer
 owns the clocks and the levers) that walks a **ladder** of quality steps, each
-a `{fps, pixel-ratio, bloom, shadows}` tuple. The ladder is finer than the old
-tiers: from `60 fps / 1.5 / bloom / shadows` at the top, through 30 fps and
-ratio steps, down to `30 / 1.0 / no bloom / no shadows` at the bottom. Two
+a `{fps, pixel-ratio, bloom, shadows, shadowSize, ao}` tuple. The ladder is
+finer than the old tiers: from `60 fps / 1.5 / bloom / 2048² shadows / AO` at
+the top, through 30 fps, then a step that drops to ratio 1.25 with 1024²
+shadows and no AO, down to `30 / 1.0 / no bloom / no shadows` at the bottom. Two
 indices are pinned as the legacy tiers — `STEP_HIGH` (60 fps, 1.5, bloom,
 shadows — also the starting step) and `STEP_LOW` (the bottom rung).
 
@@ -188,8 +231,9 @@ drives, and **AUTO is the default**: it un-pins the governor and lets it walk
 the ladder; **HIGH** and **LOW** `pin()` it to the legacy steps (a pinned
 governor keeps measuring but never moves). When the step changes, the renderer
 applies the levers in one place: the render-loop fps cap, the device pixel
-ratio, the optional bloom pass, and shadow maps —
-materials recompiled on the spot so the shadow flip takes hold immediately.
+ratio, the optional bloom and AO passes, the shadow-map size (the old map is
+released and reallocated), and shadow maps on/off — materials recompiled on the
+spot so the shadow flip takes hold immediately.
 The sim is untouched by all of this: the worker ticks at its fixed cadence
 whatever the render rate does. `renderer.perfInfo()` exposes the live read
 (step, EMA, pinned, calibrating) for DEV.
@@ -207,11 +251,21 @@ Dust fades after sundown rather than glowing.
 
 Door groups and warm portholes mark their source with `userData.groundLight`.
 Spill uses those positions and the building's existing healthy status, adding
-no real lights per building and no rust warning halos. A modest increase in
-the existing hemisphere fill lifts night silhouettes without changing the
-world palette or daylight. The sun retains its 1024² shadow map and its original
-direction. Its frustum covers the entire terrain so new edge structures cast
-shadows at every pan/zoom position, including at dawn and dusk.
+no real lights per building and no rust warning halos. At night the sky
+environment's dim, cool starlight fill keeps silhouettes readable without
+changing the world palette or daylight.
+
+The sun keeps its original direction, but its shadow map is **fitted to the
+view** every frame (`render/three/shadow-fit.ts`, pure and unit-tested): the
+four corner rays of the orthographic camera are cut at the ground and at the
+tallest structures, the resulting slab is wrapped in a square box in the
+sun's frame, the box side is rounded up to 2-unit steps (zooming doesn't change
+sharpness), and its center is snapped to whole shadow texels (panning doesn't
+make edges crawl). The light sits 100 units up the sun direction from the box
+center, and the near plane reaches far enough toward the sun to include
+off-screen structures whose shadows fall into view. At default zoom a 2048²
+map gives about 2.6× the detail of the old whole-terrain 1024² map; fully
+zoomed in, about 10×.
 
 ## Camera
 
