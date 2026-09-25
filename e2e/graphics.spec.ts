@@ -104,20 +104,31 @@ test("construction reaches all four expanded edges through the canvas", async ({
       const target = r.grid.cellCenter(gx, gy);
       r.cameraControls.rig.setOffset(target.sub(r.camFocus), r.camFocus);
     }, { gx, gy });
-    await expect.poll(() => page.evaluate(({ gx, gy }) => {
-      const { renderer: r } = (window as DebugWindow).__viv;
-      const p = r.grid.cellCenter(gx, gy).project(r.scene.camera);
-      return Math.abs(p.x) < 0.1 && Math.abs(p.y) < 0.1;
-    }, { gx, gy })).toBe(true);
+    // wait until the cell is near the middle of the screen AND the camera has
+    // stopped: the click point is read from the camera, and the colony anchor
+    // keeps easing after each placement, so a moving camera can carry the
+    // click onto a neighbor
+    let last: { x: number; y: number } | null = null;
+    await expect.poll(async () => {
+      const p = await page.evaluate(({ gx, gy }) => {
+        const { renderer: r } = (window as DebugWindow).__viv;
+        const v = r.grid.cellCenter(gx, gy).project(r.scene.camera);
+        return { x: v.x, y: v.y };
+      }, { gx, gy });
+      const still = last != null && Math.abs(p.x - last.x) < 0.002 && Math.abs(p.y - last.y) < 0.002;
+      last = p;
+      return still && Math.abs(p.x) < 0.1 && Math.abs(p.y) < 0.1;
+    }).toBe(true);
+    const shadow = await visibleGroundShadowed(page);
+    expect(shadow.worst).toBeLessThan(1);
+    expect(shadow.mapSize).toEqual([2048, 2048]);
+    // read the point and click with nothing in between
     const point = await page.evaluate(({ gx, gy }) => {
       const { renderer: r } = (window as DebugWindow).__viv;
       const p = r.grid.cellCenter(gx, gy).project(r.scene.camera);
       const rect = r.scene.renderer.domElement.getBoundingClientRect();
       return { x: rect.left + (p.x + 1) * rect.width / 2, y: rect.top + (1 - p.y) * rect.height / 2 };
     }, { gx, gy });
-    const shadow = await visibleGroundShadowed(page);
-    expect(shadow.worst).toBeLessThan(1);
-    expect(shadow.mapSize).toEqual([2048, 2048]);
     await page.mouse.click(point.x, point.y);
     await expect.poll(() => page.evaluate(({ gx, gy }) => {
       const { bridge, renderer } = (window as DebugWindow).__viv;
