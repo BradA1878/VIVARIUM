@@ -14,7 +14,14 @@ function fixture() {
     toneMappingExposure: 1,
   } as unknown as THREE.WebGLRenderer;
   const fx = new PostFx(renderer, new THREE.Scene(), new THREE.PerspectiveCamera());
-  const internals = fx as unknown as { composer: EffectComposer | null; bloom: UnrealBloomPass | null; antialias: { uniforms: { resolution: { value: THREE.Vector2 } } } | null };
+  type AntialiasUniforms = {
+    resolution: { value: THREE.Vector2 };
+    lift: { value: THREE.Color };
+    gain: { value: THREE.Color };
+    saturation: { value: number };
+    vignette: { value: number };
+  };
+  const internals = fx as unknown as { composer: EffectComposer | null; bloom: UnrealBloomPass | null; antialias: { uniforms: AntialiasUniforms } | null };
   return { fx, renderer, dimensions, internals };
 }
 
@@ -118,6 +125,38 @@ describe("post-processing quality transitions", () => {
     expect(released).toHaveBeenCalledTimes(2);
     fx.render();
     expect(ao()).toBeUndefined();
+    fx.dispose();
+  });
+
+  it("keeps a set grade live and across a composer rebuild triggered by a quality toggle", () => {
+    const { fx, internals } = fixture();
+    const lift = new THREE.Color(0.1, 0.05, 0.02);
+    const gain = new THREE.Color(1.1, 1.05, 0.95);
+    fx.setGrade({ lift, gain, saturation: 1.05, vignette: 0.2 });
+
+    fx.render(); // build() must write the pre-set grade into the new pass
+    const high = internals.antialias!.uniforms;
+    expect(high.lift.value.equals(lift)).toBe(true);
+    expect(high.gain.value.equals(gain)).toBe(true);
+    expect(high.saturation.value).toBe(1.05);
+    expect(high.vignette.value).toBe(0.2);
+
+    // setGrade on an already-built pass updates its uniforms live, no rebuild
+    const neutralLift = new THREE.Color(0, 0, 0);
+    const neutralGain = new THREE.Color(1, 1, 1);
+    fx.setGrade({ lift: neutralLift, gain: neutralGain, saturation: 1, vignette: 0 });
+    expect(high.lift.value.equals(neutralLift)).toBe(true);
+    expect(high.saturation.value).toBe(1);
+
+    // restore the tuned grade, then force a rebuild (bloom off = low chain)
+    fx.setGrade({ lift, gain, saturation: 1.05, vignette: 0.2 });
+    fx.setEnabled(false);
+    fx.render();
+    const low = internals.antialias!.uniforms;
+    expect(low.lift.value.equals(lift)).toBe(true);
+    expect(low.gain.value.equals(gain)).toBe(true);
+    expect(low.saturation.value).toBe(1.05);
+    expect(low.vignette.value).toBe(0.2);
     fx.dispose();
   });
 

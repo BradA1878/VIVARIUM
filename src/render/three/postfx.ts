@@ -1,12 +1,13 @@
 /* ============================================================================
    PostFx — RenderPass → optional GTAO → optional UnrealBloomPass → OutputPass
-   → FXAA. Both quality paths keep clean edges and the same ACES grade,
-   including fog and background: direct rendering applies tone mapping before
-   fog in three r169, so setting ACES on the renderer alone would change the
-   low-quality palette. HalfFloat scene targets preserve HDR emissives for
-   threshold-1.0 bloom. AO, like bloom, is an optional pass: the composer is
-   rebuilt lazily when either toggles, and the low path allocates no bloom or
-   AO targets.
+   → FXAA (carrying the final lift/gain/saturation/vignette grade in the same
+   pass). Both quality paths keep clean edges and the same ACES grade and
+   color grade, including fog and background: direct rendering applies tone
+   mapping before fog in three r169, so setting ACES on the renderer alone
+   would change the low-quality palette. HalfFloat scene targets preserve HDR
+   emissives for threshold-1.0 bloom. AO, like bloom, is an optional pass: the
+   composer is rebuilt lazily when either toggles, and the low path allocates
+   no bloom or AO targets.
    ============================================================================ */
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -14,7 +15,7 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
-import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
+import { createGradedFxaaShader, NEUTRAL_GRADE, type Grade } from "./grade-fxaa";
 import { ColonyAOPass } from "./ao";
 
 const BLOOM_THRESHOLD = 1.0;
@@ -43,6 +44,10 @@ export class PostFx {
   private bloom: UnrealBloomPass | null = null;
   private output: OutputPass | null = null;
   private antialias: ShaderPass | null = null;
+  // final color grade, applied inside the FXAA pass (see grade-fxaa.ts); kept
+  // here (not just on the pass) so it survives composer rebuilds and can be
+  // written into a freshly built pass in build().
+  private grade: Grade = { lift: NEUTRAL_GRADE.lift.clone(), gain: NEUTRAL_GRADE.gain.clone(), saturation: NEUTRAL_GRADE.saturation, vignette: NEUTRAL_GRADE.vignette };
 
   // flare pulse state
   private flare = 0;
@@ -90,6 +95,16 @@ export class PostFx {
     const lvl = Math.max(0, Math.min(1, level));
     if (lvl <= 0 && this.flare > 0) this.resetPulse(); // restore the base look
     this.flare = lvl;
+  }
+
+  /** set the final color grade; kept across composer rebuilds (bloom/AO
+   *  toggles) so both quality paths grade identically */
+  setGrade(g: Grade): void {
+    this.grade.lift.copy(g.lift);
+    this.grade.gain.copy(g.gain);
+    this.grade.saturation = g.saturation;
+    this.grade.vignette = g.vignette;
+    if (this.antialias) this.applyGrade(this.antialias);
   }
 
   /** advance the same exposure cue in both tiers; bloom adds its halo on high */
@@ -165,15 +180,26 @@ export class PostFx {
       this.applyPulse(); // a rebuilt bloom joins an in-flight flare at its phase
     }
     this.composer.addPass(this.output);
-    this.antialias = new ShaderPass(FXAAShader);
+    this.antialias = new ShaderPass(createGradedFxaaShader());
     this.composer.addPass(this.antialias);
     this.resizeAntialias();
+    this.applyGrade(this.antialias); // carry the stored grade into the new pass
   }
 
   private resizeAntialias(): void {
     if (!this.composer || !this.antialias) return;
     const target = this.composer.renderTarget1;
     this.antialias.uniforms.resolution.value.set(1 / target.width, 1 / target.height);
+  }
+
+  /** write the stored grade into a built antialias pass's uniforms; setGrade
+   *  (live update) and build() (fresh pass) both funnel through here so the
+   *  two paths can't drift apart */
+  private applyGrade(pass: ShaderPass): void {
+    pass.uniforms.lift.value.copy(this.grade.lift);
+    pass.uniforms.gain.value.copy(this.grade.gain);
+    pass.uniforms.saturation.value = this.grade.saturation;
+    pass.uniforms.vignette.value = this.grade.vignette;
   }
 
   private disposeComposer(): void {
