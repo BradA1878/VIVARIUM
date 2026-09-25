@@ -47,7 +47,7 @@ Close-ups at noon and night with part 1's lighting (`.playwright-mcp/visual-revi
 |---|---|---|
 | **Grade** | `postfx.ts` new `GradeShader` pass after OutputPass (both quality paths) | Subtle lift of shadows toward the world's night tint, highlight warmth, saturation 1.05, and a soft vignette (0.18). Applied identically on High and Low, so the "same grade without bloom" test holds. |
 | **Dust devils** | `stormfx.ts` | The hard cones become soft, swirling columns: a custom shader on the existing shells (height fade top and bottom, rim fade by view angle, scrolling spiral noise). Same pooling, counts, and timing. |
-| **Storm haze** | `scene.ts` | During dust, fog near/far pull in (38/86 → 22/70) so the storm closes the view; eased with the storm factor. |
+| **Storm haze** | `scene.ts` | During dust, fog near/far pull in (38/86 → 34/78 after tuning; the orthographic camera keeps the colony a fixed 47.5 units away, so deeper values fogged the colony itself) so the storm closes the view; eased with the storm factor. |
 | **Haze near the ground** | `terrain.ts` shader (from part 3) | A faint distance-based lift toward the horizon color on far terrain, so the far field reads as atmosphere. |
 
 ## Constraints and verification

@@ -35,8 +35,10 @@ const SUN_GAIN = 1.5;
 /** fog distances from the camera: clear air, and a dust storm closing in */
 const FOG_NEAR = 38;
 const FOG_FAR = 86;
-const FOG_NEAR_DUST = 22;
-const FOG_FAR_DUST = 70;
+// the colony sits ~47.5 units from the camera at every zoom (orthographic), so
+// the storm values keep it about a third hazed while the distance closes in
+const FOG_NEAR_DUST = 34;
+const FOG_FAR_DUST = 78;
 /** storm haze eases in and out over roughly two seconds */
 const FOG_EASE = 0.6;
 
