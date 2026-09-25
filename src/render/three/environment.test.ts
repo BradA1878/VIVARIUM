@@ -139,4 +139,17 @@ describe("SkyEnvironment", () => {
     expect(pmrem.dispose).toHaveBeenCalledTimes(1);
     expect(env.texture).toBeNull();
   });
+
+  it("bakes again on the next update after invalidate() (a restored WebGL context lost the map)", () => {
+    const { pmrem, targets } = fakePmrem();
+    const env = new SkyEnvironment(pmrem);
+    expect(env.update(state(), 1000)).toBe("first");
+    expect(env.update(state(), 1001)).toBeNull(); // unchanged sky, inside the rate limit
+    env.invalidate();
+    expect(env.update(state(), 1002)).toBe("first");
+    expect(env.bakes).toBe(2);
+    expect(targets[0].dispose).toHaveBeenCalledTimes(1);
+    expect(env.texture).toBe(targets[1].texture);
+    env.dispose();
+  });
 });

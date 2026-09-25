@@ -203,6 +203,12 @@ export class SkyEnvironment {
     return reason;
   }
 
+  /** forget the last bake so the next update() bakes again (reason "first"):
+   *  a restored WebGL context comes back without the baked map's contents */
+  invalidate(): void {
+    this.last = null;
+  }
+
   private bake(state: SkyState): void {
     const c = skyColors(state);
     // normalized to unit horizon luminance; envIntensity() restores brightness

@@ -92,6 +92,9 @@ export class SceneManager {
   /** 0..1 eased storm haze factor (fog pulls in during dust) */
   private stormHaze = 0;
   private lastUpdateMs: number | null = null;
+  /** a restored WebGL context comes back without the baked sky map, so the
+   *  next update() re-bakes it */
+  private readonly onContextRestored = (): void => this.skyEnv.invalidate();
 
   constructor(canvas: HTMLCanvasElement) {
     // Every quality tier antialiases in PostFx; multisampling the final
@@ -127,6 +130,7 @@ export class SceneManager {
     this.scene.add(this.ambientLight);
 
     this.skyEnv = new SkyEnvironment(new THREE.PMREMGenerator(this.renderer));
+    this.renderer.domElement.addEventListener("webglcontextrestored", this.onContextRestored);
 
     this.postfx = new PostFx(this.renderer, this.scene, this.camera);
     this.setWorld("mars");
@@ -304,6 +308,7 @@ export class SceneManager {
   }
 
   dispose(): void {
+    this.renderer.domElement.removeEventListener("webglcontextrestored", this.onContextRestored);
     this.skyEnv.dispose();
     this.postfx.dispose();
     this.renderer.dispose();
