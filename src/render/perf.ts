@@ -19,17 +19,22 @@ export interface PerfStep {
   ratio: number;
   bloom: boolean;
   shadows: boolean;
+  /** shadow-map resolution while shadows are on (the view-fitted sun map) */
+  shadowSize: 1024 | 2048;
+  /** screen-space ambient occlusion (GTAO) */
+  ao: boolean;
 }
 
 /** the quality ladder, best first — STEP_HIGH is the HIGH tier and the AUTO
  *  start (60fps at full quality); the governor demotes down it under load — it
- *  sheds fps first (60→30), then resolution/effects. STEP_LOW ≈ today's LOW */
+ *  sheds fps first (60→30), then resolution with AO and shadow detail, then
+ *  shadows, then bloom. STEP_LOW is the LOW tier */
 export const LADDER: readonly PerfStep[] = [
-  { fps: 60, ratio: 1.5, bloom: true, shadows: true },
-  { fps: 30, ratio: 1.5, bloom: true, shadows: true },
-  { fps: 30, ratio: 1.25, bloom: true, shadows: true },
-  { fps: 30, ratio: 1.0, bloom: true, shadows: false },
-  { fps: 30, ratio: 1.0, bloom: false, shadows: false },
+  { fps: 60, ratio: 1.5, bloom: true, shadows: true, shadowSize: 2048, ao: true },
+  { fps: 30, ratio: 1.5, bloom: true, shadows: true, shadowSize: 2048, ao: true },
+  { fps: 30, ratio: 1.25, bloom: true, shadows: true, shadowSize: 1024, ao: false },
+  { fps: 30, ratio: 1.0, bloom: true, shadows: false, shadowSize: 1024, ao: false },
+  { fps: 30, ratio: 1.0, bloom: false, shadows: false, shadowSize: 1024, ao: false },
 ];
 
 /** ladder indices the explicit quality tiers pin to. AUTO starts here too

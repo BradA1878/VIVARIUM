@@ -20,11 +20,16 @@ describe("PerfGovernor ladder", () => {
   it("starts on the HIGH step of the documented ladder", () => {
     const g = new PerfGovernor();
     expect(g.index()).toBe(STEP_HIGH);
-    expect(g.step()).toEqual({ fps: 60, ratio: 1.5, bloom: true, shadows: true });
+    expect(g.step()).toEqual({ fps: 60, ratio: 1.5, bloom: true, shadows: true, shadowSize: 2048, ao: true });
     expect(g.stepChanged).toBe(false);
-    expect(LADDER).toHaveLength(5);
-    expect(LADDER[0]).toEqual({ fps: 60, ratio: 1.5, bloom: true, shadows: true });
-    expect(LADDER[STEP_LOW]).toEqual({ fps: 30, ratio: 1.0, bloom: false, shadows: false });
+    expect(LADDER).toEqual([
+      { fps: 60, ratio: 1.5, bloom: true, shadows: true, shadowSize: 2048, ao: true },
+      { fps: 30, ratio: 1.5, bloom: true, shadows: true, shadowSize: 2048, ao: true },
+      { fps: 30, ratio: 1.25, bloom: true, shadows: true, shadowSize: 1024, ao: false },
+      { fps: 30, ratio: 1.0, bloom: true, shadows: false, shadowSize: 1024, ao: false },
+      { fps: 30, ratio: 1.0, bloom: false, shadows: false, shadowSize: 1024, ao: false },
+    ]);
+    expect(LADDER[STEP_LOW]).toEqual({ fps: 30, ratio: 1.0, bloom: false, shadows: false, shadowSize: 1024, ao: false });
   });
 
   it("AUTO starts at 60fps but still auto-demotes when the machine can't hold it", () => {
@@ -171,8 +176,8 @@ describe("PerfGovernor ladder", () => {
   it("honors an injected ladder and tunables", () => {
     const g = new PerfGovernor(
       [
-        { fps: 60, ratio: 1, bloom: false, shadows: false },
-        { fps: 30, ratio: 1, bloom: false, shadows: false },
+        { fps: 60, ratio: 1, bloom: false, shadows: false, shadowSize: 1024, ao: false },
+        { fps: 30, ratio: 1, bloom: false, shadows: false, shadowSize: 1024, ao: false },
       ],
       { startStep: 0, calibrateMs: 0, demoteMs: 100, cooldownMs: 0 },
     );
