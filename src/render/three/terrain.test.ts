@@ -1,9 +1,48 @@
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { GRID_N } from "@/engine/tuning";
+import { CAMERA_ISO_OFFSET, CAMERA_MAX_VIEW } from "./camera-controls";
 import { CELL, GridSpace, SCENIC_MARGIN } from "./coords";
-import { FAR_EDGE, Terrain, farRockCount } from "./terrain";
+import { GROUND_DETAIL_KEY } from "./ground-shader";
+import { EDGE_HAZE_START, FAR_EDGE, Terrain, farRockCount } from "./terrain";
 import { worldLook } from "./worldlook";
+
+/** Unproject a screen-space corner at both the near and far clip planes to get
+ *  its world-space ray, then intersect that ray with y = 0 — the ground the
+ *  far field must cover out to FAR_EDGE / EDGE_HAZE_START. */
+function groundHit(camera: THREE.OrthographicCamera, sx: number, sy: number): THREE.Vector3 {
+  const near = new THREE.Vector3(sx, sy, -1).unproject(camera);
+  const far = new THREE.Vector3(sx, sy, 1).unproject(camera);
+  const dir = far.sub(near);
+  const t = -near.y / dir.y;
+  return near.addScaledVector(dir, t);
+}
+
+/** Farthest ground point any screen corner reaches, over every focus the pan
+ *  clamp allows, at full zoom-out. */
+function maxScreenReach(aspect: number): number {
+  const view = CAMERA_MAX_VIEW;
+  const camera = new THREE.OrthographicCamera(-view * aspect, view * aspect, view, -view, 0.1, 500);
+  const half = new GridSpace(GRID_N).half();
+  const offset = new THREE.Vector3(...CAMERA_ISO_OFFSET);
+  let reach = 0;
+  for (const fx of [-half, half]) {
+    for (const fz of [-half, half]) {
+      const focus = new THREE.Vector3(fx, 0, fz);
+      camera.position.copy(focus).add(offset);
+      camera.lookAt(focus);
+      camera.updateMatrixWorld();
+      camera.updateProjectionMatrix();
+      for (const sx of [-1, 1]) {
+        for (const sy of [-1, 1]) {
+          const hit = groundHit(camera, sx, sy);
+          reach = Math.max(reach, Math.abs(hit.x), Math.abs(hit.z));
+        }
+      }
+    }
+  }
+  return reach;
+}
 
 const WORLDS = ["mars", "ceres", "io", "titan"] as const;
 
@@ -138,5 +177,29 @@ describe("expanded construction terrain", () => {
     ];
     terrain.dispose();
     for (const spy of spies) expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("covers the screen at full zoom-out and full pan, with haze only on wider-than-16:9 screens", () => {
+    expect(maxScreenReach(16 / 9)).toBeLessThanOrEqual(EDGE_HAZE_START);
+    expect(maxScreenReach(2.4)).toBeLessThan(FAR_EDGE);
+  });
+
+  it("carries the edge-haze injection on the ground material", () => {
+    const grid = new GridSpace(GRID_N);
+    const terrain = new Terrain(grid);
+    const mat = ground(terrain).material;
+    expect(mat.customProgramCacheKey()).toBe(GROUND_DETAIL_KEY);
+    const shader = {
+      uniforms: {} as Record<string, THREE.IUniform>,
+      vertexShader: THREE.ShaderLib.standard.vertexShader,
+      fragmentShader: THREE.ShaderLib.standard.fragmentShader,
+    };
+    mat.onBeforeCompile(shader as unknown as THREE.WebGLProgramParametersWithUniforms, {} as THREE.WebGLRenderer);
+    expect(shader.fragmentShader).toMatch(/#include <color_fragment>\s*[\s\S]*diffuseColor\.rgb \*= clamp\(1\.0 \+ tone/);
+    expect(shader.fragmentShader).toMatch(/#include <fog_fragment>\s*[\s\S]*edgeHaze/);
+    const haze = shader.uniforms.uEdgeHaze.value as THREE.Vector2;
+    expect(haze.x).toBe(EDGE_HAZE_START);
+    expect(haze.y).toBe(FAR_EDGE - 0.5);
+    terrain.dispose();
   });
 });

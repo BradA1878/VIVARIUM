@@ -9,6 +9,7 @@
    ============================================================================ */
 import * as THREE from "three";
 import type { World } from "@shared/types";
+import { CAMERA_ISO_OFFSET } from "./camera-controls";
 import { PostFx } from "./postfx";
 import { worldLook, type RGB, type SkyLook } from "./worldlook";
 import type { Grade } from "./grade-fxaa";
@@ -79,7 +80,7 @@ export class SceneManager {
   private readonly shadowFit = emptyShadowFit();
   private viewSize = 13;
   /** the iso vantage direction: camera sits at focus + this offset (doc §4.6) */
-  private readonly isoOffset = new THREE.Vector3(28, 26, 28);
+  private readonly isoOffset = new THREE.Vector3(...CAMERA_ISO_OFFSET);
   private focus = new THREE.Vector3(0, 0, 0);
   /** the active world's sky/sun/ambient tint endpoints update() lerps between —
    *  the mars anchor by default (today's exact constants); re-themed by setWorld */

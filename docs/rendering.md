@@ -332,23 +332,31 @@ fully zoomed in, about 10×.
 ## Terrain, atmosphere, and hazards
 
 - `terrain.ts` builds the ground the colony sits on: a 41×41 construction grid
-  inside a **far field** that extends to ±72 units (`FAR_EDGE`) at the same
-  1-unit mesh density. Far enough that at the widest zoom and fullest pan the
-  near side never runs out and the far side is fully in fog; the background takes
-  the fog (horizon) color, so no edge ever shows. The **play grid is flattened**
-  to 15% displacement across the entire square, including its corners. **Ridged
-  relief** starts at the first lattice line outside the grid (the 144-unit mesh
-  sits on integer coordinates and the grid edge at ±20.5, so the ramp starts at
-  ±21 to keep the edge cells flat) and continues across the far field with broad
-  dunes. Seeded rocks (six times each world's count) and monoliths (three times)
-  scatter over the far field; their full transformed bounds stay outside
-  construction cells and inside the terrain.
+  inside a **far field** that extends to ±88 units (`FAR_EDGE`, a 176-unit mesh
+  at the same 1-unit density — the bump map's 8-unit repeat still tiles whole,
+  176/8 = 22). At full zoom-out and full pan, the four screen corners reach 76.5
+  units from the origin on a 16:9 screen and 86.2 on an ultrawide 2.4:1 (see
+  terrain.test.ts's screen-coverage test); the ground's last 10 units
+  (`EDGE_HAZE_START`..`FAR_EDGE`) fade to the fog color in the ground shader
+  (below), and the background takes that same fog (horizon) color, so wider
+  screens see haze, never a hard edge. The **play grid is flattened** to 15%
+  displacement across the entire square, including its corners. **Ridged
+  relief** starts at the first lattice line outside the grid (the mesh sits on
+  integer coordinates and the grid edge at ±20.5, so the ramp starts at ±21 to
+  keep the edge cells flat) and continues across the far field with broad
+  dunes. Seeded rocks (seven times each world's count) and monoliths (three
+  times) scatter between the grid border and `EDGE_HAZE_START` — short of
+  `FAR_EDGE`, so nothing is placed in the band that's rendering as haze; their
+  full transformed bounds stay outside construction cells and inside the
+  terrain.
 - The soil shader adds **world-space detail** (`ground-shader.ts`, injected with
   `onBeforeCompile`): three octaves of value noise (grain, patches, regional tone)
   and a sparse dark speckle, multiplied into the vertex color within ±20%. Grain
   and speckle fade out with screen-space derivatives, so overview zoom stays
   calm. The hash is sine-free, with a small seed offset, so it stays precise on
-  mobile GPUs.
+  mobile GPUs. The same shader carries the edge haze above: injected right after
+  r169's own `#include <fog_fragment>`, so it mixes the far field toward
+  `fogColor` on top of (not instead of) the standard depth fog.
 - About 1,500 tiny **pebbles** (`pebbles.ts`, one instanced mesh, no shadows)
   sit on the rendered triangles over the build area and its border; structures
   simply cover them. They rebuild with the terrain on a world change.

@@ -16,6 +16,8 @@ import * as THREE from "three";
 
 export const CAMERA_MIN_VIEW = 3;
 export const CAMERA_MAX_VIEW = 22;
+/** the orthographic camera's offset from its focus (scene.ts's iso vantage) */
+export const CAMERA_ISO_OFFSET: readonly [number, number, number] = [28, 26, 28];
 export const CAMERA_DRAG_THRESHOLD = 5;
 /** One explicit-button press is a reversible ~20% zoom step. Keeping it in the
  *  same delta vocabulary as a wheel gesture means every input shares the rig's

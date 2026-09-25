@@ -43,12 +43,22 @@ const smooth01 = (t: number): number => {
   return c * c * (3 - 2 * c);
 };
 
-/** Half-extent of the rendered ground, in world units. At the widest zoom
- *  (CAMERA_MAX_VIEW 22) panned to a grid corner, the near half of the view
- *  reaches about 66 units from the origin; past that the fog (far 86 from a
- *  camera 47.5 away) fully hides the background, so the ground can end here
- *  without ever showing an edge on screen. */
-export const FAR_EDGE = 72;
+/** Half-extent of the rendered ground, in world units (176 one-unit segments;
+ *  the bump map's 8-unit repeat stays whole: 176/8 = 22). At full zoom-out
+ *  (CAMERA_MAX_VIEW 22) panned to a grid corner, the four screen corners reach
+ *  76.5 units from the origin on a 16:9 screen and 86.2 on an ultrawide 2.4:1
+ *  — see terrain.test.ts's screen-coverage test for the full spread across
+ *  aspect ratios. The ground fades into the fog color over its last 10 units
+ *  (EDGE_HAZE_START below), and scene.ts paints the background the same fog
+ *  color, so a screen wide enough to reach past FAR_EDGE sees haze, never an
+ *  edge. */
+export const FAR_EDGE = 88;
+
+/** World-space distance (from the origin) where the edge haze starts fading
+ *  the ground to the fog color, ending at FAR_EDGE. Scenery (rocks, monoliths)
+ *  scatters only up to here — placing them further out would be wasted draws
+ *  in a band that's rendering as fog anyway. */
+export const EDGE_HAZE_START = FAR_EDGE - 10;
 
 /** Test the complete rotated silhouette, including the lean of tall spires.
  *  A center outside the grid is not enough in a narrow scenic border. */
@@ -72,9 +82,12 @@ function borderPoint(rng: () => number, half: number, edge: number): { x: number
 }
 
 /** Per-world rock count authored for the old narrow scenic border, scaled up
- *  so the far field reads at the same density instead of thinning out. */
+ *  so the far field reads at the same density instead of thinning out. The
+ *  scenic ring now runs half()..EDGE_HAZE_START instead of half()..the old
+ *  (narrower) FAR_EDGE, about 19% more area, so ×7 keeps the density of the
+ *  originally tuned ×6. */
 export function farRockCount(look: WorldLook): number {
-  return Math.round(look.rocks.count * 6);
+  return Math.round(look.rocks.count * 7);
 }
 
 export class Terrain {
@@ -166,18 +179,22 @@ export class Terrain {
       emissive: new THREE.Color(look.ground.accent), emissiveIntensity: look.mat.emissive, // 0 for mars (no glow); Io's faint lava
       envMapIntensity: look.mat.skyFill,
     });
-    // world-space grain, patches and pebble speckle in the soil's shader
-    applyGroundDetail(mat, look.rockSeed);
+    // world-space grain, patches and pebble speckle in the soil's shader, plus
+    // the edge haze that fades the far field into the fog color
+    applyGroundDetail(mat, look.rockSeed, { start: EDGE_HAZE_START, end: FAR_EDGE - 0.5 });
     const ground = new THREE.Mesh(geo, mat);
     ground.receiveShadow = true;
     this.group.add(ground);
     this.disposables.push(geo, mat, detail.texture);
 
     // ---- instanced boulders past the play grid ----
-    this.scatterRocks(half, edge, look);
+    // Scenery stops at EDGE_HAZE_START, short of FAR_EDGE: past that the
+    // ground itself is fading to the fog color, so placing rocks/monoliths
+    // there would just be draws inside the haze.
+    this.scatterRocks(half, EDGE_HAZE_START, look);
 
     // ---- distant monoliths on the far relief ----
-    this.scatterMonoliths(half, edge, look);
+    this.scatterMonoliths(half, EDGE_HAZE_START, look);
 
     // ---- tiny pebbles over the build area and its border ----
     // Small enough that structures simply cover them; they sit on the rendered

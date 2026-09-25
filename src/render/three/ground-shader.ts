@@ -8,13 +8,14 @@ import * as THREE from "three";
 
 /** Bump this if the injected GLSL changes shape, so three recompiles instead
  *  of reusing a cached program from the old shader. */
-export const GROUND_DETAIL_KEY = "viv-ground-detail-1";
+export const GROUND_DETAIL_KEY = "viv-ground-detail-2";
 
 export function groundDetailChunks(): {
   vertexPars: string;
   vertexMain: string;
   fragmentPars: string;
   fragmentMain: string;
+  fragmentFog: string;
 } {
   return {
     vertexPars: `varying vec3 vGroundWorld;`,
@@ -22,6 +23,7 @@ export function groundDetailChunks(): {
     fragmentPars: `
 varying vec3 vGroundWorld;
 uniform vec2 uGroundSeed;
+uniform vec2 uEdgeHaze;
 
 float gHash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -50,23 +52,42 @@ float speck = step(0.94, gHash(floor(gp * 6.0))) * (1.0 - smoothstep(0.05, 0.16,
 float tone = grain * 0.10 + patchy * 0.14 + region * 0.18 - speck * 0.12;
 diffuseColor.rgb *= clamp(1.0 + tone, 0.8, 1.2);
 `,
+    // Injected after r169's own fog_fragment (which has already mixed toward
+    // fogColor by depth), so the far field additionally fades to the fog color
+    // by distance from the origin — the ground never shows a hard edge on a
+    // screen wide enough to see past FAR_EDGE. vGroundWorld is unshifted world
+    // position (the ground-detail seed offset above only applies to gp).
+    fragmentFog: `
+#ifdef USE_FOG
+  float edgeHaze = smoothstep(uEdgeHaze.x, uEdgeHaze.y, max(abs(vGroundWorld.x), abs(vGroundWorld.z)));
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, edgeHaze);
+#endif
+`,
   };
 }
 
 /** Installs the ground-detail injection on a standard material. Seed picks a
  *  fixed offset into the noise field (two irrational multiples of it, so the
- *  x/y offsets don't correlate) — same seed, same tiling forever. Overwrites
- *  any prior onBeforeCompile/customProgramCacheKey; the terrain material has
- *  none to preserve. */
-export function applyGroundDetail(material: THREE.MeshStandardMaterial, seed: number): void {
+ *  x/y offsets don't correlate) — same seed, same tiling forever. edgeHaze is
+ *  the world-space (start, end) distance band the far field fades to the fog
+ *  color over (terrain.ts's EDGE_HAZE_START..FAR_EDGE). Overwrites any prior
+ *  onBeforeCompile/customProgramCacheKey; the terrain material has none to
+ *  preserve. */
+export function applyGroundDetail(
+  material: THREE.MeshStandardMaterial,
+  seed: number,
+  edgeHaze: { start: number; end: number },
+): void {
   const uGroundSeed = new THREE.Vector2(
     ((seed * 0.6180339887) % 1) * 64,
     ((seed * 0.4142135) % 1) * 64,
   );
+  const uEdgeHaze = new THREE.Vector2(edgeHaze.start, edgeHaze.end);
   const chunks = groundDetailChunks();
 
   material.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms, _renderer: THREE.WebGLRenderer): void => {
     shader.uniforms.uGroundSeed = { value: uGroundSeed };
+    shader.uniforms.uEdgeHaze = { value: uEdgeHaze };
 
     // Each anchor occurs exactly once in r169's standard shader, so a plain (non-global) replace patches it correctly.
     shader.vertexShader = shader.vertexShader
@@ -75,7 +96,8 @@ export function applyGroundDetail(material: THREE.MeshStandardMaterial, seed: nu
 
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", `#include <common>\n${chunks.fragmentPars}`)
-      .replace("#include <color_fragment>", `#include <color_fragment>\n${chunks.fragmentMain}`);
+      .replace("#include <color_fragment>", `#include <color_fragment>\n${chunks.fragmentMain}`)
+      .replace("#include <fog_fragment>", `#include <fog_fragment>\n${chunks.fragmentFog}`);
   };
 
   material.customProgramCacheKey = () => GROUND_DETAIL_KEY;
