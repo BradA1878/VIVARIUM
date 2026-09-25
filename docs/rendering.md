@@ -158,10 +158,12 @@ warning, never bloom into a halo.
 
 ## Environment lighting
 
-Most building materials are metallic (`metal()` 0.72, `frostedDome()` 0.35,
-`panel()` 0.85), and a metallic `MeshStandardMaterial` takes most of its color
-from what it reflects. `render/three/environment.ts` gives them something to
-reflect: `SkyEnvironment` renders a tiny off-screen sky — a zenith-to-horizon
+Metal surfaces (`metal()`, metalness 0.6 by default, up to 0.8 on trims and
+ribs) take much of their color from what they reflect, and the glass and dome
+shells (`panel()`, PV glass at metalness 0.1, roughness 0.18; `frostedDome()`
+at metalness 0.2) reflect the sky at grazing angles.
+`render/three/environment.ts` gives them something to reflect: `SkyEnvironment`
+renders a tiny off-screen sky — a zenith-to-horizon
 gradient, the world's mean soil color bounced up from below, and a broad glow
 toward the sun — into `scene.environment` with `PMREMGenerator`. Every
 standard material then gets reflections plus a sky/ground fill from it.
@@ -309,9 +311,10 @@ sharpness), and its center is snapped to whole shadow texels (panning doesn't
 make edges crawl). The normal bias follows the fitted texel (1.2 texels,
 clamped to 0.01–0.12 units). The light sits 100 units up the sun direction
 from the box center, and the near plane reaches far enough toward the sun to
-include off-screen structures whose shadows fall into view. At default zoom a
-2048² map gives about 2.6× the detail of the old whole-terrain 1024² map;
-fully zoomed in, about 10×.
+include off-screen structures whose shadows fall into view. At default zoom
+(view 13, 16:10, noon) a 2048² map gives a texel of 0.032 against the old
+whole-terrain 1024² map's 0.066 — about twice the detail (the unit test
+asserts at least 2×); fully zoomed in, about 10×.
 
 ## Camera
 

@@ -3,21 +3,12 @@
    One InstancedMesh, tinted per-instance from the world's rock color so it
    reads as loose scree rather than a repeated stamp. Too small to cast a
    useful shadow, so it skips that draw; it still receives the terrain's.
-   Wiring this into Terrain is Task 9 — this file only builds the mesh.
+   Terrain builds it over the build area and its border and owns its disposal.
    ============================================================================ */
 import * as THREE from "three";
+import { greebleRng } from "./kit/contract";
 
 export const PEBBLE_COUNT = 1500;
-
-function mulberry32(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    let a = (s += 0x6d2b79f5);
-    a = Math.imul(a ^ (a >>> 15), 1 | a);
-    a ^= a + Math.imul(a ^ (a >>> 7), 61 | a);
-    return ((a ^ (a >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
 
@@ -37,7 +28,7 @@ export function buildPebbles(
   look: { rockSeed: number; rockColor: number },
   count = PEBBLE_COUNT,
 ): THREE.InstancedMesh {
-  const rng = mulberry32(look.rockSeed ^ 0x9eb1);
+  const rng = greebleRng(look.rockSeed ^ 0x9eb1);
 
   const geo = new THREE.IcosahedronGeometry(1, 0);
   geo.scale(1, 0.6, 1);

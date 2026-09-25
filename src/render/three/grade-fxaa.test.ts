@@ -11,5 +11,8 @@ describe("graded FXAA shader", () => {
     expect(s.fragmentShader).toMatch(/gl_FragColor = FxaaPixelShader\([\s\S]*?\);\s*gl_FragColor\.rgb = vivGrade\( gl_FragColor\.rgb, vUv \);/);
     expect(s.fragmentShader).toContain("uniform vec3 lift;");
     expect(createGradedFxaaShader().uniforms.gain).not.toBe(s.uniforms.gain); // fresh uniforms per call
+    // FXAAShader has name: 'FXAAShader'; without one, ShaderPass reports the
+    // pass as "unspecified" in error messages and DEV tooling
+    expect(s.name).toBe("GradedFXAAShader");
   });
 });

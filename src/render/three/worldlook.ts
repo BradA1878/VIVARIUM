@@ -132,7 +132,7 @@ export interface WorldLook {
 }
 
 export const WORLD_LOOKS: Record<World, WorldLook> = {
-  // ---- the ANCHOR: today's exact constants (Mars renders byte-for-byte as before)
+  // ---- the ANCHOR: the original terrain and fog constants (the env and grade blocks are the 2026-09 lighting pass)
   mars: {
     grade: { lift: [4, 2, 7], gain: [255, 250, 240], saturation: 1.05, vignette: 0 },
     rockSeed: 98213,

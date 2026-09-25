@@ -58,6 +58,7 @@ const FXAA_CALL = /gl_FragColor = FxaaPixelShader\([\s\S]*?\);/;
  *  directly, so the composer's pass count and needsSwap flags never change
  *  when the grade is tuned (see postfx.ts). */
 export function createGradedFxaaShader(): {
+  name: string;
   uniforms: Record<string, THREE.IUniform>;
   vertexShader: string;
   fragmentShader: string;
@@ -79,5 +80,5 @@ export function createGradedFxaaShader(): {
     .replace(RESOLUTION_UNIFORM, GRADE_DECLARATIONS)
     .replace(FXAA_CALL, (call) => `${call}\n\t\t\t\tgl_FragColor.rgb = vivGrade( gl_FragColor.rgb, vUv );`);
 
-  return { uniforms, vertexShader: FXAAShader.vertexShader, fragmentShader };
+  return { name: "GradedFXAAShader", uniforms, vertexShader: FXAAShader.vertexShader, fragmentShader };
 }

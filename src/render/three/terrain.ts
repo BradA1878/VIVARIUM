@@ -11,6 +11,7 @@ import { CELL, GridSpace, SCENIC_MARGIN } from "./coords";
 import { worldLook, type WorldLook } from "./worldlook";
 import { createSurfaceDetail, roughnessWithDetail } from "./surface-detail";
 import { applyGroundDetail } from "./ground-shader";
+import { greebleRng } from "./kit/contract";
 import { buildPebbles } from "./pebbles";
 
 function hash(x: number, y: number): number {
@@ -27,15 +28,6 @@ function fbm(x: number, y: number): number {
   let s = 0, a = 0.6, f = 1;
   for (let i = 0; i < 3; i++) { s += a * vnoise(x * f, y * f); f *= 2.1; a *= 0.5; }
   return s;
-}
-function mulberry(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    let a = (s += 0x6d2b79f5);
-    a = Math.imul(a ^ (a >>> 15), 1 | a);
-    a ^= a + Math.imul(a ^ (a >>> 7), 61 | a);
-    return ((a ^ (a >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 const smooth01 = (t: number): number => {
@@ -229,7 +221,7 @@ export class Terrain {
   }
 
   private scatterRocks(half: number, edge: number, look: WorldLook): void {
-    const rng = mulberry(look.rockSeed);
+    const rng = greebleRng(look.rockSeed);
     const count = farRockCount(look);
     const rockGeo = new THREE.IcosahedronGeometry(1, look.rocks.detail); // detail 0 = jagged shards, 1+ = rounder
     // rough up the rock a touch
@@ -274,7 +266,7 @@ export class Terrain {
    *  tripled for the wider far field. Their rng is a separate seeded stream,
    *  so the boulder field above is untouched by their draws. */
   private scatterMonoliths(half: number, edge: number, look: WorldLook): void {
-    const rng = mulberry(look.monolithSeed);
+    const rng = greebleRng(look.monolithSeed);
     const count = look.monoliths.count * 3;
     const geo = new THREE.CylinderGeometry(0.34, 0.62, 1, 5, 1);
     geo.translate(0, 0.5, 0); // base at y = 0 so scale.y sets the height

@@ -30,8 +30,8 @@ export interface MaterialLib {
 }
 
 export function createMaterials(): MaterialLib {
-  // Individual materials belong to their kits; this one map belongs to the
-  // library and survives building removal and world changes.
+  // Individual materials belong to their kits; these maps belong to the
+  // library and survive building removal and world changes; dispose() releases them.
   const detail = createSurfaceDetail("metal", 0x6d657461);
   const pv = createPvCellTexture(0x5e11);
   const dome = createDomePanelTexture(0xd0e5);
