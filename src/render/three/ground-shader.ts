@@ -1,0 +1,79 @@
+/** World-space ground detail: a seeded value-noise tint multiplied onto the
+ *  standard material's diffuse color, so terrain tiles lose their per-vertex
+ *  repetition without any extra texture or geometry. Injected via
+ *  onBeforeCompile at three's own chunk anchors — no new material, no new
+ *  draw call. Render-local RNG only; never touches the engine's seeded
+ *  streams. */
+import * as THREE from "three";
+
+/** Bump this if the injected GLSL changes shape, so three recompiles instead
+ *  of reusing a cached program from the old shader. */
+export const GROUND_DETAIL_KEY = "viv-ground-detail-1";
+
+export function groundDetailChunks(): {
+  vertexPars: string;
+  vertexMain: string;
+  fragmentPars: string;
+  fragmentMain: string;
+} {
+  return {
+    vertexPars: `varying vec3 vGroundWorld;`,
+    vertexMain: `vGroundWorld = (modelMatrix * vec4( transformed, 1.0 )).xyz;`,
+    fragmentPars: `
+varying vec3 vGroundWorld;
+uniform vec2 uGroundSeed;
+
+float gHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float gNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float a = gHash(i);
+  float b = gHash(i + vec2(1.0, 0.0));
+  float c = gHash(i + vec2(0.0, 1.0));
+  float d = gHash(i + vec2(1.0, 1.0));
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+`,
+    fragmentMain: `
+vec2 gp = vGroundWorld.xz + uGroundSeed;
+float fw = fwidth(gp.x);                         // world units per pixel
+float grain = (gNoise(gp * 2.5) - 0.5) * (1.0 - smoothstep(0.08, 0.3, fw));
+float patchy = gNoise(gp * 0.33) - 0.5;
+float region = gNoise(gp * 0.07) - 0.5;
+float speck = step(0.94, gHash(floor(gp * 6.0))) * (1.0 - smoothstep(0.05, 0.16, fw));
+float tone = grain * 0.10 + patchy * 0.14 + region * 0.18 - speck * 0.12;
+diffuseColor.rgb *= clamp(1.0 + tone, 0.8, 1.2);
+`,
+  };
+}
+
+/** Installs the ground-detail injection on a standard material. Seed picks a
+ *  fixed offset into the noise field (two irrational multiples of it, so the
+ *  x/y offsets don't correlate) — same seed, same tiling forever. Overwrites
+ *  any prior onBeforeCompile/customProgramCacheKey; the terrain material has
+ *  none to preserve. */
+export function applyGroundDetail(material: THREE.MeshStandardMaterial, seed: number): void {
+  const uGroundSeed = new THREE.Vector2(
+    ((seed * 0.6180339887) % 1) * 1000,
+    ((seed * 0.4142135) % 1) * 1000,
+  );
+  const chunks = groundDetailChunks();
+
+  material.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms, _renderer: THREE.WebGLRenderer): void => {
+    shader.uniforms.uGroundSeed = { value: uGroundSeed };
+
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", `#include <common>\n${chunks.vertexPars}`)
+      .replace("#include <begin_vertex>", `#include <begin_vertex>\n${chunks.vertexMain}`);
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", `#include <common>\n${chunks.fragmentPars}`)
+      .replace("#include <color_fragment>", `#include <color_fragment>\n${chunks.fragmentMain}`);
+  };
+
+  material.customProgramCacheKey = () => GROUND_DETAIL_KEY;
+}
