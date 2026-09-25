@@ -263,7 +263,12 @@ indices are pinned as the legacy tiers — `STEP_HIGH` (60 fps, ratio 1.5, bloom
 `STEP_LOW` (the bottom rung). A device whose primary pointer is coarse (a phone
 or tablet, `tunablesForPointer`) starts AUTO at step 2 and never auto-promotes
 above it: the governor measures only CPU frame-body time, so it cannot see a
-GPU-bound device struggling on the top steps. Pinning HIGH still reaches step 0.
+GPU-bound device struggling on the top steps. A software WebGL renderer
+(`isSoftwareRenderer`: SwiftShader, as headless Chromium uses on a GPU-less CI
+runner, or llvmpipe and similar) starts AUTO on the bottom step and stays there
+(`tunablesForRenderer`): its GPU work runs on the CPU in another process, so the
+frame body stays small while presented frames take hundreds of milliseconds.
+Pinning HIGH still reaches step 0.
 
 Each frame the renderer measures the cost of the **frame body** — the time
 spent inside the update+render work, never the inter-frame delta, which the

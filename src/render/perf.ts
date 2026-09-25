@@ -111,6 +111,22 @@ export function tunablesForPointer(coarse: boolean): Partial<PerfTunables> {
   return coarse ? { startStep: 2, bestStep: 2 } : {};
 }
 
+/** a WebGL renderer name that means rasterizing on the CPU: SwiftShader (what
+ *  headless Chromium uses without a GPU, as on CI runners), Mesa's llvmpipe /
+ *  softpipe, or Windows' basic render driver */
+export function isSoftwareRenderer(name: string): boolean {
+  return /swiftshader|llvmpipe|softpipe|software rasterizer|basic render/i.test(name);
+}
+
+/** AUTO tuning for a software renderer. Its GPU work runs on the CPU in
+ *  another process, so the frame body stays small while presented frames take
+ *  hundreds of milliseconds, and AO or shadow passes starve the page. AUTO
+ *  starts on the bottom step and stays there; pinning HIGH still works.
+ *  Combine after tunablesForPointer so this lower step wins. */
+export function tunablesForRenderer(software: boolean): Partial<PerfTunables> {
+  return software ? { startStep: STEP_LOW, bestStep: STEP_LOW } : {};
+}
+
 // a sample gap past this (hidden tab, debugger pause) breaks the contiguous
 // sustain evidence; the EMA's α is clamped too, so one late frame can't own it
 const STALE_GAP_MS = 1000;

@@ -6,7 +6,7 @@
    the pin/reset semantics the renderer builds on.
    ============================================================================ */
 import { describe, it, expect } from "vitest";
-import { PerfGovernor, LADDER, STEP_HIGH, STEP_LOW, snapHz, tunablesForPointer } from "./perf";
+import { PerfGovernor, LADDER, STEP_HIGH, STEP_LOW, isSoftwareRenderer, snapHz, tunablesForPointer, tunablesForRenderer } from "./perf";
 
 /** play frames of one cost from fromMs (inclusive) to untilMs (exclusive) at a
  *  fixed cadence; returns the next un-fed timestamp so phases chain contiguously */
@@ -171,6 +171,27 @@ describe("PerfGovernor ladder", () => {
     expect(i.calibrating).toBe(false);
     g.pin(STEP_LOW);
     expect(g.info().pinned).toBe(STEP_LOW);
+  });
+
+  it("recognizes software WebGL renderers by name", () => {
+    // what headless Chromium reports on a GPU-less Linux CI runner
+    expect(isSoftwareRenderer("ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)")).toBe(true);
+    expect(isSoftwareRenderer("llvmpipe (LLVM 15.0.7, 256 bits)")).toBe(true);
+    expect(isSoftwareRenderer("Microsoft Basic Render Driver")).toBe(true);
+    expect(isSoftwareRenderer("ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)")).toBe(false);
+    expect(isSoftwareRenderer("ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Direct3D11 vs_5_0 ps_5_0, D3D11)")).toBe(false);
+    expect(isSoftwareRenderer("")).toBe(false);
+  });
+
+  it("a software renderer runs AUTO on the bottom step and never climbs; an explicit HIGH still wins", () => {
+    expect(tunablesForRenderer(false)).toEqual({});
+    expect(tunablesForRenderer(true)).toEqual({ startStep: STEP_LOW, bestStep: STEP_LOW });
+    const g = new PerfGovernor(LADDER, { ...tunablesForPointer(true), ...tunablesForRenderer(true) });
+    expect(g.index()).toBe(STEP_LOW);
+    feed(g, 1, 0, 60000); // a minute of deep headroom
+    expect(g.index()).toBe(STEP_LOW);
+    g.pin(STEP_HIGH);
+    expect(g.index()).toBe(STEP_HIGH);
   });
 
   it("coarse-pointer devices start at step 2 and never auto-promote above it; an explicit HIGH still wins", () => {

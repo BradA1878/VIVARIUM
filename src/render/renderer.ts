@@ -10,7 +10,7 @@ import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, DepositKind,
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { BridgeCore } from "@/worker/bridge";
-import { LADDER, PerfGovernor, STEP_HIGH, STEP_LOW, snapHz, tunablesForPointer, type PerfStep } from "./perf";
+import { LADDER, PerfGovernor, STEP_HIGH, STEP_LOW, isSoftwareRenderer, snapHz, tunablesForPointer, tunablesForRenderer, type PerfStep } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
 import { GroundDetails } from "./three/ground-details";
@@ -105,6 +105,12 @@ function easeOut(t: number): number {
   return 1 - (1 - t) * (1 - t);
 }
 
+/** the WebGL implementation's renderer name, unmasked where the browser allows */
+function glRendererName(gl: WebGLRenderingContext | WebGL2RenderingContext): string {
+  const info = gl.getExtension("WEBGL_debug_renderer_info");
+  return String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "");
+}
+
 /** night ramp for the airlock signal ring: a small tell, dim by day, capped
  *  under the bloom threshold (1.0) even at full night. */
 export function airlockSignalIntensity(night: number): number {
@@ -194,13 +200,13 @@ export class ThreeRenderer {
   private frameLog: number[] | null = null;
   // adaptive quality: the governor walks the LADDER off measured frame-BODY
   // cost; the explicit LOW/HIGH tiers pin it (setQuality), AUTO lets it drive.
-  // A coarse primary pointer (phone, tablet) starts AUTO lower and caps its
-  // climb there, since frame-body cost can't see a GPU-bound device.
-  private governor = new PerfGovernor(
-    LADDER,
-    tunablesForPointer(typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches),
-  );
-  private fpsCap = this.governor.step().fps;
+  // Built in the constructor once the WebGL context exists: a coarse primary
+  // pointer (phone, tablet) starts AUTO lower and caps its climb there, and a
+  // software renderer (SwiftShader on a GPU-less CI runner, a blocklisted GPU)
+  // keeps AUTO on the bottom step, since frame-body cost can't see either one
+  // falling behind on the GPU side.
+  private governor: PerfGovernor;
+  private fpsCap: number;
 
   // embodied colony: astronauts, deposits, vents, machines, the trader saucer
   private colonists = new Map<number, ColonistRec>();
@@ -263,6 +269,11 @@ export class ThreeRenderer {
     this.bridge = bridge;
     this.grid = new GridSpace(gridN);
     this.scene = new SceneManager(canvas);
+    this.governor = new PerfGovernor(LADDER, {
+      ...tunablesForPointer(typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches),
+      ...tunablesForRenderer(isSoftwareRenderer(glRendererName(this.scene.renderer.getContext()))),
+    });
+    this.fpsCap = this.governor.step().fps;
     this.terrain = new Terrain(this.grid);
     this.scene.scene.add(this.terrain.group);
     this.scene.scene.add(this.groundDetails.group);
