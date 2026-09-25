@@ -11,8 +11,11 @@ function ground(terrain: Terrain): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshSta
   return terrain.group.children[0] as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
 }
 
+/** scenic rocks and monoliths — the pebble field is deliberately inside the
+ *  build area (structures cover it), so it is checked separately */
 function decorations(terrain: Terrain): THREE.InstancedMesh[] {
-  return terrain.group.children.filter((child): child is THREE.InstancedMesh => child instanceof THREE.InstancedMesh);
+  return terrain.group.children.filter((child): child is THREE.InstancedMesh =>
+    child instanceof THREE.InstancedMesh && child.name !== "pebbles");
 }
 
 /** Inspect actual transformed vertices, independently of the placement check's
@@ -51,7 +54,11 @@ describe("expanded construction terrain", () => {
     expect(terrain.surfaceHalfSpan).toBe(FAR_EDGE);
     expect(ground(terrain).geometry.getAttribute("position").count).toBe((segs + 1) ** 2);
     expect(ground(terrain).geometry.index!.count).toBe(segs ** 2 * 6);
-    expect(terrain.group.children).toHaveLength(3);
+    // ground, scenic rocks, monoliths, pebbles
+    expect(terrain.group.children).toHaveLength(4);
+    const pebbles = terrain.group.getObjectByName("pebbles") as THREE.InstancedMesh;
+    expect(pebbles.count).toBeGreaterThan(0);
+    expect(pebbles.castShadow).toBe(false);
     terrain.dispose();
   });
 

@@ -10,6 +10,8 @@ import type { World } from "@shared/types";
 import { CELL, GridSpace, SCENIC_MARGIN } from "./coords";
 import { worldLook, type WorldLook } from "./worldlook";
 import { createSurfaceDetail, roughnessWithDetail } from "./surface-detail";
+import { applyGroundDetail } from "./ground-shader";
+import { buildPebbles } from "./pebbles";
 
 function hash(x: number, y: number): number {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -164,6 +166,8 @@ export class Terrain {
       emissive: new THREE.Color(look.ground.accent), emissiveIntensity: look.mat.emissive, // 0 for mars (no glow); Io's faint lava
       envMapIntensity: look.mat.skyFill,
     });
+    // world-space grain, patches and pebble speckle in the soil's shader
+    applyGroundDetail(mat, look.rockSeed);
     const ground = new THREE.Mesh(geo, mat);
     ground.receiveShadow = true;
     this.group.add(ground);
@@ -174,6 +178,13 @@ export class Terrain {
 
     // ---- distant monoliths on the far relief ----
     this.scatterMonoliths(half, edge, look);
+
+    // ---- tiny pebbles over the build area and its border ----
+    // Small enough that structures simply cover them; they sit on the rendered
+    // triangles (heightAt), so they rebuild with the terrain on a world change.
+    const pebbles = buildPebbles((x, z) => this.heightAt(x, z), half + margin * CELL, look);
+    this.group.add(pebbles);
+    this.disposables.push(pebbles.geometry, pebbles.material as THREE.Material);
   }
 
   /** Height on the rendered triangles, not the underlying continuous noise.
