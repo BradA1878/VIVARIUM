@@ -136,6 +136,7 @@ export class Terrain {
       vertexColors: true, ...roughnessWithDetail(look.mat.rough, detail), metalness: look.mat.metal,
       bumpMap: detail.texture, bumpScale: 0.02 * CELL,
       emissive: new THREE.Color(look.ground.accent), emissiveIntensity: look.mat.emissive, // 0 for mars (no glow); Io's faint lava
+      envMapIntensity: look.mat.skyFill,
     });
     const ground = new THREE.Mesh(geo, mat);
     ground.receiveShadow = true;

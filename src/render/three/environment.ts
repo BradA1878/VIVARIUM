@@ -53,8 +53,9 @@ export const SUN_STEP_RAD = (5 * Math.PI) / 180;
 export const DAYLIGHT_STEP = 0.04;
 /** …but no more often than this (world/weather changes ignore the limit) */
 export const MIN_BAKE_GAP_MS = 250;
-/** global gain on the baked sky, balanced against the sun and exposure */
-export const ENV_BASE = 1.0;
+/** global gain on the baked sky, balanced against the sun (scene.ts SUN_GAIN)
+ *  so direct light stays roughly three times the sky fill and shadows read */
+export const ENV_BASE = 0.8;
 
 /** the PMREMGenerator surface SkyEnvironment uses (injectable for tests) */
 export type PmremLike = Pick<THREE.PMREMGenerator, "fromScene" | "dispose">;

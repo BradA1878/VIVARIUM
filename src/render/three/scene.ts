@@ -3,20 +3,34 @@
    day/night sun, and atmosphere. The iso look comes from the camera angle (doc
    §4.6: the renderer is the only layer that changed from the 2D prototype). The
    ambient curve and sky colours are ported from render.js (ambient/drawSky).
+   The world's sky is baked into scene.environment (environment.ts) for
+   reflections and sky/ground fill, and the sun's shadow map is fitted to the
+   visible ground every frame (shadow-fit.ts).
    ============================================================================ */
 import * as THREE from "three";
 import type { World } from "@shared/types";
 import { PostFx } from "./postfx";
-import { worldLook, type SkyLook } from "./worldlook";
+import { worldLook, type RGB, type SkyLook } from "./worldlook";
+import { SkyEnvironment, envIntensity, type SkyState } from "./environment";
+import { SHADOW_LIGHT_DISTANCE, emptyOrthoView, emptyShadowFit, fitShadow, orthoViewOf } from "./shadow-fit";
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-function lerpColor(a: number[], b: number[], t: number): THREE.Color {
-  return new THREE.Color(
+function lerpColor(a: RGB, b: RGB, t: number, target: THREE.Color): THREE.Color {
+  return target.setRGB(
     lerp(a[0], b[0], t) / 255,
     lerp(a[1], b[1], t) / 255,
     lerp(a[2], b[2], t) / 255,
+    THREE.LinearSRGBColorSpace,
   );
 }
+
+/** the flat fill left under the sky environment: enough to keep corners the
+ *  environment cannot reach off pure black, no more */
+const AMBIENT_FLOOR = 0.04;
+const AMBIENT_DAY = 0.06;
+/** the sun's gain over the original curve, balanced with the sky environment's
+ *  ENV_BASE so shadows read against the fill */
+const SUN_GAIN = 1.5;
 
 /** ported from render.js ambient(): brightness 0.07..1 across the sol */
 export function ambientLevel(tod: number, dust: boolean): number {
@@ -45,7 +59,14 @@ export class SceneManager {
 
   private sun: THREE.DirectionalLight;
   private ambientLight: THREE.AmbientLight;
-  private hemi: THREE.HemisphereLight;
+  private skyEnv: SkyEnvironment;
+  /** what the environment bake reads; its sunDir is also the sun's direction */
+  private readonly skyState: SkyState = {
+    world: "mars", daylight: 1, dust: false, sunDir: new THREE.Vector3(0, 1, 0), sunElev: 1,
+  };
+  private shadowSize: 1024 | 2048 = 2048;
+  private readonly shadowView = emptyOrthoView();
+  private readonly shadowFit = emptyShadowFit();
   private viewSize = 13;
   /** the iso vantage direction: camera sits at focus + this offset (doc §4.6) */
   private readonly isoOffset = new THREE.Vector3(28, 26, 28);
@@ -53,8 +74,12 @@ export class SceneManager {
   /** the active world's sky/sun/ambient tint endpoints update() lerps between —
    *  the mars anchor by default (today's exact constants); re-themed by setWorld */
   private sky: SkyLook = worldLook("mars").sky;
+  // per-frame scratch for update() (the render hot path stays allocation-free)
+  private readonly horizon = new THREE.Color();
+  private readonly top = new THREE.Color();
+  private readonly background = new THREE.Color();
 
-  constructor(canvas: HTMLCanvasElement, groundHalfExtent: number) {
+  constructor(canvas: HTMLCanvasElement) {
     // Every quality tier antialiases in PostFx; multisampling the final
     // fullscreen canvas would add cost without smoothing the scene edges.
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
@@ -71,28 +96,23 @@ export class SceneManager {
     this.camera.lookAt(0, 0, 0);
 
     this.scene.fog = new THREE.Fog(0x0b0e12, 38, 86);
+    this.scene.background = this.background;
 
+    // The sun keeps its established direction; render() wraps its shadow map
+    // around whatever the camera can see (shadow-fit.ts), so the frustum here
+    // is only a placeholder until the first frame.
     this.sun = new THREE.DirectionalLight(0xffe6c8, 1);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
-    // Cover every buildable corner regardless of pan/zoom or sun azimuth.
-    // The light sits 60 units away; this range also includes tall structures.
-    const shadowExtent = groundHalfExtent * Math.SQRT2 + 2;
-    this.sun.shadow.camera.near = Math.max(1, 60 - shadowExtent - 8);
-    this.sun.shadow.camera.far = 60 + shadowExtent + 8;
-    this.sun.shadow.bias = -0.00008;
-    this.sun.shadow.normalBias = 0.015;
-    const sc = this.sun.shadow.camera as THREE.OrthographicCamera;
-    sc.left = -shadowExtent; sc.right = shadowExtent;
-    sc.top = shadowExtent; sc.bottom = -shadowExtent;
+    this.sun.shadow.mapSize.set(this.shadowSize, this.shadowSize);
+    this.sun.shadow.bias = -0.0002;
+    this.sun.shadow.normalBias = 0.02;
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
 
-    this.ambientLight = new THREE.AmbientLight(0x4a4660, 0.5);
+    this.ambientLight = new THREE.AmbientLight(0x4a4660, AMBIENT_FLOOR);
     this.scene.add(this.ambientLight);
 
-    this.hemi = new THREE.HemisphereLight(0xb0744a, 0x10100c, 0.4);
-    this.scene.add(this.hemi);
+    this.skyEnv = new SkyEnvironment(new THREE.PMREMGenerator(this.renderer));
 
     this.postfx = new PostFx(this.renderer, this.scene, this.camera);
 
@@ -123,9 +143,29 @@ export class SceneManager {
     });
   }
 
+  /** shadow-map resolution; the old map is released and reallocated at the new
+   *  size on the next shadow render */
+  setShadowSize(size: 1024 | 2048): void {
+    if (size === this.shadowSize) return;
+    this.shadowSize = size;
+    this.sun.shadow.mapSize.set(size, size);
+    this.sun.shadow.map?.dispose();
+    this.sun.shadow.map = null;
+  }
+
   /** optional bloom; color grading stays consistent across quality tiers */
   setBloom(on: boolean): void {
     this.postfx.setEnabled(on);
+  }
+
+  /** optional ambient occlusion (the top ladder steps) */
+  setAO(on: boolean): void {
+    this.postfx.setAO(on);
+  }
+
+  /** environment bakes so far — DEV/QA observability (window.__viv) */
+  get envBakes(): number {
+    return this.skyEnv.bakes;
   }
 
   resize(): void {
@@ -148,37 +188,45 @@ export class SceneManager {
    *  worlds. The renderer calls this when snapshot.world changes. */
   setWorld(world: World): void {
     this.sky = worldLook(world).sky;
+    this.skyState.world = world;
   }
 
-  /** Drive sun/sky/ambient from time of day and weather. The active world's
-   *  tint endpoints preserve the established palette, with a little night fill. */
+  /** Drive sun/sky/ambient from time of day and weather: the fog and background
+   *  tint, the sun's direction and strength, and the baked sky environment. */
   update(tod: number, dust: boolean): void {
     const amb = ambientLevel(tod, dust);
     const sk = this.sky;
 
     // sky / fog: dark void at top, tinted horizon — collapse to a single fog+bg
-    const horizon = lerpColor(sk.horizon.night, dust ? sk.horizon.dust : sk.horizon.clear, amb);
-    const top = lerpColor(sk.top.night, dust ? sk.top.dust : sk.top.clear, amb);
-    const sky = top.clone().lerp(horizon, 0.5);
-    this.scene.background = sky;
-    (this.scene.fog as THREE.Fog).color.copy(horizon);
+    lerpColor(sk.horizon.night, dust ? sk.horizon.dust : sk.horizon.clear, amb, this.horizon);
+    lerpColor(sk.top.night, dust ? sk.top.dust : sk.top.clear, amb, this.top);
+    this.background.copy(this.top).lerp(this.horizon, 0.5);
+    (this.scene.fog as THREE.Fog).color.copy(this.horizon);
 
-    // sun arcs across the sky with tod; below horizon at night
+    // sun arcs across the sky with tod; below horizon at night. render() moves
+    // the light with the fitted shadow box, keeping this direction.
     const ang = (tod - 0.5) * Math.PI * 2; // noon at top
     const elev = Math.cos(ang);            // 1 at noon, negative at night
     const sx = Math.sin(ang);
-    // Preserve the established sun direction, but keep its shadow camera far
-    // enough from the ground to include the expanded corners even at dawn.
-    this.sun.position.set(sx * 30 + 6, Math.max(-6, elev * 34) + 6, 18).setLength(60);
+    const sunDir = this.skyState.sunDir.set(sx * 30 + 6, Math.max(-6, elev * 34) + 6, 18).normalize();
+    this.sun.position.copy(sunDir).multiplyScalar(SHADOW_LIGHT_DISTANCE);
+    this.sun.target.position.set(0, 0, 0);
     const sunStrength = Math.max(0, elev);
-    this.sun.intensity = (dust ? 0.35 : 1.0) * (0.15 + sunStrength * 1.35);
-    this.sun.color.copy(lerpColor(sk.sun.low, dust ? sk.sun.dust : sk.sun.clear, 0.4 + amb * 0.6));
+    this.sun.intensity = SUN_GAIN * (dust ? 0.35 : 1.0) * (0.15 + sunStrength * 1.35);
+    lerpColor(sk.sun.low, dust ? sk.sun.dust : sk.sun.clear, 0.4 + amb * 0.6, this.sun.color);
 
-    this.ambientLight.intensity = 0.18 + amb * 0.5;
-    this.ambientLight.color.copy(lerpColor(sk.ambient.low, sk.ambient.high, amb));
-    // Lift night silhouettes with the existing hemisphere tint. Daylight and
-    // the world palette stay intact; emissive warning colors are untouched.
-    this.hemi.intensity = 0.2 + amb * 0.45 + 0.2 * nightLevel(tod, dust);
+    this.ambientLight.intensity = AMBIENT_FLOOR + AMBIENT_DAY * amb;
+    lerpColor(sk.ambient.low, sk.ambient.high, amb, this.ambientLight.color);
+
+    // the sky environment: re-baked only when it moved enough to notice;
+    // brightness follows daylight every frame
+    const s = this.skyState;
+    s.daylight = amb;
+    s.dust = dust;
+    s.sunElev = elev;
+    this.skyEnv.update(s, performance.now());
+    this.scene.environment = this.skyEnv.texture;
+    this.scene.environmentIntensity = envIntensity(s);
   }
 
   /** point the iso camera at `focus` (world space) with the given ortho extent.
@@ -202,10 +250,28 @@ export class SceneManager {
   }
 
   render(): void {
+    if (this.renderer.shadowMap.enabled) this.fitShadows();
     this.postfx.render();
   }
 
+  /** wrap the sun's shadow map around what the camera can see this frame */
+  private fitShadows(): void {
+    const fit = fitShadow(orthoViewOf(this.camera, this.shadowView), this.skyState.sunDir, this.shadowSize, this.shadowFit);
+    this.sun.position.copy(fit.lightPosition);
+    this.sun.target.position.copy(fit.center);
+    const cam = this.sun.shadow.camera;
+    cam.left = -fit.halfSize;
+    cam.right = fit.halfSize;
+    cam.top = fit.halfSize;
+    cam.bottom = -fit.halfSize;
+    cam.near = fit.near;
+    cam.far = fit.far;
+    cam.up.copy(fit.up);
+    cam.updateProjectionMatrix();
+  }
+
   dispose(): void {
+    this.skyEnv.dispose();
     this.postfx.dispose();
     this.renderer.dispose();
   }

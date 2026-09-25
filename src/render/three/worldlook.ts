@@ -87,6 +87,9 @@ export interface MatLook {
   metal: number;    // a touch of metalness for an icy/wet sheen (mars 0.02)
   /** emissive intensity (uses the ground accent colour) — a faint glow for Io's lava (mars 0) */
   emissive: number;
+  /** share of the sky environment's fill the soil takes (envMapIntensity). Below 1
+   *  keeps lit structures standing out from the ground. */
+  skyFill: number;
 }
 
 /** everything the renderer needs to theme one world. The shape is intentionally
@@ -123,7 +126,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
     relief: { noise: 0.5, dune: 0.35, duneFreq: 0.14, ridge: 1.8 },
     rocks: { count: 90, min: 0.18, max: 0.78, detail: 0, squash: 0.7 },
     monoliths: { count: 7 },
-    mat: { rough: 0.97, metal: 0.02, emissive: 0 },
+    mat: { rough: 0.97, metal: 0.02, emissive: 0, skyFill: 0.45 },
     rockColor: 0x5a3322,
     monolithColor: 0x2a1a16,
     sky: {
@@ -148,7 +151,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
     relief: { noise: 0.32, dune: 0.55, duneFreq: 0.09, ridge: 1.15 }, // flat glacial plains, broad icy swells, low ridges
     rocks: { count: 55, min: 0.16, max: 0.6, detail: 0, squash: 1.0 }, // sparse sharp ice shards
     monoliths: { count: 9 },
-    mat: { rough: 0.55, metal: 0.18, emissive: 0 }, // icy specular sheen
+    mat: { rough: 0.55, metal: 0.18, emissive: 0, skyFill: 0.45 }, // icy specular sheen
     rockColor: 0x8aa0b4,
     monolithColor: 0x3a4654,
     sky: {
@@ -158,8 +161,8 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
       sun: { low: [70, 84, 96], dust: [150, 170, 190], clear: [206, 224, 240] }, // cold, weak white
       ambient: { low: [26, 32, 46], high: [150, 165, 190] },
       env: {
-        zenith: { night: [8, 12, 20], dust: [60, 72, 88], clear: [150, 176, 206] },
-        horizon: { night: [14, 18, 26], dust: [120, 138, 156], clear: [196, 214, 232] },
+        zenith: { night: [8, 12, 20], dust: [60, 72, 88], clear: [132, 156, 186] },
+        horizon: { night: [14, 18, 26], dust: [120, 138, 156], clear: [172, 190, 210] },
         bounce: 1.1,
         lowSunGlow: [200, 214, 235],
       },
@@ -174,7 +177,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
     relief: { noise: 0.72, dune: 0.2, duneFreq: 0.22, ridge: 2.7 }, // jagged, chaotic, tall sharp volcanic peaks
     rocks: { count: 150, min: 0.2, max: 0.95, detail: 0, squash: 0.9 }, // dense jagged basalt boulders
     monoliths: { count: 12 }, // volcanic spires on the skyline
-    mat: { rough: 0.96, metal: 0.04, emissive: 0.14 }, // faint sulfur/lava glow
+    mat: { rough: 0.96, metal: 0.04, emissive: 0.14, skyFill: 0.45 }, // faint sulfur/lava glow
     rockColor: 0x2a2418,
     monolithColor: 0x141008,
     sky: {
@@ -200,7 +203,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
     relief: { noise: 0.24, dune: 0.9, duneFreq: 0.075, ridge: 0.85 }, // smooth base under big rolling dunes, low horizon
     rocks: { count: 28, min: 0.2, max: 0.7, detail: 1, squash: 0.6 }, // few rounded, half-buried in the sand
     monoliths: { count: 4 },
-    mat: { rough: 0.99, metal: 0, emissive: 0 }, // dead matte tholin
+    mat: { rough: 0.99, metal: 0, emissive: 0, skyFill: 0.5 }, // dead matte tholin
     rockColor: 0x4a3a1e,
     monolithColor: 0x241a0c,
     sky: {

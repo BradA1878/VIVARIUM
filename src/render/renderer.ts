@@ -10,11 +10,11 @@ import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, DepositKind,
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { BridgeCore } from "@/worker/bridge";
-import { PerfGovernor, STEP_HIGH, STEP_LOW, snapHz } from "./perf";
+import { PerfGovernor, STEP_HIGH, STEP_LOW, snapHz, type PerfStep } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
 import { GroundDetails } from "./three/ground-details";
-import { CELL, GridSpace, SCENIC_MARGIN } from "./three/coords";
+import { CELL, GridSpace } from "./three/coords";
 import { createMaterials } from "./three/materials";
 import { buildKitMesh, type KitMesh, type KitEnv } from "./three/kit";
 import { PlacementController, type HoverInfo, type SelectInfo } from "./three/placement";
@@ -239,7 +239,7 @@ export class ThreeRenderer {
   constructor(canvas: HTMLCanvasElement, bridge: BridgeCore, gridN: number) {
     this.bridge = bridge;
     this.grid = new GridSpace(gridN);
-    this.scene = new SceneManager(canvas, this.grid.half() + SCENIC_MARGIN * CELL);
+    this.scene = new SceneManager(canvas);
     this.terrain = new Terrain(this.grid);
     this.scene.scene.add(this.terrain.group);
     this.scene.scene.add(this.groundDetails.group);
@@ -263,6 +263,7 @@ export class ThreeRenderer {
     this.scene.scene.add(this.hazardFx.group);
     // the renderer observes the event stream for transient FX (doc §0)
     this.unsubEvents = bridge.onEvent((e) => this.onColonyEvent(e));
+    this.applyStep(this.governor.step());
     this.onResize = this.onResize.bind(this);
     window.addEventListener("resize", this.onResize);
   }
@@ -499,11 +500,19 @@ export class ThreeRenderer {
   private syncStep(): void {
     if (!this.governor.stepChanged) return;
     this.governor.stepChanged = false;
-    const s = this.governor.step();
+    this.applyStep(this.governor.step());
+  }
+
+  /** push every lever of a ladder step into the scene (each lever no-ops on an
+   *  unchanged value). Also run once at construction: the governor raises no
+   *  change for its start step, and scene defaults must not decide it. */
+  private applyStep(s: PerfStep): void {
     this.setFpsCap(s.fps);
     this.scene.setPixelRatio(s.ratio);
     this.scene.setBloom(s.bloom);
     this.scene.setShadows(s.shadows);
+    this.scene.setShadowSize(s.shadowSize);
+    this.scene.setAO(s.ao);
   }
 
   private onResize(): void {
