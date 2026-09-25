@@ -184,6 +184,9 @@ export function buildAstronaut(): AstronautMesh {
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.02;
   ring.visible = false;
+  // a marker, not a surface: its pulsing opacity crosses AO's cut, so without
+  // this it would drop in and out of the AO pre-pass
+  ring.userData.noAO = true;
   object.add(ring);
 
   // --- carry cube above the head (hidden unless carrying) --------------------

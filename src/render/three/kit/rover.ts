@@ -144,6 +144,7 @@ export function buildRover(): RoverMesh {
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.02;
   ring.visible = false;
+  ring.userData.noAO = true; // a marker, not a surface (see astronaut.ts)
   object.add(ring);
 
   return {

@@ -92,6 +92,7 @@ export class PlacementController {
     // door-direction arrow (apex points +Z; we lookAt() to aim it)
     const aGeo = new THREE.ConeGeometry(0.14, 0.34, 4).rotateX(Math.PI / 2);
     this.arrow = new THREE.Mesh(aGeo, new THREE.MeshBasicMaterial({ color: CYAN }));
+    this.arrow.userData.noAO = true; // an overlay marker: no AO shadow on the ground
     this.arrow.visible = false;
     this.group.add(this.arrow);
 

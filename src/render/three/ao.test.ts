@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { GTAOShader } from "three/addons/shaders/GTAOShader.js";
 import { AO_MIN_OPACITY, ColonyAOPass, aoVisible } from "./ao";
+import { buildAstronaut } from "./kit/astronaut";
+import { buildRover } from "./kit/rover";
 
 const mesh = (params: THREE.MeshStandardMaterialParameters = {}) =>
   new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial(params));
@@ -25,6 +27,21 @@ describe("aoVisible", () => {
       new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.3 }),
     ]);
     expect(aoVisible(multi)).toBe(false);
+  });
+
+  it("leaves out the astronaut and rover possession rings at every pulse (their opacity crosses the 85% cut)", () => {
+    const ringOf = (root: THREE.Object3D) =>
+      root.children.find((o) => (o as THREE.Mesh).geometry instanceof THREE.RingGeometry)!;
+    const astronaut = buildAstronaut();
+    const rover = buildRover();
+    for (const pulse of [0, 0.5, 1]) {
+      astronaut.setState(true, null, pulse);
+      rover.setState(true, 0, pulse);
+      expect(aoVisible(ringOf(astronaut.object)), `astronaut, pulse ${pulse}`).toBe(false);
+      expect(aoVisible(ringOf(rover.object)), `rover, pulse ${pulse}`).toBe(false);
+    }
+    astronaut.dispose();
+    rover.dispose();
   });
 });
 

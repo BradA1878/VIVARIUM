@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import type { BridgeCore } from "@/worker/bridge";
+import { aoVisible } from "./ao";
 import { GridSpace } from "./coords";
 import { PlacementController } from "./placement";
 
@@ -100,5 +101,18 @@ describe("placement click coordinates", () => {
     input.dragging = true;
     dispatch("click", 2, 2);
     expect(bridge.place).not.toHaveBeenCalled();
+  });
+});
+
+describe("placement overlay", () => {
+  it("keeps the ghost tiles, outline and door arrow out of the AO pre-pass", () => {
+    const { controller, dispatch } = fixture();
+    controller.setTool("hab"); // a door building, so the arrow is up
+    dispatch("pointermove", 2, 2);
+    controller.update();
+    const shown: THREE.Object3D[] = [];
+    controller.group.traverse((o) => { if (o !== controller.group && o.visible) shown.push(o); });
+    expect(shown.some((o) => (o as THREE.Mesh).geometry instanceof THREE.ConeGeometry)).toBe(true);
+    for (const o of shown) expect(aoVisible(o), (o as THREE.Mesh).geometry.type).toBe(false);
   });
 });
