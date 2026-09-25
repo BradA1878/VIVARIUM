@@ -178,11 +178,18 @@ standard material then gets reflections plus a sky/ground fill from it.
 - **Re-bakes** (`rebakeReason()`, pure and unit-tested): immediately on a world
   or weather change; otherwise when the sun has moved more than 5° (ignored
   while it is below the horizon) or daylight has moved 0.04 — never more than
-  four times a second. At 1× that is roughly one bake every two seconds. Each
-  replaced map is disposed. A restored WebGL context loses the map's contents,
-  so `SceneManager` calls `SkyEnvironment.invalidate()` on
-  `webglcontextrestored` and the next frame bakes again. `scene.envBakes`
-  exposes the count for DEV.
+  four times a second. At 1× that is roughly one bake every two seconds.
+- **One map for the scene's life.** A bake draws the sky into a persistent 256²
+  half-float cube (a `CubeCamera`) and `PMREMGenerator.fromCubemap` filters it
+  into the same output target every time, so `scene.environment` never changes
+  identity and a bake allocates and releases nothing. The first version used
+  `fromScene`, which returns a new half-float target per call: on an M4 Pro in a
+  Retina window, frames that re-baked that way took 40–95 ms (a visible hitch
+  every couple of seconds at 1×, and it kept AUTO from climbing back to 60 fps);
+  rewriting one target takes about 0.2 ms, and a re-baking frame costs the same
+  as any other. A restored WebGL context loses the map's contents, so
+  `SceneManager` calls `SkyEnvironment.invalidate()` on `webglcontextrestored`
+  and the next frame refills it. `scene.envBakes` exposes the count for DEV.
 - **Fills.** The environment replaces the old hemisphere light; the ambient
   light is reduced to a small floor. The sun keeps its direction and color curve
   with a gain (`SUN_GAIN` 1.5 against `ENV_BASE` 0.8) that keeps direct light

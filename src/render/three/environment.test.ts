@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import {
-  DAYLIGHT_STEP, ENV_BASE, MIN_BAKE_GAP_MS, SUN_STEP_RAD, SkyEnvironment,
-  envIntensity, rebakeReason, skyColors, type BakeRecord, type PmremLike, type SkyState,
+  DAYLIGHT_STEP, ENV_BASE, MIN_BAKE_GAP_MS, SKY_CUBE_SIZE, SUN_STEP_RAD, SkyEnvironment,
+  envIntensity, rebakeReason, skyColors, type BakeRecord, type CubeRender, type PmremLike, type SkyState,
 } from "./environment";
 import { WORLD_LOOKS } from "./worldlook";
 import type { World } from "@shared/types";
@@ -108,10 +108,13 @@ describe("envIntensity", () => {
 });
 
 describe("SkyEnvironment", () => {
+  /** PMREMGenerator.fromCubemap(cubemap, renderTarget) writes into renderTarget
+   *  when one is given and allocates only when it is null */
   function fakePmrem() {
     const targets: { texture: THREE.Texture; dispose: ReturnType<typeof vi.fn> }[] = [];
     const pmrem = {
-      fromScene: vi.fn(() => {
+      fromCubemap: vi.fn((_cube: THREE.CubeTexture, target: THREE.WebGLRenderTarget | null = null) => {
+        if (target) return target;
         const t = { texture: new THREE.Texture(), dispose: vi.fn() };
         targets.push(t);
         return t as unknown as THREE.WebGLRenderTarget;
@@ -121,35 +124,52 @@ describe("SkyEnvironment", () => {
     return { pmrem: pmrem as unknown as PmremLike & typeof pmrem, targets };
   }
 
-  it("bakes once, reuses the map until the sky moves, and disposes what it replaces", () => {
+  it("bakes into one map for its whole life: each bake re-renders the sky cube and rewrites the same target", () => {
     const { pmrem, targets } = fakePmrem();
-    const env = new SkyEnvironment(pmrem);
+    const renderCube = vi.fn<CubeRender>();
+    const env = new SkyEnvironment(pmrem, renderCube);
     expect(env.texture).toBeNull();
     expect(env.update(state(), 0)).toBe("first");
     expect(env.bakes).toBe(1);
-    expect(env.texture).toBe(targets[0].texture);
+    const map = env.texture;
+    expect(map).toBe(targets[0].texture);
     expect(env.update(state(), 100)).toBeNull();
     expect(env.bakes).toBe(1);
     expect(env.update(state({ world: "titan" }), 150)).toBe("world");
-    expect(env.bakes).toBe(2);
-    expect(targets[0].dispose).toHaveBeenCalledTimes(1);
-    expect(env.texture).toBe(targets[1].texture);
+    expect(env.update(state({ world: "titan", dust: true }), 160)).toBe("weather");
+    expect(env.bakes).toBe(3);
+    // the same texture object throughout: materials never see a new environment
+    // map, and nothing is allocated or released per bake
+    expect(env.texture).toBe(map);
+    expect(targets).toHaveLength(1);
+    expect(targets[0].dispose).not.toHaveBeenCalled();
+    expect(pmrem.fromCubemap.mock.calls.map((c) => c[1] ?? null)).toEqual([null, targets[0], targets[0]]);
+    // the sky is drawn into the persistent cube once per bake, at the PMREM's 256² input size
+    expect(renderCube).toHaveBeenCalledTimes(3);
+    const [camera, scene] = renderCube.mock.calls[0];
+    expect(camera.renderTarget.width).toBe(SKY_CUBE_SIZE);
+    expect(SKY_CUBE_SIZE).toBe(256);
+    expect(pmrem.fromCubemap.mock.calls[0][0]).toBe(camera.renderTarget.texture);
+    expect(renderCube.mock.calls.every((c) => c[0] === camera && c[1] === scene)).toBe(true);
+    const cubeDispose = vi.spyOn(camera.renderTarget, "dispose");
     env.dispose();
-    expect(targets[1].dispose).toHaveBeenCalledTimes(1);
+    expect(targets[0].dispose).toHaveBeenCalledTimes(1);
+    expect(cubeDispose).toHaveBeenCalledTimes(1);
     expect(pmrem.dispose).toHaveBeenCalledTimes(1);
     expect(env.texture).toBeNull();
   });
 
   it("bakes again on the next update after invalidate() (a restored WebGL context lost the map)", () => {
     const { pmrem, targets } = fakePmrem();
-    const env = new SkyEnvironment(pmrem);
+    const env = new SkyEnvironment(pmrem, vi.fn<CubeRender>());
     expect(env.update(state(), 1000)).toBe("first");
     expect(env.update(state(), 1001)).toBeNull(); // unchanged sky, inside the rate limit
     env.invalidate();
     expect(env.update(state(), 1002)).toBe("first");
     expect(env.bakes).toBe(2);
-    expect(targets[0].dispose).toHaveBeenCalledTimes(1);
-    expect(env.texture).toBe(targets[1].texture);
+    // re-filled in place: the restored context rebuilds the target's GL objects
+    expect(targets).toHaveLength(1);
+    expect(env.texture).toBe(targets[0].texture);
     env.dispose();
   });
 });

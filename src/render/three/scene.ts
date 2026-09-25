@@ -132,7 +132,10 @@ export class SceneManager {
     this.ambientLight = new THREE.AmbientLight(0x4a4660, AMBIENT_FLOOR);
     this.scene.add(this.ambientLight);
 
-    this.skyEnv = new SkyEnvironment(new THREE.PMREMGenerator(this.renderer));
+    this.skyEnv = new SkyEnvironment(
+      new THREE.PMREMGenerator(this.renderer),
+      (camera, scene) => camera.update(this.renderer, scene),
+    );
     this.renderer.domElement.addEventListener("webglcontextrestored", this.onContextRestored);
 
     this.postfx = new PostFx(this.renderer, this.scene, this.camera);

@@ -58,7 +58,13 @@ export const MIN_BAKE_GAP_MS = 250;
 export const ENV_BASE = 0.8;
 
 /** the PMREMGenerator surface SkyEnvironment uses (injectable for tests) */
-export type PmremLike = Pick<THREE.PMREMGenerator, "fromScene" | "dispose">;
+export type PmremLike = Pick<THREE.PMREMGenerator, "fromCubemap" | "dispose">;
+/** draws the sky scene into the cube camera's target: CubeCamera.update with
+ *  the app's renderer (injectable for tests, which have no WebGL) */
+export type CubeRender = (camera: THREE.CubeCamera, scene: THREE.Scene) => void;
+/** face size the sky cube is rendered at: the 256² input PMREMGenerator
+ *  .fromScene used, so the baked map keeps the same layout and mip chain */
+export const SKY_CUBE_SIZE = 256;
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -153,16 +159,36 @@ void main() {
   gl_FragColor = vec4(c, 1.0);
 }`;
 
+/** Bakes go through two persistent targets: the sky is drawn into one cube
+ *  (a CubeCamera) and PMREMGenerator.fromCubemap filters it into one reused
+ *  output target. The environment texture therefore stays the same object for
+ *  the life of the scene, and a bake allocates and releases nothing. The first
+ *  version called fromScene, which returns a new half-float target every time:
+ *  measured on an M4 Pro in a Retina window, frames that re-baked that way ran
+ *  40–95 ms (a visible hitch every couple of seconds at 1×), where rewriting
+ *  the same target measured about 0.2 ms. */
 export class SkyEnvironment {
   private readonly pmrem: PmremLike;
+  private readonly renderCube: CubeRender;
   private readonly skyScene = new THREE.Scene();
   private readonly skyMesh: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
+  private readonly cubeCamera: THREE.CubeCamera;
   private target: THREE.WebGLRenderTarget | null = null;
   private last: BakeRecord | null = null;
   private bakeCount = 0;
 
-  constructor(pmrem: PmremLike) {
+  constructor(pmrem: PmremLike, renderCube: CubeRender) {
     this.pmrem = pmrem;
+    this.renderCube = renderCube;
+    // linear half-float, like the target fromScene rendered into: the sky
+    // colors are normalized HDR values and must not be clamped or encoded
+    const cube = new THREE.WebGLCubeRenderTarget(SKY_CUBE_SIZE, {
+      type: THREE.HalfFloatType,
+      generateMipmaps: false,
+      colorSpace: THREE.LinearSRGBColorSpace,
+      depthBuffer: false,
+    });
+    this.cubeCamera = new THREE.CubeCamera(0.1, 10, cube);
     const material = new THREE.ShaderMaterial({
       uniforms: {
         zenith: { value: new THREE.Color() },
@@ -220,10 +246,9 @@ export class SkyEnvironment {
     (u.sunColor.value as THREE.Color).copy(c.sun).multiplyScalar(norm);
     (u.sunDir.value as THREE.Vector3).copy(state.sunDir);
     u.glowPower.value = c.glowPower;
-    const next = this.pmrem.fromScene(this.skyScene, 0, 0.1, 10);
-    const prev = this.target;
-    this.target = next;
-    prev?.dispose();
+    this.renderCube(this.cubeCamera, this.skyScene);
+    // null only on the first bake; afterwards fromCubemap refills this target
+    this.target = this.pmrem.fromCubemap(this.cubeCamera.renderTarget.texture, this.target);
     this.bakeCount++;
   }
 
@@ -231,6 +256,7 @@ export class SkyEnvironment {
     this.target?.dispose();
     this.target = null;
     this.last = null;
+    this.cubeCamera.renderTarget.dispose();
     this.pmrem.dispose();
     this.skyMesh.geometry.dispose();
     this.skyMesh.material.dispose();
