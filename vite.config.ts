@@ -20,6 +20,12 @@ export default defineConfig({
   },
   server: {
     port: 5180,
+    // Agent git worktrees (.claude/worktrees), SDD scratch and Playwright QA
+    // output live under the root but are not this app. Unwatched, a new
+    // worktree's tsconfig.json or a worktree build's dist/index.html
+    // force-reloads every open page (and any e2e run in flight). Vite appends
+    // these to its own defaults (.git, node_modules, test-results, cacheDir).
+    watch: { ignored: ["**/.claude/**", "**/.superpowers/**", "**/.playwright-mcp/**"] },
     // Proxy the narrator / persistence API to the Hono server in dev so the
     // provider key never touches the client (doc §3.2). If the server isn't
     // running, answer the proxy error quietly with a 502 (the client falls back
