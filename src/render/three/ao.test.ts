@@ -165,6 +165,25 @@ describe("ColonyAOPass", () => {
     write.dispose();
   });
 
+  it("never leaves the non-occluders hidden, even when its G-buffer render throws", () => {
+    const scene = new THREE.Scene();
+    const tag = new THREE.Sprite();
+    scene.add(tag, mesh());
+    const pass = new ColonyAOPass(scene, new THREE.OrthographicCamera(), 32, 32);
+    const renderer = { shadowMap: { autoUpdate: true } } as unknown as THREE.WebGLRenderer;
+    pass.renderOverride = (() => {
+      throw new Error("G-buffer render failed");
+    }) as typeof pass.renderOverride;
+    pass.renderPass = (() => {}) as typeof pass.renderPass;
+    const read = new THREE.WebGLRenderTarget(32, 32);
+    const write = new THREE.WebGLRenderTarget(32, 32);
+    expect(() => pass.render(renderer, write, read, 0, false)).toThrow("G-buffer render failed");
+    expect(tag.visible).toBe(true);
+    pass.dispose();
+    read.dispose();
+    write.dispose();
+  });
+
   it("uses the orthographic camera's constant view direction, and leaves a perspective pass as three ships it", () => {
     const perspectiveLine = "vec3 viewDir = normalize(-viewPos.xyz);";
     const orthographicLine = "vec3 viewDir = vec3( 0.0, 0.0, 1.0 );";

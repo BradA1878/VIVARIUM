@@ -136,6 +136,9 @@ export class ColonyAOPass extends GTAOPass {
       super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
     } finally {
       shadowMap.autoUpdate = autoUpdate;
+      // GTAOPass restores visibility only after a G-buffer render that returns;
+      // after one that threw, this shows what it hid (otherwise a no-op)
+      this.restoreVisibility();
     }
     this.blendMaterial.uniforms.intensity.value = this.blendIntensity;
     this.blendMaterial.uniforms.tDiffuse.value = this.pdRenderTarget.texture;
