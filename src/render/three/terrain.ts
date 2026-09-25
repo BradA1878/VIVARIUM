@@ -96,6 +96,9 @@ export class Terrain {
   readonly surfaceHalfSpan: number;
   private readonly surfaceHeights: Float32Array;
   private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
+  // InstancedMesh's instance-matrix/instance-color buffers are only freed by
+  // its own dispose() (r169) — geometry/material dispose alone leaks them.
+  private readonly instancedMeshes: THREE.InstancedMesh[] = [];
   /** displaced surface at world (x, z): base noise flattened over the play
    *  grid plus the far ridged relief and broad dune swells — shared by the
    *  plane verts and the rock/monolith scatter so everything sits on the
@@ -202,6 +205,7 @@ export class Terrain {
     const pebbles = buildPebbles((x, z) => this.heightAt(x, z), half + margin * CELL, look);
     this.group.add(pebbles);
     this.disposables.push(pebbles.geometry, pebbles.material as THREE.Material);
+    this.instancedMeshes.push(pebbles);
   }
 
   /** Height on the rendered triangles, not the underlying continuous noise.
@@ -262,6 +266,7 @@ export class Terrain {
     mesh.instanceMatrix.needsUpdate = true;
     this.group.add(mesh);
     this.disposables.push(rockGeo, rockMat);
+    this.instancedMeshes.push(mesh);
   }
 
   /** Tapered five-sided basalt monoliths out on the far relief — tall
@@ -298,9 +303,11 @@ export class Terrain {
     mesh.instanceMatrix.needsUpdate = true;
     this.group.add(mesh);
     this.disposables.push(geo, mat);
+    this.instancedMeshes.push(mesh);
   }
 
   dispose(): void {
     for (const d of this.disposables) d.dispose();
+    for (const mesh of this.instancedMeshes) mesh.dispose();
   }
 }

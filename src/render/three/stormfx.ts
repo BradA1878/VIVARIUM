@@ -23,8 +23,13 @@ const SKIRT_OP = 0.08;
 
 // vUv.y runs 0 (shell base) → 1 (shell top); vNormalV/vViewV are view-space so
 // the fragment shader can build a silhouette-hugging rim term with no extra
-// per-object uniforms.
-const DEVIL_VERT = /* glsl */ `
+// per-object uniforms. The game's camera is always orthographic, where every
+// pixel looks the same direction down the camera axis — unlike -mvPosition
+// (a per-pixel vector back to a perspective eye), which would skew the rim
+// toward screen center and read wrong for devils away from it. `isOrthographic`
+// is a uniform three declares on every shader's boilerplate for the active
+// camera, so no extra uniform is needed here.
+export const DEVIL_VERT = /* glsl */ `
 varying vec2 vUv;
 varying vec3 vNormalV;
 varying vec3 vViewV;
@@ -33,7 +38,7 @@ void main() {
   vUv = uv;
   vNormalV = normalize(normalMatrix * normal);
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-  vViewV = -mvPosition.xyz;
+  vViewV = isOrthographic ? vec3(0.0, 0.0, 1.0) : -mvPosition.xyz;
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
 }`;
@@ -266,6 +271,11 @@ export class StormFx {
     d.outerMat.uniforms.spin.value = d.spin;
     d.innerMat.uniforms.spin.value = d.spin;
     d.skirtMat.uniforms.spin.value = d.spin;
+    // reset the noise clock so a long-lived pooled rig never hands the
+    // sin-based hash a huge argument (see the ground-shader precision note)
+    d.outerMat.uniforms.time.value = 0;
+    d.innerMat.uniforms.time.value = 0;
+    d.skirtMat.uniforms.time.value = 0;
     d.group.visible = true;
   }
 

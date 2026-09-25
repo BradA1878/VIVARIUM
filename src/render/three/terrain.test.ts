@@ -166,14 +166,20 @@ describe("expanded construction terrain", () => {
     const terrain = new Terrain(grid);
     const groundMesh = ground(terrain);
     const [rocks, monoliths] = decorations(terrain);
+    const pebbles = terrain.group.getObjectByName("pebbles") as THREE.InstancedMesh;
     const spies = [
       vi.spyOn(groundMesh.geometry, "dispose"),
       vi.spyOn(groundMesh.material, "dispose"),
       vi.spyOn(groundMesh.material.bumpMap!, "dispose"),
       vi.spyOn(rocks.geometry, "dispose"),
       vi.spyOn(rocks.material as THREE.Material, "dispose"),
+      vi.spyOn(rocks, "dispose"),
       vi.spyOn(monoliths.geometry, "dispose"),
       vi.spyOn(monoliths.material as THREE.Material, "dispose"),
+      vi.spyOn(monoliths, "dispose"),
+      vi.spyOn(pebbles.geometry, "dispose"),
+      vi.spyOn(pebbles.material as THREE.Material, "dispose"),
+      vi.spyOn(pebbles, "dispose"),
     ];
     terrain.dispose();
     for (const spy of spies) expect(spy).toHaveBeenCalledTimes(1);
