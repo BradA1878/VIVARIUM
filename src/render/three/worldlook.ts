@@ -4,9 +4,10 @@
    settled world (mars/ceres/io/titan) gets a distinct palette + sky/sun tint so
    the renderer can re-theme the scene when snapshot.world changes.
 
-   mars is the ANCHOR: every field below is today's hardcoded constant copied
-   verbatim from terrain.ts / scene.ts, so a Mars colony renders pixel-identically
-   to before this table existed. ceres/io/titan re-tint the SAME shaders.
+   mars is the ANCHOR: its fog/terrain fields are the original hardcoded
+   constants from terrain.ts / scene.ts; the `env` block (2026-09 lighting pass)
+   intentionally changes how every world is lit. ceres/io/titan re-tint the SAME
+   shaders.
 
    Colours are plain [r, g, b] 0..255 triples (scene.ts works in that space) or
    packed hex (the material colours terrain.ts feeds straight to three). Only the
@@ -16,6 +17,19 @@ import type { World } from "@shared/types";
 
 /** an 0..255 RGB triple — the units scene.ts already lerps in */
 export type RGB = [number, number, number];
+
+/** the sky that LIGHTS the scene (baked into scene.environment by environment.ts).
+ *  Separate from the fog/background endpoints: those paint the far haze; these
+ *  are what metal, frosted and glass surfaces reflect and what every standard
+ *  material takes its sky/ground fill from. Same 0..255-as-linear convention. */
+export interface EnvLook {
+  zenith: { night: RGB; dust: RGB; clear: RGB };
+  horizon: { night: RGB; dust: RGB; clear: RGB };
+  /** albedo factor on the world's mean soil color for the lower hemisphere */
+  bounce: number;
+  /** near-sun tint while the sun is low (Mars: the blue sunset glow) */
+  lowSunGlow: RGB;
+}
 
 /** sky/sun/ambient endpoints scene.update() lerps between by the ambient curve.
  *  Each is the [night, dust, clear] / [low, high] pair the existing code uses. */
@@ -28,6 +42,8 @@ export interface SkyLook {
   sun: { low: RGB; dust: RGB; clear: RGB };
   /** ambient fill tint: night (low) → day (high) */
   ambient: { low: RGB; high: RGB };
+  /** image-based-lighting sky the environment map is baked from (environment.ts) */
+  env: EnvLook;
 }
 
 /** the displaced-ground vertex palette terrain.ts blends per vertex (packed hex
@@ -115,6 +131,12 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
       top: { night: [8, 10, 14], dust: [44, 28, 20], clear: [22, 24, 32] },
       sun: { low: [90, 70, 60], dust: [200, 120, 70], clear: [255, 226, 190] },
       ambient: { low: [30, 28, 44], high: [120, 120, 150] },
+      env: {
+        zenith: { night: [10, 13, 22], dust: [118, 82, 60], clear: [128, 112, 108] },
+        horizon: { night: [16, 16, 24], dust: [150, 98, 66], clear: [232, 166, 118] },
+        bounce: 1.6,
+        lowSunGlow: [70, 110, 170], // Mars sunsets glow blue around the sun
+      },
     },
   },
 
@@ -135,6 +157,12 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
       top: { night: [8, 12, 18], dust: [40, 52, 66], clear: [120, 150, 184] },
       sun: { low: [70, 84, 96], dust: [150, 170, 190], clear: [206, 224, 240] }, // cold, weak white
       ambient: { low: [26, 32, 46], high: [150, 165, 190] },
+      env: {
+        zenith: { night: [8, 12, 20], dust: [60, 72, 88], clear: [150, 176, 206] },
+        horizon: { night: [14, 18, 26], dust: [120, 138, 156], clear: [196, 214, 232] },
+        bounce: 1.1,
+        lowSunGlow: [200, 214, 235],
+      },
     },
   },
 
@@ -155,6 +183,12 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
       top: { night: [12, 9, 6], dust: [52, 40, 16], clear: [54, 44, 22] },
       sun: { low: [96, 80, 44], dust: [210, 170, 70], clear: [248, 226, 130] }, // hot, yellow-white
       ambient: { low: [34, 28, 16], high: [150, 134, 80] },
+      env: {
+        zenith: { night: [12, 10, 8], dust: [110, 88, 36], clear: [120, 104, 70] },
+        horizon: { night: [20, 16, 10], dust: [160, 126, 44], clear: [214, 180, 92] },
+        bounce: 1.2,
+        lowSunGlow: [240, 190, 110],
+      },
     },
   },
 
@@ -175,6 +209,12 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
       top: { night: [26, 20, 10], dust: [70, 54, 26], clear: [96, 74, 36] },
       sun: { low: [80, 64, 34], dust: [180, 142, 76], clear: [216, 178, 110] }, // dim, muddy gold
       ambient: { low: [38, 30, 16], high: [140, 116, 70] },
+      env: {
+        zenith: { night: [30, 24, 14], dust: [100, 78, 40], clear: [140, 110, 62] },
+        horizon: { night: [42, 32, 18], dust: [140, 106, 50], clear: [180, 140, 72] },
+        bounce: 1.0,
+        lowSunGlow: [190, 120, 60],
+      },
     },
   },
 };
