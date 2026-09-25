@@ -21,13 +21,63 @@ const OUTER_OP = 0.16;
 const INNER_OP = 0.1;
 const SKIRT_OP = 0.08;
 
+// vUv.y runs 0 (shell base) → 1 (shell top); vNormalV/vViewV are view-space so
+// the fragment shader can build a silhouette-hugging rim term with no extra
+// per-object uniforms.
+const DEVIL_VERT = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vNormalV;
+varying vec3 vViewV;
+#include <fog_pars_vertex>
+void main() {
+  vUv = uv;
+  vNormalV = normalize(normalMatrix * normal);
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  vViewV = -mvPosition.xyz;
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+
+const DEVIL_FRAG = /* glsl */ `
+uniform vec3 color;
+uniform float opacity;
+uniform float time;
+uniform float spin;
+varying vec2 vUv;
+varying vec3 vNormalV;
+varying vec3 vViewV;
+#include <fog_pars_fragment>
+
+// cheap value noise — a pure function of its input, not Math.random
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float a = hash(i);
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+void main() {
+  float h = smoothstep(0.0, 0.18, vUv.y) * (1.0 - smoothstep(0.55, 1.0, vUv.y));
+  float rim = pow(1.0 - abs(dot(normalize(vNormalV), normalize(vViewV))), 1.5);
+  float swirl = 0.55 + 0.45 * noise(vec2(vUv.x * 7.0 + time * spin, vUv.y * 3.0 - time * 0.8));
+  gl_FragColor = vec4(color, opacity * h * mix(0.35, 1.0, rim) * swirl);
+  #include <fog_fragment>
+}`;
+
 interface DevilRig {
   group: THREE.Group;
   outer: THREE.Mesh;
   inner: THREE.Mesh;
-  outerMat: THREE.MeshBasicMaterial;
-  innerMat: THREE.MeshBasicMaterial;
-  skirtMat: THREE.MeshBasicMaterial;
+  outerMat: THREE.ShaderMaterial;
+  innerMat: THREE.ShaderMaterial;
+  skirtMat: THREE.ShaderMaterial;
   active: boolean;
   /** debug devils ride out their full life even with no storm */
   forced: boolean;
@@ -147,13 +197,23 @@ export class StormFx {
 
   // --- internals --------------------------------------------------------------
 
-  private makeDustMat(opacity: number): THREE.MeshBasicMaterial {
-    return new THREE.MeshBasicMaterial({
-      color: DUST,
+  private makeDustMat(opacity: number): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
+      uniforms: THREE.UniformsUtils.merge([
+        THREE.UniformsLib.fog,
+        {
+          color: { value: new THREE.Color(DUST) },
+          opacity: { value: opacity },
+          time: { value: 0 },
+          spin: { value: 1 },
+        },
+      ]),
+      vertexShader: DEVIL_VERT,
+      fragmentShader: DEVIL_FRAG,
       transparent: true,
-      opacity,
       depthWrite: false,
       side: THREE.DoubleSide,
+      fog: true,
     });
   }
 
@@ -200,9 +260,12 @@ export class StormFx {
     d.spin = 2.5 + this.rng() * 2.5;
     const s = 0.8 + this.rng() * 0.5;
     d.group.scale.set(s, 0.85 + this.rng() * 0.4, s);
-    d.outerMat.opacity = 0;
-    d.innerMat.opacity = 0;
-    d.skirtMat.opacity = 0;
+    d.outerMat.uniforms.opacity.value = 0;
+    d.innerMat.uniforms.opacity.value = 0;
+    d.skirtMat.uniforms.opacity.value = 0;
+    d.outerMat.uniforms.spin.value = d.spin;
+    d.innerMat.uniforms.spin.value = d.spin;
+    d.skirtMat.uniforms.spin.value = d.spin;
     d.group.visible = true;
   }
 
@@ -237,9 +300,12 @@ export class StormFx {
       d.inner.rotation.y -= d.spin * 1.7 * dt;
       // 1.5s opacity fade at both ends of the 8-15s life
       const k = Math.max(0, Math.min(1, d.life / DEVIL_FADE, (d.maxLife - d.life) / DEVIL_FADE));
-      d.outerMat.opacity = OUTER_OP * k;
-      d.innerMat.opacity = INNER_OP * k;
-      d.skirtMat.opacity = SKIRT_OP * k;
+      d.outerMat.uniforms.opacity.value = OUTER_OP * k;
+      d.innerMat.uniforms.opacity.value = INNER_OP * k;
+      d.skirtMat.uniforms.opacity.value = SKIRT_OP * k;
+      d.outerMat.uniforms.time.value += dt;
+      d.innerMat.uniforms.time.value += dt;
+      d.skirtMat.uniforms.time.value += dt;
     }
   }
 
