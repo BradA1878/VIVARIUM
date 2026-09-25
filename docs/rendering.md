@@ -158,7 +158,7 @@ warning, never bloom into a halo.
 
 ## Environment lighting
 
-Metal surfaces (`metal()`, metalness 0.6 by default, up to 0.8 on trims and
+Metal surfaces (`metal()`, metalness 0.6 by default, up to 0.85 on trims and
 ribs) take much of their color from what they reflect, and the glass and dome
 shells (`panel()`, PV glass at metalness 0.1, roughness 0.18; `frostedDome()`
 at metalness 0.2) reflect the sky at grazing angles.

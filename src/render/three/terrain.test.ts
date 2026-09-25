@@ -75,10 +75,12 @@ function assertSceneryClear(terrain: Terrain, grid: GridSpace): void {
       const overlapsConstruction = bounds.max.x > -half && bounds.min.x < half
         && bounds.max.z > -half && bounds.min.z < half;
       expect(overlapsConstruction, `${mesh.name} instance ${i} overlaps construction`).toBe(false);
-      expect(bounds.min.x).toBeGreaterThan(-terrain.surfaceHalfSpan);
-      expect(bounds.min.z).toBeGreaterThan(-terrain.surfaceHalfSpan);
-      expect(bounds.max.x).toBeLessThan(terrain.surfaceHalfSpan);
-      expect(bounds.max.z).toBeLessThan(terrain.surfaceHalfSpan);
+      // scenery ends before the edge haze band (and so well inside the terrain)
+      expect(EDGE_HAZE_START).toBeLessThan(terrain.surfaceHalfSpan);
+      expect(bounds.min.x).toBeGreaterThan(-EDGE_HAZE_START);
+      expect(bounds.min.z).toBeGreaterThan(-EDGE_HAZE_START);
+      expect(bounds.max.x).toBeLessThan(EDGE_HAZE_START);
+      expect(bounds.max.z).toBeLessThan(EDGE_HAZE_START);
     }
   }
 }
