@@ -26,9 +26,9 @@ export interface PerfStep {
 }
 
 /** the quality ladder, best first — STEP_HIGH is the HIGH tier and the AUTO
- *  start (60fps at full quality); the governor demotes down it under load — it
- *  sheds fps first (60→30), then resolution with AO and shadow detail, then
- *  shadows, then bloom. STEP_LOW is the LOW tier */
+ *  start on fine pointers (60fps at full quality); the governor demotes down it
+ *  under load — it sheds fps first (60→30), then resolution with AO and shadow
+ *  detail, then shadows, then bloom. STEP_LOW is the LOW tier */
 export const LADDER: readonly PerfStep[] = [
   { fps: 60, ratio: 1.5, bloom: true, shadows: true, shadowSize: 2048, ao: true },
   { fps: 30, ratio: 1.5, bloom: true, shadows: true, shadowSize: 2048, ao: true },
@@ -37,9 +37,10 @@ export const LADDER: readonly PerfStep[] = [
   { fps: 30, ratio: 1.0, bloom: false, shadows: false, shadowSize: 1024, ao: false },
 ];
 
-/** ladder indices the explicit quality tiers pin to. AUTO starts here too
- *  (startStep) — optimistic at 60fps, and the governor auto-demotes any machine
- *  that can't hold it, so the adaptive behaviour is preserved, just top-down. */
+/** ladder indices the explicit quality tiers pin to. AUTO starts at STEP_HIGH
+ *  too on fine pointers (startStep) — optimistic at 60fps, and the governor
+ *  auto-demotes any machine that can't hold it, so the adaptive behaviour is
+ *  preserved, just top-down. Coarse pointers start lower (tunablesForPointer). */
 export const STEP_HIGH = 0;
 export const STEP_LOW = LADDER.length - 1;
 
@@ -83,6 +84,9 @@ export interface PerfTunables {
   cooldownMs: number;
   /** the ladder index a fresh/reset governor sits on */
   startStep: number;
+  /** the best (lowest) ladder index the governor may auto-promote to; pin()
+   *  can still snap past it (an explicit HIGH choice wins) */
+  bestStep: number;
 }
 
 export const TUNABLES: PerfTunables = {
@@ -96,7 +100,16 @@ export const TUNABLES: PerfTunables = {
   promoteMs: 10_000,
   cooldownMs: 5000,
   startStep: STEP_HIGH,
+  bestStep: STEP_HIGH,
 };
+
+/** AUTO tuning by primary pointer. The governor only sees CPU frame-body
+ *  cost, so a GPU-bound phone or tablet on the top step (AO, 2048² shadows,
+ *  ratio 1.5) would find no reason to leave it: coarse pointers start at step
+ *  2 and never auto-promote above it. Fine pointers keep the defaults. */
+export function tunablesForPointer(coarse: boolean): Partial<PerfTunables> {
+  return coarse ? { startStep: 2, bestStep: 2 } : {};
+}
 
 // a sample gap past this (hidden tab, debugger pause) breaks the contiguous
 // sustain evidence; the EMA's α is clamped too, so one late frame can't own it
@@ -110,6 +123,8 @@ export class PerfGovernor {
 
   private readonly ladder: readonly PerfStep[];
   private readonly t: PerfTunables;
+  /** the best index auto-promotion may reach (bestStep, clamped) */
+  private readonly bestIdx: number;
   private idx: number;
   private pinnedIdx: number | null = null;
   private emaMs: number | null = null;
@@ -125,6 +140,7 @@ export class PerfGovernor {
   constructor(ladder: readonly PerfStep[] = LADDER, tunables: Partial<PerfTunables> = {}) {
     this.ladder = ladder;
     this.t = { ...TUNABLES, ...tunables };
+    this.bestIdx = this.clampIdx(this.t.bestStep);
     this.idx = this.clampIdx(this.t.startStep);
   }
 
@@ -166,7 +182,7 @@ export class PerfGovernor {
     const budget = 1000 / this.ladder[this.idx].fps;
     this.overSince = ema > budget * this.t.demoteFrac ? this.overSince ?? nowMs : null;
     this.spikeSince = ema > budget * this.t.spikeFactor ? this.spikeSince ?? nowMs : null;
-    const headroom = this.idx > 0 && ema < (1000 / this.ladder[this.idx - 1].fps) * this.t.promoteFrac;
+    const headroom = this.idx > this.bestIdx && ema < (1000 / this.ladder[this.idx - 1].fps) * this.t.promoteFrac;
     this.underSince = headroom ? this.underSince ?? nowMs : null;
 
     if (this.calibrating(nowMs)) return; // collect only — no transitions yet
@@ -177,7 +193,7 @@ export class PerfGovernor {
       this.shift(this.idx + 1, nowMs);
     } else if (canDemote && this.overSince != null && nowMs - this.overSince >= this.t.demoteMs) {
       this.shift(this.idx + 1, nowMs);
-    } else if (this.idx > 0 && this.underSince != null && nowMs - this.underSince >= this.t.promoteMs) {
+    } else if (this.idx > this.bestIdx && this.underSince != null && nowMs - this.underSince >= this.t.promoteMs) {
       this.shift(this.idx - 1, nowMs);
     }
   }

@@ -10,7 +10,7 @@ import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, DepositKind,
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { BridgeCore } from "@/worker/bridge";
-import { PerfGovernor, STEP_HIGH, STEP_LOW, snapHz, type PerfStep } from "./perf";
+import { LADDER, PerfGovernor, STEP_HIGH, STEP_LOW, snapHz, tunablesForPointer, type PerfStep } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
 import { GroundDetails } from "./three/ground-details";
@@ -184,8 +184,13 @@ export class ThreeRenderer {
   // interval (ms) between consecutive RENDERED frames so judder is measurable.
   private frameLog: number[] | null = null;
   // adaptive quality: the governor walks the LADDER off measured frame-BODY
-  // cost; the explicit LOW/HIGH tiers pin it (setQuality), AUTO lets it drive
-  private governor = new PerfGovernor();
+  // cost; the explicit LOW/HIGH tiers pin it (setQuality), AUTO lets it drive.
+  // A coarse primary pointer (phone, tablet) starts AUTO lower and caps its
+  // climb there, since frame-body cost can't see a GPU-bound device.
+  private governor = new PerfGovernor(
+    LADDER,
+    tunablesForPointer(typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches),
+  );
   private fpsCap = this.governor.step().fps;
 
   // embodied colony: astronauts, deposits, vents, machines, the trader saucer

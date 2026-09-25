@@ -6,7 +6,7 @@
    the pin/reset semantics the renderer builds on.
    ============================================================================ */
 import { describe, it, expect } from "vitest";
-import { PerfGovernor, LADDER, STEP_HIGH, STEP_LOW, snapHz } from "./perf";
+import { PerfGovernor, LADDER, STEP_HIGH, STEP_LOW, snapHz, tunablesForPointer } from "./perf";
 
 /** play frames of one cost from fromMs (inclusive) to untilMs (exclusive) at a
  *  fixed cadence; returns the next un-fed timestamp so phases chain contiguously */
@@ -171,6 +171,28 @@ describe("PerfGovernor ladder", () => {
     expect(i.calibrating).toBe(false);
     g.pin(STEP_LOW);
     expect(g.info().pinned).toBe(STEP_LOW);
+  });
+
+  it("coarse-pointer devices start at step 2 and never auto-promote above it; an explicit HIGH still wins", () => {
+    expect(tunablesForPointer(false)).toEqual({});
+    expect(tunablesForPointer(true)).toEqual({ startStep: 2, bestStep: 2 });
+    const g = new PerfGovernor(LADDER, tunablesForPointer(true));
+    expect(g.index()).toBe(2);
+    expect(g.stepChanged).toBe(false);
+    feed(g, 1, 0, 60000); // a minute of deep headroom: a fine pointer would climb to 0
+    expect(g.index()).toBe(2);
+    g.pin(STEP_HIGH);
+    expect(g.index()).toBe(STEP_HIGH);
+    expect(g.stepChanged).toBe(true);
+  });
+
+  it("a coarse-pointer governor still demotes under load, and reset() returns it to step 2", () => {
+    const g = new PerfGovernor(LADDER, tunablesForPointer(true));
+    feed(g, 28, 0, 6000); // over 70% of the 30fps budget → one step down after calibration
+    expect(g.index()).toBe(3);
+    g.reset();
+    expect(g.index()).toBe(2);
+    expect(g.stepChanged).toBe(true);
   });
 
   it("honors an injected ladder and tunables", () => {
