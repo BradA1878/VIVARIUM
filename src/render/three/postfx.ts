@@ -1,11 +1,12 @@
 /* ============================================================================
-   PostFx — RenderPass → optional UnrealBloomPass → OutputPass → FXAA. Both
-   quality paths keep clean edges and the same ACES grade, including fog and
-   background: direct rendering applies tone mapping before fog in three r169,
-   so setting ACES on the renderer alone would change the low-quality palette.
-   HalfFloat scene targets preserve HDR emissives for threshold-1.0 bloom.
-   The composer is lazy; toggling bloom releases the old chain, and the low
-   path allocates no bloom targets.
+   PostFx — RenderPass → optional GTAO → optional UnrealBloomPass → OutputPass
+   → FXAA. Both quality paths keep clean edges and the same ACES grade,
+   including fog and background: direct rendering applies tone mapping before
+   fog in three r169, so setting ACES on the renderer alone would change the
+   low-quality palette. HalfFloat scene targets preserve HDR emissives for
+   threshold-1.0 bloom. AO, like bloom, is an optional pass: the composer is
+   rebuilt lazily when either toggles, and the low path allocates no bloom or
+   AO targets.
    ============================================================================ */
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -14,6 +15,7 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
+import { ColonyAOPass } from "./ao";
 
 const BLOOM_THRESHOLD = 1.0;
 const BLOOM_STRENGTH = 0.55;
@@ -36,6 +38,8 @@ export class PostFx {
   // multi-resolution targets. The composer is built lazily after a toggle.
   private composer: EffectComposer | null = null;
   private renderPass: RenderPass | null = null;
+  private aoEnabled = false;
+  private ao: ColonyAOPass | null = null;
   private bloom: UnrealBloomPass | null = null;
   private output: OutputPass | null = null;
   private antialias: ShaderPass | null = null;
@@ -58,6 +62,14 @@ export class PostFx {
   setEnabled(on: boolean): void {
     if (on === this.enabled) return;
     this.enabled = on;
+    this.disposeComposer();
+  }
+
+  /** toggle ambient occlusion; like bloom, the chain is rebuilt lazily and the
+   *  released pass takes its G-buffer and AO targets with it */
+  setAO(on: boolean): void {
+    if (on === this.aoEnabled) return;
+    this.aoEnabled = on;
     this.disposeComposer();
   }
 
@@ -142,6 +154,11 @@ export class PostFx {
     this.composer.renderTarget1.texture.type = THREE.UnsignedByteType;
     this.composer.renderTarget1.depthBuffer = false;
     this.composer.addPass(this.renderPass);
+    if (this.aoEnabled) {
+      // addPass sizes it to the drawing buffer (logical size × pixel ratio)
+      this.ao = new ColonyAOPass(this.scene, this.camera, size.x, size.y);
+      this.composer.addPass(this.ao);
+    }
     if (this.enabled) {
       this.bloom = new UnrealBloomPass(size, BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
       this.composer.addPass(this.bloom);
@@ -161,11 +178,13 @@ export class PostFx {
 
   private disposeComposer(): void {
     this.renderPass?.dispose();
+    this.ao?.dispose(); // releases the G-buffer + AO/denoise render targets
     this.bloom?.dispose(); // releases the bloom mip-chain targets + materials
     this.output?.dispose();
     this.antialias?.dispose();
     this.composer?.dispose(); // releases the HDR/LDR targets + the copy pass
     this.renderPass = null;
+    this.ao = null;
     this.bloom = null;
     this.output = null;
     this.antialias = null;

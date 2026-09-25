@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import type { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { PostFx } from "./postfx";
+import { ColonyAOPass } from "./ao";
 
 function fixture() {
   const dimensions = { width: 800, height: 600, ratio: 1.5 };
@@ -94,5 +95,29 @@ describe("post-processing quality transitions", () => {
     expect(low.renderer.toneMappingExposure).toBe(1.15);
     high.fx.dispose();
     low.fx.dispose();
+  });
+
+  it("adds ambient occlusion only when enabled, sized to the drawing buffer, and releases it on toggle", () => {
+    const { fx, dimensions, internals } = fixture();
+    const ao = () => internals.composer!.passes.find((p) => p instanceof ColonyAOPass) as ColonyAOPass | undefined;
+    fx.render();
+    expect(ao()).toBeUndefined();
+    fx.setAO(true);
+    expect(internals.composer).toBeNull(); // rebuilt lazily, like bloom
+    fx.render();
+    const pass = ao()!;
+    expect(internals.composer!.passes.indexOf(pass)).toBe(1); // right after the scene render
+    expect([pass.width, pass.height]).toEqual([1200, 900]);
+    dimensions.ratio = 1.25;
+    fx.setPixelRatio(1.25);
+    expect([pass.width, pass.height]).toEqual([1000, 750]);
+    const released = vi.fn();
+    pass.gtaoRenderTarget.addEventListener("dispose", released);
+    pass.pdRenderTarget.addEventListener("dispose", released);
+    fx.setAO(false);
+    expect(released).toHaveBeenCalledTimes(2);
+    fx.render();
+    expect(ao()).toBeUndefined();
+    fx.dispose();
   });
 });
