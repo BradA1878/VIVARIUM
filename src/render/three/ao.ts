@@ -76,22 +76,27 @@ const PERSPECTIVE_VIEW_DIR = "vec3 viewDir = normalize(-viewPos.xyz);";
 const ORTHOGRAPHIC_VIEW_DIR = "vec3 viewDir = vec3( 0.0, 0.0, 1.0 );";
 
 export class ColonyAOPass extends GTAOPass {
-  /** what overrideVisibility() hid for this frame's G-buffer; restoreVisibility()
-   *  shows exactly these again. Undefined only while GTAOPass's constructor
-   *  runs (it calls overridden methods before subclass fields exist), so the
-   *  array is created in the constructor body, after super(). */
-  private hidden: THREE.Object3D[] | undefined;
+  /** what overrideVisibility() hid for this frame's G-buffer, in slots
+   *  [0, hiddenCount); restoreVisibility() shows exactly these again and nulls
+   *  the slots. Clearing by count keeps the array's storage: V8 releases an
+   *  array's backing store at length 0, so truncating would reallocate it
+   *  every frame. Undefined only while GTAOPass's constructor runs (it calls
+   *  overridden methods before subclass fields exist), so the array is created
+   *  in the constructor body, after super(). */
+  private hidden: (THREE.Object3D | null)[] | undefined;
+  private hiddenCount: number;
   /** the traverse callback, built once so the per-frame hide allocates nothing */
   private readonly hideNonOccluder: (o: THREE.Object3D) => void;
 
   constructor(scene: THREE.Scene, camera: THREE.Camera, width: number, height: number) {
     super(scene, camera, width, height);
-    const hidden: THREE.Object3D[] = [];
+    const hidden: (THREE.Object3D | null)[] = [];
     this.hidden = hidden;
+    this.hiddenCount = 0;
     this.hideNonOccluder = (o) => {
       if (o.visible && !aoVisible(o)) {
         o.visible = false;
-        hidden.push(o);
+        hidden[this.hiddenCount++] = o;
       }
     };
     if (!(camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
@@ -160,9 +165,8 @@ export class ColonyAOPass extends GTAOPass {
   /** hide every visible non-occluder for the G-buffer render, remembering
    *  only those (GTAOPass would record every object in a Map each frame) */
   override overrideVisibility(): void {
-    const hidden = this.hidden;
-    if (!hidden) return; // GTAOPass's constructor is still running: nothing to track
-    hidden.length = 0;
+    if (!this.hidden) return; // GTAOPass's constructor is still running: nothing to track
+    this.hiddenCount = 0;
     this.scene.traverse(this.hideNonOccluder);
   }
 
@@ -171,8 +175,11 @@ export class ColonyAOPass extends GTAOPass {
   override restoreVisibility(): void {
     const hidden = this.hidden;
     if (!hidden) return;
-    for (let i = 0; i < hidden.length; i++) hidden[i].visible = true;
-    hidden.length = 0;
+    for (let i = 0; i < this.hiddenCount; i++) {
+      hidden[i]!.visible = true;
+      hidden[i] = null; // let a removed object be collected
+    }
+    this.hiddenCount = 0;
   }
 
   override dispose(): void {

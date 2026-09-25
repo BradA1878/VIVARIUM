@@ -90,6 +90,19 @@ describe("ColonyAOPass", () => {
     pass.dispose();
   });
 
+  it("keeps its hide-list storage between frames but no references to the objects it restored", () => {
+    const scene = new THREE.Scene();
+    scene.add(new THREE.Sprite(), new THREE.Sprite(), mesh());
+    const pass = new ColonyAOPass(scene, new THREE.OrthographicCamera(), 16, 16);
+    const internals = pass as unknown as { hidden: (THREE.Object3D | null)[] };
+    pass.overrideVisibility();
+    pass.restoreVisibility();
+    // truncating to length 0 would make V8 reallocate the storage every frame
+    expect(internals.hidden.length).toBe(2);
+    expect(internals.hidden.every((o) => o === null)).toBe(true);
+    pass.dispose();
+  });
+
   it("starts each frame from the scene's current visibility, not the last frame's", () => {
     const scene = new THREE.Scene();
     const solid = mesh();
