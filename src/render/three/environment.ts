@@ -188,6 +188,10 @@ export class SkyEnvironment {
       colorSpace: THREE.LinearSRGBColorSpace,
       depthBuffer: false,
     });
+    // fromScene cleared each face to a background color and forced
+    // NoToneMapping, for arbitrary scenes. Neither is needed here: the sky
+    // sphere covers every pixel of every face, and its shader has no
+    // tone-mapping or color-space chunks. Keep the sky scene to that one mesh.
     this.cubeCamera = new THREE.CubeCamera(0.1, 10, cube);
     const material = new THREE.ShaderMaterial({
       uniforms: {

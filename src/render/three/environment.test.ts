@@ -148,6 +148,10 @@ describe("SkyEnvironment", () => {
     expect(renderCube).toHaveBeenCalledTimes(3);
     const [camera, scene] = renderCube.mock.calls[0];
     expect(camera.renderTarget.width).toBe(SKY_CUBE_SIZE);
+    // linear half-float HDR input like fromScene's, with nothing PMREM ignores
+    expect(camera.renderTarget.texture.type).toBe(THREE.HalfFloatType);
+    expect(camera.renderTarget.texture.generateMipmaps).toBe(false);
+    expect(camera.renderTarget.depthBuffer).toBe(false);
     expect(SKY_CUBE_SIZE).toBe(256);
     expect(pmrem.fromCubemap.mock.calls[0][0]).toBe(camera.renderTarget.texture);
     expect(renderCube.mock.calls.every((c) => c[0] === camera && c[1] === scene)).toBe(true);
