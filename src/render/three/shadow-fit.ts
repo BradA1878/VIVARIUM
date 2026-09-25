@@ -88,23 +88,24 @@ export function orthoViewOf(camera: THREE.OrthographicCamera, out: OrthoView = e
   return out;
 }
 
-/** the view's four corner rays cut at the ground (y = 0) and at the ceiling */
+/** the view's four corner rays cut at the ground (y = 0) and at the ceiling,
+ *  as ground/ceiling pairs per corner. Runs every frame, so with `out` passed
+ *  it creates no arrays or iterators: index bits pick the corner (4: right
+ *  edge, 2: top) and the height (1: ceiling). */
 export function viewSlabPoints(
   view: OrthoView,
   ceiling = SHADOW_CEILING,
   out: THREE.Vector3[] = Array.from({ length: 8 }, () => new THREE.Vector3()),
 ): THREE.Vector3[] {
   const fy = view.forward.y;
-  let i = 0;
-  for (const sx of [view.left, view.rightEdge]) {
-    for (const sy of [view.bottom, view.top]) {
-      for (const h of [0, ceiling]) {
-        const p = out[i++];
-        p.copy(view.position).addScaledVector(view.right, sx).addScaledVector(view.up, sy);
-        const t = Math.abs(fy) < 1e-6 ? 0 : (h - p.y) / fy;
-        p.addScaledVector(view.forward, t);
-      }
-    }
+  for (let i = 0; i < 8; i++) {
+    const sx = i & 4 ? view.rightEdge : view.left;
+    const sy = i & 2 ? view.top : view.bottom;
+    const h = i & 1 ? ceiling : 0;
+    const p = out[i];
+    p.copy(view.position).addScaledVector(view.right, sx).addScaledVector(view.up, sy);
+    const t = Math.abs(fy) < 1e-6 ? 0 : (h - p.y) / fy;
+    p.addScaledVector(view.forward, t);
   }
   return out;
 }
@@ -141,7 +142,8 @@ export function fitShadow(
   basisInto(sunDir, _x, _y, _z, out.up);
   viewSlabPoints(view, ceiling, _pts);
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
-  for (const p of _pts) {
+  for (let i = 0; i < _pts.length; i++) {
+    const p = _pts[i];
     const px = p.dot(_x), py = p.dot(_y), pz = p.dot(_z);
     if (px < minX) minX = px;
     if (px > maxX) maxX = px;

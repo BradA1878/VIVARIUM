@@ -113,8 +113,8 @@ export class SceneManager {
     this.scene.background = this.background;
 
     // The sun keeps its established direction; render() wraps its shadow map
-    // around whatever the camera can see (shadow-fit.ts), so the frustum here
-    // is only a placeholder until the first frame.
+    // around whatever the camera can see (shadow-fit.ts), so the frustum and
+    // normal bias here are only placeholders until the first frame.
     this.sun = new THREE.DirectionalLight(0xffe6c8, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.shadowSize, this.shadowSize);
@@ -298,6 +298,9 @@ export class SceneManager {
     cam.far = fit.far;
     cam.up.copy(fit.up);
     cam.updateProjectionMatrix();
+    // the normal offset scales with the texel it has to clear: under 0.01
+    // units zoomed in on a 2048² map, about 0.1 zoomed out on 1024²
+    this.sun.shadow.normalBias = THREE.MathUtils.clamp(1.2 * fit.texel, 0.01, 0.12);
   }
 
   dispose(): void {

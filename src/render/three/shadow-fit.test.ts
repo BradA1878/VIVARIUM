@@ -80,6 +80,15 @@ describe("fitShadow", () => {
     expect(Math.abs(Math.round(steps))).toBeLessThanOrEqual(1);
   });
 
+  it("small zoom changes keep the box size", () => {
+    // at the noon sun the unrounded side runs 64.8–65.2 for these views, clear of
+    // the 2-unit steps at 64 and 66 (at tod 0.45 this range straddles 72)
+    const sun = sunFor(0.5);
+    const focus = new THREE.Vector3(2, 0, -1);
+    const sizes = [13.0, 13.05, 13.1].map((view) => fitShadow(orthoViewOf(isoCamera(focus, view)), sun, 2048).halfSize);
+    expect(sizes).toEqual([sizes[0], sizes[0], sizes[0]]);
+  });
+
   it("is at least twice as sharp as the old whole-terrain map at default zoom", () => {
     const fit = fitShadow(orthoViewOf(isoCamera(new THREE.Vector3(), 13)), sunFor(0.5), 2048);
     const oldTexel = (2 * (22.5 * Math.SQRT2 + 2)) / 1024; // scene.ts's previous fixed frustum
@@ -111,5 +120,24 @@ describe("fitShadow", () => {
     expect(pts).toHaveLength(8);
     expect(pts.filter((p) => Math.abs(p.y) < 1e-9)).toHaveLength(4);
     expect(pts.filter((p) => Math.abs(p.y - SHADOW_CEILING) < 1e-9)).toHaveLength(4);
+  });
+
+  it("slab points are the view's four corner rays, each cut at the ground and at the ceiling", () => {
+    const v = orthoViewOf(isoCamera(new THREE.Vector3(3, 0, -2), 13));
+    const d = new THREE.Vector3();
+    const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+    const labels = viewSlabPoints(v).map((p) => {
+      d.copy(p).sub(v.position);
+      const sx = d.dot(v.right);
+      const sy = d.dot(v.up);
+      const x = near(sx, v.left) ? "left" : near(sx, v.rightEdge) ? "right" : `x=${sx}`;
+      const y = near(sy, v.bottom) ? "bottom" : near(sy, v.top) ? "top" : `y=${sy}`;
+      const h = near(p.y, 0) ? "ground" : near(p.y, SHADOW_CEILING) ? "ceiling" : `h=${p.y}`;
+      return `${x} ${y} ${h}`;
+    });
+    expect(labels.sort()).toEqual([
+      "left bottom ceiling", "left bottom ground", "left top ceiling", "left top ground",
+      "right bottom ceiling", "right bottom ground", "right top ceiling", "right top ground",
+    ]);
   });
 });
