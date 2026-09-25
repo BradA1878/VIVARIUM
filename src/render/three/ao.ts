@@ -22,18 +22,27 @@ type Renderable = THREE.Object3D & {
   material?: THREE.Material | THREE.Material[];
 };
 
-/** true when the object belongs in the AO depth/normal pre-render */
+/** true when a single material should occlude (opaque enough, depth-writing) */
+function occludes(m: THREE.Material): boolean {
+  if (!m.depthWrite) return false;
+  if (m.transparent && m.opacity < AO_MIN_OPACITY) return false;
+  return true;
+}
+
+/** true when the object belongs in the AO depth/normal pre-render. Called once
+ *  per scene object every frame from overrideVisibility() while AO is on, so
+ *  this stays allocation-free — no wrapping array for the single-material case. */
 export function aoVisible(o: THREE.Object3D): boolean {
   const r = o as Renderable;
   if (r.isPoints || r.isLine || r.isSprite) return false;
   if (o.userData.noAO === true) return false;
   const mats = r.material;
   if (!mats) return true;
-  for (const m of Array.isArray(mats) ? mats : [mats]) {
-    if (!m.depthWrite) return false;
-    if (m.transparent && m.opacity < AO_MIN_OPACITY) return false;
+  if (Array.isArray(mats)) {
+    for (const m of mats) if (!occludes(m)) return false;
+    return true;
   }
-  return true;
+  return occludes(mats);
 }
 
 /** mulberry32 in the { random() } shape SimplexNoise accepts */
