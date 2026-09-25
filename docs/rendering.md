@@ -84,8 +84,9 @@ arms** (`kit/corridor.ts`) that connect to adjacent corridors, hub, and habs, so
 routed run reads as one continuous pressurized link. The skin is 90% opaque (hull,
 not a ghost tube) so it also occludes in the AO pass. Where a corridor meets a
 sealed building, the renderer places an **airlock**: a hull-metal collar ring with
-a thin inset cyan signal ring (`airlockSignalIntensity`: 0.35 by day up to 0.95 at
-night), so the junction reads as a physical hatch and cyan stays a small signal.
+a thin cyan signal ring on its outer rim (`airlockSignalIntensity`: 0.35 by day up
+to 0.95 at night), so the junction reads as a physical hatch and cyan stays a
+small signal.
 
 The astronaut (`kit/astronaut.ts`) is articulated: legs and arms live in hip and
 shoulder **pivot groups**, with a torso group that leans into the stride and a

@@ -111,6 +111,15 @@ export function airlockSignalIntensity(night: number): number {
   return 0.35 + 0.6 * THREE.MathUtils.clamp(night, 0, 1);
 }
 
+/** the airlock's metal collar. */
+export const AIRLOCK_COLLAR = { radius: 0.2, tube: 0.055 } as const;
+/** the thin cyan signal ring, riding the collar's outer rim (0.2 + 0.055 =
+ *  0.255) so half its tube stands proud of the collar all the way round and
+ *  its top reads from the iso camera whichever way the corridor runs — a ring
+ *  centered on the collar's own tube (the old radius/z) sat enclosed inside
+ *  it and never showed. */
+export const AIRLOCK_SIGNAL = { radius: 0.255, tube: 0.016, z: 0 } as const;
+
 /** prototype status(): the glow that reads a building's health */
 function buildingStatus(b: BuildingState): { alive: boolean; hurt: boolean } {
   const def = DEFS[b.defId];
@@ -137,9 +146,9 @@ export class ThreeRenderer {
   // airlocks at corridor↔building junctions, keyed "uid:cx,cy:side" — a collar
   // (structural) plus a thin signal ring (the only part that glows)
   private airlocks = new Map<string, THREE.Group>();
-  private airlockCollarGeo = new THREE.TorusGeometry(0.2, 0.055, 8, 20);
+  private airlockCollarGeo = new THREE.TorusGeometry(AIRLOCK_COLLAR.radius, AIRLOCK_COLLAR.tube, 8, 20);
   private airlockCollarMat = new THREE.MeshStandardMaterial({ color: 0x8a929c, roughness: 0.45, metalness: 0.6 });
-  private airlockSignalGeo = new THREE.TorusGeometry(0.205, 0.014, 6, 28);
+  private airlockSignalGeo = new THREE.TorusGeometry(AIRLOCK_SIGNAL.radius, AIRLOCK_SIGNAL.tube, 6, 28);
   private airlockSignalMat = new THREE.MeshStandardMaterial({ color: 0x10202a, emissive: 0x7fd4e8, emissiveIntensity: 0.35, roughness: 0.5 });
   // door glows are SHARED across every door so the night ramp is one material
   // write per frame, not a write per door (detached before kit dispose)
@@ -760,7 +769,8 @@ export class ThreeRenderer {
     group.add(door);
   }
 
-  /** place a lit airlock on every building edge that abuts a corridor */
+  /** place an airlock on every building edge that abuts a corridor: a metal
+   *  collar with a thin cyan signal ring on its outer rim (only the ring glows) */
   private updateAirlocks(snap: Snapshot, ownerOf: (x: number, y: number) => BuildingState | undefined): void {
     const needed = this.scratchNeeded;
     needed.clear();
@@ -781,7 +791,7 @@ export class ThreeRenderer {
               g = new THREE.Group();
               const collar = new THREE.Mesh(this.airlockCollarGeo, this.airlockCollarMat);
               const ring = new THREE.Mesh(this.airlockSignalGeo, this.airlockSignalMat);
-              ring.position.z = 0.02; // toward the corridor, same side the collar faces
+              ring.position.z = AIRLOCK_SIGNAL.z; // centered on the collar; riding its outer rim is what makes it visible
               g.add(collar, ring);
               this.buildingsGroup.add(g);
               this.airlocks.set(key, g);
