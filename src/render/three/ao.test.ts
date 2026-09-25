@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
+import { GTAOShader } from "three/addons/shaders/GTAOShader.js";
 import { AO_MIN_OPACITY, ColonyAOPass, aoVisible } from "./ao";
 
 const mesh = (params: THREE.MeshStandardMaterialParameters = {}) =>
@@ -44,6 +45,37 @@ describe("ColonyAOPass", () => {
     pass.dispose();
   });
 
+  it("tracks only the objects it hides, with no per-object map writes each frame", () => {
+    const scene = new THREE.Scene();
+    for (let i = 0; i < 20; i++) scene.add(mesh());
+    scene.add(new THREE.Sprite());
+    const pass = new ColonyAOPass(scene, new THREE.OrthographicCamera(), 16, 16);
+    const set = vi.spyOn(Map.prototype, "set");
+    pass.overrideVisibility();
+    pass.restoreVisibility();
+    const writes = set.mock.calls.length;
+    set.mockRestore();
+    expect(writes).toBe(0);
+    pass.dispose();
+  });
+
+  it("starts each frame from the scene's current visibility, not the last frame's", () => {
+    const scene = new THREE.Scene();
+    const solid = mesh();
+    const ghost = mesh({ depthWrite: false });
+    const tag = new THREE.Sprite();
+    scene.add(solid, ghost, tag);
+    const pass = new ColonyAOPass(scene, new THREE.OrthographicCamera(), 16, 16);
+    pass.overrideVisibility();
+    pass.restoreVisibility();
+    tag.visible = false; // the app hides the tag between frames
+    pass.overrideVisibility();
+    expect([solid.visible, ghost.visible, tag.visible]).toEqual([true, false, false]);
+    pass.restoreVisibility();
+    expect([solid.visible, ghost.visible, tag.visible]).toEqual([true, true, false]);
+    pass.dispose();
+  });
+
   it("multiplies AO onto the scene target in place and never swaps the composer buffers", () => {
     const pass = new ColonyAOPass(new THREE.Scene(), new THREE.OrthographicCamera(), 32, 32);
     expect(pass.needsSwap).toBe(false);
@@ -55,7 +87,7 @@ describe("ColonyAOPass", () => {
     }) as typeof pass.renderPass;
     const read = new THREE.WebGLRenderTarget(32, 32);
     const write = new THREE.WebGLRenderTarget(32, 32);
-    pass.render({} as THREE.WebGLRenderer, write, read, 0, false);
+    pass.render({ shadowMap: { autoUpdate: true } } as unknown as THREE.WebGLRenderer, write, read, 0, false);
     const last = draws.at(-1)!;
     expect(last.material).toBe(pass.blendMaterial);
     expect(last.target).toBe(read); // the scene target itself, not the write buffer
@@ -64,6 +96,52 @@ describe("ColonyAOPass", () => {
     pass.dispose();
     read.dispose();
     write.dispose();
+  });
+
+  it("keeps its G-buffer render from drawing the sun's shadow map a second time, and restores the flag even when that render throws", () => {
+    const pass = new ColonyAOPass(new THREE.Scene(), new THREE.OrthographicCamera(), 32, 32);
+    const renderer = { shadowMap: { autoUpdate: true } } as unknown as THREE.WebGLRenderer;
+    let during: boolean | undefined;
+    pass.renderOverride = (() => {
+      during = renderer.shadowMap.autoUpdate;
+    }) as typeof pass.renderOverride;
+    pass.renderPass = (() => {}) as typeof pass.renderPass;
+    const read = new THREE.WebGLRenderTarget(32, 32);
+    const write = new THREE.WebGLRenderTarget(32, 32);
+    pass.render(renderer, write, read, 0, false);
+    expect(during).toBe(false); // the scene pass already drew this frame's shadows
+    expect(renderer.shadowMap.autoUpdate).toBe(true);
+    pass.renderOverride = (() => {
+      throw new Error("G-buffer render failed");
+    }) as typeof pass.renderOverride;
+    expect(() => pass.render(renderer, write, read, 0, false)).toThrow("G-buffer render failed");
+    expect(renderer.shadowMap.autoUpdate).toBe(true);
+    pass.dispose();
+    read.dispose();
+    write.dispose();
+  });
+
+  it("uses the orthographic camera's constant view direction, and leaves a perspective pass as three ships it", () => {
+    const perspectiveLine = "vec3 viewDir = normalize(-viewPos.xyz);";
+    const orthographicLine = "vec3 viewDir = vec3( 0.0, 0.0, 1.0 );";
+    const ortho = new ColonyAOPass(new THREE.Scene(), new THREE.OrthographicCamera(), 16, 16);
+    expect(ortho.gtaoMaterial.fragmentShader).toContain(orthographicLine);
+    expect(ortho.gtaoMaterial.fragmentShader).not.toContain(perspectiveLine);
+    const persp = new ColonyAOPass(new THREE.Scene(), new THREE.PerspectiveCamera(), 16, 16);
+    expect(persp.gtaoMaterial.fragmentShader).toContain(perspectiveLine);
+    expect(persp.gtaoMaterial.fragmentShader).not.toContain(orthographicLine);
+    ortho.dispose();
+    persp.dispose();
+  });
+
+  it("fails loudly when three's GTAO shader no longer has the view-direction line it patches", () => {
+    const original = GTAOShader.fragmentShader;
+    GTAOShader.fragmentShader = original.replace("vec3 viewDir = normalize(-viewPos.xyz);", "vec3 viewDir = normalize(-viewPos);");
+    try {
+      expect(() => new ColonyAOPass(new THREE.Scene(), new THREE.OrthographicCamera(), 16, 16)).toThrow(/GTAOShader/);
+    } finally {
+      GTAOShader.fragmentShader = original;
+    }
   });
 
   it("builds the same denoise noise every time (deterministic output across rebuilds)", () => {

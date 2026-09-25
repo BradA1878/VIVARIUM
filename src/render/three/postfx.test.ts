@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import type { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { PostFx } from "./postfx";
 import { ColonyAOPass } from "./ao";
@@ -113,11 +115,19 @@ describe("post-processing quality transitions", () => {
     expect(internals.composer).toBeNull(); // rebuilt lazily, like bloom
     fx.render();
     const pass = ao()!;
-    expect(internals.composer!.passes.indexOf(pass)).toBe(1); // right after the scene render
+    // after bloom: AO multiplies the HDR scene in place, so ahead of bloom it
+    // would darken emissives before bloom's threshold test
+    const passes = internals.composer!.passes;
+    expect(passes.indexOf(pass)).toBe(passes.indexOf(internals.bloom!) + 1);
+    expect(passes[passes.indexOf(pass) + 1]).toBeInstanceOf(OutputPass);
     expect([pass.width, pass.height]).toEqual([1200, 900]);
     dimensions.ratio = 1.25;
     fx.setPixelRatio(1.25);
     expect([pass.width, pass.height]).toEqual([1000, 750]);
+    dimensions.width = 500;
+    dimensions.height = 300;
+    fx.setSize(dimensions.width, dimensions.height);
+    expect([pass.width, pass.height]).toEqual([625, 375]);
     const released = vi.fn();
     pass.gtaoRenderTarget.addEventListener("dispose", released);
     pass.pdRenderTarget.addEventListener("dispose", released);
@@ -125,6 +135,18 @@ describe("post-processing quality transitions", () => {
     expect(released).toHaveBeenCalledTimes(2);
     fx.render();
     expect(ao()).toBeUndefined();
+    fx.dispose();
+  });
+
+  it("puts AO right after the scene render when bloom is off", () => {
+    const { fx, internals } = fixture();
+    fx.setEnabled(false);
+    fx.setAO(true);
+    fx.render();
+    const passes = internals.composer!.passes;
+    expect(passes[0]).toBeInstanceOf(RenderPass);
+    expect(passes[1]).toBeInstanceOf(ColonyAOPass);
+    expect(passes[2]).toBeInstanceOf(OutputPass);
     fx.dispose();
   });
 

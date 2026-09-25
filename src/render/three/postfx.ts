@@ -1,13 +1,14 @@
 /* ============================================================================
-   PostFx — RenderPass → optional GTAO → optional UnrealBloomPass → OutputPass
-   → FXAA (carrying the final lift/gain/saturation/vignette grade in the same
-   pass). Both quality paths keep clean edges and the same ACES grade and
+   PostFx — RenderPass → optional UnrealBloomPass → optional GTAO → OutputPass
+   → graded FXAA (the FXAA pass carries the final lift/gain/saturation/vignette
+   grade). Both quality paths keep clean edges and the same ACES grade and
    color grade, including fog and background: direct rendering applies tone
    mapping before fog in three r169, so setting ACES on the renderer alone
    would change the low-quality palette. HalfFloat scene targets preserve HDR
    emissives for threshold-1.0 bloom. AO, like bloom, is an optional pass: the
    composer is rebuilt lazily when either toggles, and the low path allocates
-   no bloom or AO targets.
+   no bloom or AO targets. AO runs after bloom so it never darkens emissives
+   before bloom thresholds them.
    ============================================================================ */
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -163,21 +164,23 @@ export class PostFx {
     this.composer.setSize(size.x, size.y);
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.output = new OutputPass(); // applies renderer.toneMapping + sRGB at the end
-    // RenderPass/bloom stay in the HDR read target. OutputPass writes a small
+    // RenderPass, bloom and AO stay in the HDR read target. OutputPass writes a small
     // LDR target; FXAA presents that and swaps back, keeping the HDR target as
     // next frame's scene input. No multisample buffers or extra depth target.
     this.composer.renderTarget1.texture.type = THREE.UnsignedByteType;
     this.composer.renderTarget1.depthBuffer = false;
     this.composer.addPass(this.renderPass);
-    if (this.aoEnabled) {
-      // addPass sizes it to the drawing buffer (logical size × pixel ratio)
-      this.ao = new ColonyAOPass(this.scene, this.camera, size.x, size.y);
-      this.composer.addPass(this.ao);
-    }
     if (this.enabled) {
       this.bloom = new UnrealBloomPass(size, BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
       this.composer.addPass(this.bloom);
       this.applyPulse(); // a rebuilt bloom joins an in-flight flare at its phase
+    }
+    if (this.aoEnabled) {
+      // after bloom: AO multiplies the HDR scene in place, so ahead of bloom it
+      // would darken emissives before bloom's threshold test. addPass sizes it
+      // to the drawing buffer (logical size × pixel ratio).
+      this.ao = new ColonyAOPass(this.scene, this.camera, size.x, size.y);
+      this.composer.addPass(this.ao);
     }
     this.composer.addPass(this.output);
     this.antialias = new ShaderPass(createGradedFxaaShader());
