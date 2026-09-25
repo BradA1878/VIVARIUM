@@ -6,6 +6,7 @@
    ============================================================================ */
 import * as THREE from "three";
 import { createSurfaceDetail, roughnessWithDetail } from "./surface-detail";
+import { createDomePanelTexture, createPvCellTexture } from "./panel-textures";
 
 /** signal accent — VIVARIUM's cyan; rust = warning/hurt (doc §4.1) */
 export const CYAN = new THREE.Color("#7fd4e8");
@@ -18,7 +19,9 @@ export interface MaterialLib {
   metal(base?: THREE.ColorRepresentation, opts?: { rough?: number; metal?: number }): THREE.MeshStandardMaterial;
   /** frosted pressurized dome skin — faintly translucent, soft */
   frostedDome(base?: THREE.ColorRepresentation): THREE.MeshStandardMaterial;
-  /** dark glassy panel (solar) */
+  /** a dome cap's shell with shared panel seams */
+  domeShell(base?: THREE.ColorRepresentation): THREE.MeshStandardMaterial;
+  /** PV glass with the shared cell map */
   panel(): THREE.MeshStandardMaterial;
   /** an emissive "service light / hatch" material; update with setGlow() */
   glow(color?: THREE.ColorRepresentation): THREE.MeshStandardMaterial;
@@ -30,31 +33,46 @@ export function createMaterials(): MaterialLib {
   // Individual materials belong to their kits; this one map belongs to the
   // library and survives building removal and world changes.
   const detail = createSurfaceDetail("metal", 0x6d657461);
+  const pv = createPvCellTexture(0x5e11);
+  const dome = createDomePanelTexture(0xd0e5);
   return {
     metal(base = "#7a828c", opts = {}) {
       return new THREE.MeshStandardMaterial({
         color: new THREE.Color(base),
         ...roughnessWithDetail(opts.rough ?? 0.62, detail),
-        metalness: opts.metal ?? 0.72,
+        metalness: opts.metal ?? 0.6,
         flatShading: false,
       });
     },
     frostedDome(base = "#787f8a") {
       return new THREE.MeshStandardMaterial({
         color: new THREE.Color(base),
-        ...roughnessWithDetail(0.4, detail),
-        metalness: 0.35,
+        ...roughnessWithDetail(0.5, detail),
+        metalness: 0.2,
+        transparent: true,
+        opacity: 0.92,
+      });
+    },
+    domeShell(base = "#787f8a") {
+      return new THREE.MeshStandardMaterial({
+        color: new THREE.Color(base),
+        roughness: Math.min(1, 0.5 / dome.roughnessMean),
+        roughnessMap: dome.texture,
+        bumpMap: dome.texture,
+        bumpScale: 1.5,
+        metalness: 0.2,
         transparent: true,
         opacity: 0.92,
       });
     },
     panel() {
       return new THREE.MeshStandardMaterial({
-        color: new THREE.Color("#1d2838"),
-        roughness: 0.22,
-        metalness: 0.85,
-        emissive: new THREE.Color("#0a1422"),
-        emissiveIntensity: 0.4,
+        color: new THREE.Color(0xffffff),
+        map: pv,
+        roughness: 0.18,
+        metalness: 0.1,
+        emissive: new THREE.Color(0x050b14),
+        emissiveIntensity: 0.3,
       });
     },
     glow(color: THREE.ColorRepresentation = GLOW_OFF) {
@@ -68,6 +86,8 @@ export function createMaterials(): MaterialLib {
     },
     dispose() {
       detail.texture.dispose();
+      pv.dispose();
+      dome.texture.dispose();
     },
   };
 }

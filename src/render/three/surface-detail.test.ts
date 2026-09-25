@@ -43,7 +43,7 @@ describe("restrained surface detail", () => {
     expect(dome.roughnessMap).toBe(map);
     const mean = greenMean(map);
     for (const [material, roughness, color] of [
-      [metal, 0.62, "#7a828c"], [trim, 0.5, "#5a626c"], [dome, 0.4, "#787f8a"],
+      [metal, 0.62, "#7a828c"], [trim, 0.5, "#5a626c"], [dome, 0.5, "#787f8a"],
     ] as const) {
       expect(material.roughness * mean).toBeCloseTo(roughness, 12);
       expect(material.roughness).toBeLessThanOrEqual(1);
@@ -51,7 +51,7 @@ describe("restrained surface detail", () => {
       expect(material.map).toBeNull();
     }
     expect(dome.opacity).toBe(0.92);
-    expect(dome.metalness).toBe(0.35);
+    expect(dome.metalness).toBe(0.2);
     const disposed = vi.fn();
     map.addEventListener("dispose", disposed);
     metal.dispose(); trim.dispose(); dome.dispose();
@@ -67,7 +67,7 @@ describe("restrained surface detail", () => {
     const glow = materials.glow();
     expect(matte.roughness).toBe(1);
     expect(matte.roughnessMap).toBeNull();
-    expect(panel.roughness).toBe(0.22);
+    expect(panel.roughness).toBe(0.18);
     expect(panel.roughnessMap).toBeNull();
     expect(glow.roughnessMap).toBeNull();
     expect(glow.emissiveIntensity).toBe(0.9);
