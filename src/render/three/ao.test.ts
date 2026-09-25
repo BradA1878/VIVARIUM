@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { GTAOShader } from "three/addons/shaders/GTAOShader.js";
 import { AO_MIN_OPACITY, ColonyAOPass, aoVisible } from "./ao";
+import { buildDepot } from "./depot";
 import { buildAstronaut } from "./kit/astronaut";
 import { buildRover } from "./kit/rover";
 
@@ -42,6 +43,19 @@ describe("aoVisible", () => {
     }
     astronaut.dispose();
     rover.dispose();
+  });
+
+  it("leaves out the depot's glow ring and intake disc, whose opacity also pulses across the cut", () => {
+    const depot = buildDepot();
+    depot.setGlow(1, 1); // a loaded colonist in range, at the pulse peak: opacity 0.95
+    const glows: THREE.Object3D[] = [];
+    depot.object.traverse((o) => {
+      const g = (o as THREE.Mesh).geometry;
+      if (g instanceof THREE.RingGeometry || g instanceof THREE.CircleGeometry) glows.push(o);
+    });
+    expect(glows).toHaveLength(2);
+    for (const o of glows) expect(aoVisible(o), (o as THREE.Mesh).geometry.type).toBe(false);
+    depot.dispose();
   });
 });
 

@@ -42,6 +42,10 @@ export function buildDepot(): DepotMesh {
   // a ground ring marking the drop radius
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.68, 32), glowMat);
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02; object.add(ring);
+  // both glows pulse their opacity across AO's 0.85 cut while active, so keep
+  // them out of the AO pre-pass rather than let them drop in and out
+  intake.userData.noAO = true;
+  ring.userData.noAO = true;
 
   return {
     object,
