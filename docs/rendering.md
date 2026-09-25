@@ -50,11 +50,26 @@ ring light — breathing hot white-cyan while the pile runs, guttering offline,
 rust when hurt. The **wind turbine** (`kit/wind.ts`) is the one kit driven by
 the weather itself — see `KitEnv` below.
 
-The shared material library owns one small, seeded roughness map for metal
-and frosted domes. Its measured mean compensates the material roughness, keeping
-the original finish and base colors. Individual kits own their materials;
-`MaterialLib.dispose()` releases the shared map after all kits are retired.
-Solar panels and signal materials retain their existing finish.
+The shared material library owns three small seeded maps, all released by
+`MaterialLib.dispose()` after the kits are retired (individual kits own their
+materials):
+
+- a **metal finish** roughness map, whose measured mean compensates the material
+  roughness so base finishes hold;
+- a **PV cell map** (`panel-textures.ts`, sRGB): 6×6 dark-blue silicon cells with
+  light grid lines and two bus bars each, with faint per-cell tint variation.
+  `panel()` is dark PV glass (metalness 0.1, roughness 0.18) carrying it, so solar
+  arrays reflect the sky environment and read as photovoltaic modules;
+- a **dome panel map** (linear): 16 meridian seams and three latitude rings as
+  bump grooves (red channel) plus per-panel roughness variation (green).
+  `domeShell()` is the frosted dome skin with those seams; hub, habitat and
+  greenhouse caps use it, so domes read as built shells.
+
+Defaults suit the sky environment: `metal()` metalness 0.6, `frostedDome()`
+metalness 0.2 and roughness 0.5 (a composite shell, not chrome). Comms dishes use
+a light brushed metal, double-sided so the bowl reads from any angle. The
+robotics bay and printer are steel grey; the gantry carries a safety-yellow strip
+along its crossbeam.
 
 Industrial motion uses render-side active time (`KitEnv.dt`): the printer tray
 retracts slightly, the robotics/reclaimer carriage carries its beam, cable,
@@ -66,7 +81,11 @@ progress lights retain their meanings.
 
 Corridors are special: rather than a fixed mesh, they render as **neighbour-aware
 arms** (`kit/corridor.ts`) that connect to adjacent corridors, hub, and habs, so a
-routed run reads as one continuous pressurized link.
+routed run reads as one continuous pressurized link. The skin is 90% opaque (hull,
+not a ghost tube) so it also occludes in the AO pass. Where a corridor meets a
+sealed building, the renderer places an **airlock**: a hull-metal collar ring with
+a thin inset cyan signal ring (`airlockSignalIntensity`: 0.35 by day up to 0.95 at
+night), so the junction reads as a physical hatch and cyan stays a small signal.
 
 The astronaut (`kit/astronaut.ts`) is articulated: legs and arms live in hip and
 shoulder **pivot groups**, with a torso group that leans into the stride and a
@@ -165,8 +184,10 @@ standard material then gets reflections plus a sky/ground fill from it.
   the sky fill (`mat.skyFill` per world, 0.45–0.5) so lit structures stand out
   from the ground.
 
-The sky shader lights the scene only; the visible background and fog are
-unchanged.
+The sky shader lights the scene only. The visible background and the fog share
+the horizon tint, and during a dust storm the fog pulls in from 38/86 to 34/78
+units from the camera, eased over about two seconds (the orthographic camera
+keeps the colony about 47.5 units away at every zoom).
 
 ## PostFx and the quality switch
 
@@ -183,7 +204,11 @@ Both quality paths now share the final **ACES / sRGB output step**, so fog,
 background, and materials keep the same color treatment when bloom is disabled.
 The composer is allocated lazily and released/rebuilt on a bloom toggle; Low
 allocates no bloom mip-chain. A final FXAA pass cleans up small panel frames,
-antennae, and corridor rings after tone mapping. The scene target is HDR; the
+antennae, and corridor rings after tone mapping, and applies each world's
+**final grade** in the same pass (`grade-fxaa.ts`: a black lift toward a tint,
+highlight gain, saturation, and a soft vignette, set from `worldlook.ts` on world
+changes via `PostFx.setGrade`). Folding the grade into FXAA adds no pass, so the
+even-swap invariant below holds and High and Low grade identically. The scene target is HDR; the
 output target is 8-bit with no depth attachment. The final canvas does not
 need its own MSAA. Flare exposure and its cadence survive quality
 changes. The common output path adds scene/output targets and two fullscreen
@@ -290,20 +315,36 @@ zoomed in, about 10×.
 ## Terrain, atmosphere, and hazards
 
 - `terrain.ts` builds the ground the colony sits on: a 41×41 construction grid
-  with a two-cell scenic margin, retaining the previous 45×45 terrain footprint
-  and mesh density. The **play grid is flattened** to 15% displacement across
-  the entire square, including its corners. **Ridged dunes and mesas** rise only
-  in the scenic border. Seeded rocks and monoliths retain each world's palette
-  and silhouettes; their full transformed bounds fit outside construction cells
-  and inside the terrain. Rock counts follow the remaining border area.
+  inside a **far field** that extends to ±72 units (`FAR_EDGE`) at the same
+  1-unit mesh density. Far enough that at the widest zoom and fullest pan the
+  near side never runs out and the far side is fully in fog; the background takes
+  the fog (horizon) color, so no edge ever shows. The **play grid is flattened**
+  to 15% displacement across the entire square, including its corners. **Ridged
+  relief** starts at the first lattice line outside the grid (the 144-unit mesh
+  sits on integer coordinates and the grid edge at ±20.5, so the ramp starts at
+  ±21 to keep the edge cells flat) and continues across the far field with broad
+  dunes. Seeded rocks (six times each world's count) and monoliths (three times)
+  scatter over the far field; their full transformed bounds stay outside
+  construction cells and inside the terrain.
+- The soil shader adds **world-space detail** (`ground-shader.ts`, injected with
+  `onBeforeCompile`): three octaves of value noise (grain, patches, regional tone)
+  and a sparse dark speckle, multiplied into the vertex color within ±20%. Grain
+  and speckle fade out with screen-space derivatives, so overview zoom stays
+  calm. The hash is sine-free, with a small seed offset, so it stays precise on
+  mobile GPUs.
+- About 1,500 tiny **pebbles** (`pebbles.ts`, one instanced mesh, no shadows)
+  sit on the rendered triangles over the build area and its border; structures
+  simply cover them. They rebuild with the terrain on a world change.
 - A small world-seeded bump/roughness map adds faint soil ripples at a fixed
   eight-cell repeat. It changes shading only: vertex colors, relief, build
   surface, and rock placement are unchanged. Terrain owns and releases this
   map on world changes.
 - `atmosphere.ts` handles sky/lighting and the day-night feel as the sol turns.
 - `stormfx.ts` is the **kinetic layer of a dust storm**: pooled **dust devils**
-  (four rigs of nested counter-rotating shells; an active storm wakes two to four
-  of them by intensity) wander the plain, and 200 low **wind streaks** — one
+  (four rigs of nested counter-rotating shells drawn with a soft shader — faded
+  at top and base, denser toward the silhouette, with scrolling swirl noise and
+  scene fog; an active storm wakes two to four of them by intensity) wander the
+  plain, and 200 low **wind streaks** — one
   `LineSegments` draw call — ramp up **through the telegraph phase**, so the
   warning gusts are visible before the veil closes in. Render-only: it reads
   `snap.hazards`/`weather` and never touches the sim.
