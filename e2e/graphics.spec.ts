@@ -161,6 +161,8 @@ test("quality paths grade the same frozen scene identically without bloom", asyn
 
 test("GPU resources return to baseline across worlds, quality steps, and a sol of sky changes", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  // a full sol at 30x plus twelve world switches: ~45 s on an idle machine
+  test.setTimeout(120_000);
   const glErrors: string[] = [];
   page.on("console", (m) => {
     if (m.type() === "error" && /webgl|GL_|shader/i.test(m.text())) glErrors.push(m.text());
