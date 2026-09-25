@@ -24,7 +24,9 @@ varying vec3 vGroundWorld;
 uniform vec2 uGroundSeed;
 
 float gHash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
 float gNoise(vec2 p) {
@@ -58,14 +60,15 @@ diffuseColor.rgb *= clamp(1.0 + tone, 0.8, 1.2);
  *  none to preserve. */
 export function applyGroundDetail(material: THREE.MeshStandardMaterial, seed: number): void {
   const uGroundSeed = new THREE.Vector2(
-    ((seed * 0.6180339887) % 1) * 1000,
-    ((seed * 0.4142135) % 1) * 1000,
+    ((seed * 0.6180339887) % 1) * 64,
+    ((seed * 0.4142135) % 1) * 64,
   );
   const chunks = groundDetailChunks();
 
   material.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms, _renderer: THREE.WebGLRenderer): void => {
     shader.uniforms.uGroundSeed = { value: uGroundSeed };
 
+    // Each anchor occurs exactly once in r169's standard shader, so a plain (non-global) replace patches it correctly.
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", `#include <common>\n${chunks.vertexPars}`)
       .replace("#include <begin_vertex>", `#include <begin_vertex>\n${chunks.vertexMain}`);
