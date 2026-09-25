@@ -41,6 +41,13 @@ const smooth01 = (t: number): number => {
   return c * c * (3 - 2 * c);
 };
 
+/** Half-extent of the rendered ground, in world units. At the widest zoom
+ *  (CAMERA_MAX_VIEW 22) panned to a grid corner, the near half of the view
+ *  reaches about 66 units from the origin; past that the fog (far 86 from a
+ *  camera 47.5 away) fully hides the background, so the ground can end here
+ *  without ever showing an edge on screen. */
+export const FAR_EDGE = 72;
+
 /** Test the complete rotated silhouette, including the lean of tall spires.
  *  A center outside the grid is not enough in a narrow scenic border. */
 function fitsScenicBorder(bounds: THREE.Box3, half: number, edge: number): boolean {
@@ -62,6 +69,12 @@ function borderPoint(rng: () => number, half: number, edge: number): { x: number
   };
 }
 
+/** Per-world rock count authored for the old narrow scenic border, scaled up
+ *  so the far field reads at the same density instead of thinning out. */
+export function farRockCount(look: WorldLook): number {
+  return Math.round(look.rocks.count * 6);
+}
+
 export class Terrain {
   readonly group = new THREE.Group();
   readonly surfaceStep = CELL;
@@ -69,8 +82,9 @@ export class Terrain {
   private readonly surfaceHeights: Float32Array;
   private disposables: (THREE.BufferGeometry | THREE.Material | THREE.Texture)[] = [];
   /** displaced surface at world (x, z): base noise flattened over the play
-   *  grid plus the far ridged relief — shared by the plane verts and the
-   *  rock/monolith scatter so everything sits on the same ground. */
+   *  grid plus the far ridged relief and broad dune swells — shared by the
+   *  plane verts and the rock/monolith scatter so everything sits on the
+   *  same ground. */
   private sample: (x: number, z: number) => { h: number; ridge: number; n: number; dune: number };
 
   constructor(grid: GridSpace, world: World = "mars", margin = SCENIC_MARGIN) {
@@ -81,11 +95,19 @@ export class Terrain {
     const groundHi = new THREE.Color(look.ground.hi);
     const accent = new THREE.Color(look.ground.accent);
     const ridgeColor = new THREE.Color(look.ground.ridge);
-    const span = (grid.N + margin * 2) * CELL;
-    const segs = grid.N + margin * 2;
+    const span = 2 * FAR_EDGE;
+    const segs = (2 * FAR_EDGE) / CELL;
     const half = grid.half();
-    const edge = span / 2;
+    const edge = FAR_EDGE;
     this.surfaceHalfSpan = edge;
+    // The terrain lattice only resolves to CELL steps. On an odd grid, half()
+    // (e.g. 20.5) falls between vertices, so a heightAt() query exactly on
+    // the boundary would bilinearly blend in the neighbor vertex just past
+    // it — which is already ramping — and read as a bump right at the edge
+    // of the outermost buildings. Snap the ramp's start out to that
+    // neighbor's lattice line instead, so every vertex at or inside the
+    // boundary stays fully flat.
+    const rampStart = Math.ceil(half / CELL) * CELL;
 
     this.sample = (x, z) => {
       // grid-space sample coords (match render.js scale loosely)
@@ -95,7 +117,7 @@ export class Terrain {
       // Scenic height starts outside the square construction area, including
       // its corners. Normalize over the actual border, even when it is short;
       // with no border the whole surface keeps its gentle 15% base variation.
-      const outside = Math.max(0, Math.max(Math.abs(x), Math.abs(z)) - half);
+      const outside = Math.max(0, Math.max(Math.abs(x), Math.abs(z)) - rampStart);
       const ramp = margin > 0 ? smooth01(outside / (margin * CELL)) : 0;
       const flat = 0.15 + 0.85 * ramp;
       const base = ((n - 0.5) * look.relief.noise + (dune - 0.5) * look.relief.dune) * flat;
@@ -103,7 +125,11 @@ export class Terrain {
       const rn = vnoise(gx * 0.22 + 40, gy * 0.22 + 17);
       const crest = (1 - Math.abs(2 * rn - 1)) ** 2;
       const ridge = crest * look.relief.ridge * ramp;
-      return { h: base + ridge, ridge, n, dune };
+      // Broad swells past the ridge band so the far field keeps reading as
+      // terrain in the haze instead of flattening out. Zero inside the grid
+      // and through the start of the ramp, same as the ridge above.
+      const farDune = (vnoise(gx * 0.035 + 7, gy * 0.035 + 11) - 0.5) * 2.2 * ramp;
+      return { h: base + ridge + farDune, ridge, n, dune };
     };
 
     // ---- displaced ground plane ----
@@ -172,9 +198,7 @@ export class Terrain {
 
   private scatterRocks(half: number, edge: number, look: WorldLook): void {
     const rng = mulberry(look.rockSeed);
-    // The authored count was a whole-plane candidate budget. Keep that area
-    // density when concentrating candidates into the remaining scenic strips.
-    const count = Math.round(look.rocks.count * (1 - (half / edge) ** 2));
+    const count = farRockCount(look);
     const rockGeo = new THREE.IcosahedronGeometry(1, look.rocks.detail); // detail 0 = jagged shards, 1+ = rounder
     // rough up the rock a touch
     const rp = rockGeo.attributes.position as THREE.BufferAttribute;
@@ -212,12 +236,13 @@ export class Terrain {
     this.disposables.push(rockGeo, rockMat);
   }
 
-  /** ~7 tapered five-sided basalt monoliths out on the far relief — tall
-   *  silhouettes for the fog line. Their rng is a separate seeded stream, so
-   *  the boulder field above is untouched by their draws. */
+  /** Tapered five-sided basalt monoliths out on the far relief — tall
+   *  silhouettes for the fog line. The per-world base count (mars 7) is
+   *  tripled for the wider far field. Their rng is a separate seeded stream,
+   *  so the boulder field above is untouched by their draws. */
   private scatterMonoliths(half: number, edge: number, look: WorldLook): void {
     const rng = mulberry(look.monolithSeed);
-    const count = look.monoliths.count;
+    const count = look.monoliths.count * 3;
     const geo = new THREE.CylinderGeometry(0.34, 0.62, 1, 5, 1);
     geo.translate(0, 0.5, 0); // base at y = 0 so scale.y sets the height
     geo.computeBoundingBox();

@@ -1,14 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { GRID_N } from "@/engine/tuning";
 import { CELL, GridSpace, SCENIC_MARGIN } from "./coords";
-import { Terrain } from "./terrain";
+import { FAR_EDGE, Terrain, farRockCount } from "./terrain";
 import { worldLook } from "./worldlook";
 
 const WORLDS = ["mars", "ceres", "io", "titan"] as const;
 
-function ground(terrain: Terrain): THREE.Mesh<THREE.PlaneGeometry> {
-  return terrain.group.children[0] as THREE.Mesh<THREE.PlaneGeometry>;
+function ground(terrain: Terrain): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial> {
+  return terrain.group.children[0] as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>;
 }
 
 function decorations(terrain: Terrain): THREE.InstancedMesh[] {
@@ -42,14 +42,15 @@ function assertSceneryClear(terrain: Terrain, grid: GridSpace): void {
 }
 
 describe("expanded construction terrain", () => {
-  it("keeps the established 45×45 surface and mesh density while exposing 41×41 cells", () => {
+  it("keeps a 1-unit mesh out to the far field while exposing 41×41 cells", () => {
     const grid = new GridSpace(GRID_N);
     const terrain = new Terrain(grid);
+    const segs = (2 * FAR_EDGE) / CELL;
     expect(GRID_N).toBe(41);
     expect(SCENIC_MARGIN).toBe(2);
-    expect(terrain.surfaceHalfSpan * 2).toBe(45 * CELL);
-    expect(ground(terrain).geometry.getAttribute("position").count).toBe(46 * 46);
-    expect(ground(terrain).geometry.index!.count).toBe(45 * 45 * 6);
+    expect(terrain.surfaceHalfSpan).toBe(FAR_EDGE);
+    expect(ground(terrain).geometry.getAttribute("position").count).toBe((segs + 1) ** 2);
+    expect(ground(terrain).geometry.index!.count).toBe(segs ** 2 * 6);
     expect(terrain.group.children).toHaveLength(3);
     terrain.dispose();
   });
@@ -79,7 +80,6 @@ describe("expanded construction terrain", () => {
         }
       }
       assertSceneryClear(terrain, grid);
-      if (margin === 0) expect(decorations(terrain).every((mesh) => mesh.count === 0)).toBe(true);
       terrain.dispose();
     }
   });
@@ -89,15 +89,47 @@ describe("expanded construction terrain", () => {
     const first = new Terrain(grid, world);
     const repeat = new Terrain(grid, world);
     assertSceneryClear(first, grid);
+    const look = worldLook(world);
     const meshes = decorations(first), copies = decorations(repeat);
     expect(meshes).toHaveLength(2);
     for (let i = 0; i < meshes.length; i++) {
       const mesh = meshes[i];
-      const expectedRocks = Math.round(worldLook(world).rocks.count * (1 - (grid.half() / first.surfaceHalfSpan) ** 2));
-      expect(mesh.count).toBe(i === 0 ? expectedRocks : worldLook(world).monoliths.count);
+      expect(mesh.count).toBe(i === 0 ? farRockCount(look) : look.monoliths.count * 3);
       expect(copies[i].count).toBe(mesh.count);
       expect(copies[i].instanceMatrix.array).toEqual(mesh.instanceMatrix.array);
     }
     first.dispose(); repeat.dispose();
+  });
+
+  it.each(WORLDS)("keeps %s ridged relief continuing across the far field", (world) => {
+    const grid = new GridSpace(GRID_N);
+    const terrain = new Terrain(grid, world);
+    const threshold = grid.half() + SCENIC_MARGIN + 1;
+    const positions = ground(terrain).geometry.getAttribute("position");
+    let maxHeight = -Infinity;
+    for (let i = 0; i < positions.count; i++) {
+      const x = positions.getX(i), z = positions.getZ(i);
+      if (Math.max(Math.abs(x), Math.abs(z)) > threshold) maxHeight = Math.max(maxHeight, positions.getY(i));
+    }
+    expect(maxHeight).toBeGreaterThanOrEqual(0.6 * worldLook(world).relief.ridge);
+    terrain.dispose();
+  });
+
+  it("disposes everything it built", () => {
+    const grid = new GridSpace(GRID_N);
+    const terrain = new Terrain(grid);
+    const groundMesh = ground(terrain);
+    const [rocks, monoliths] = decorations(terrain);
+    const spies = [
+      vi.spyOn(groundMesh.geometry, "dispose"),
+      vi.spyOn(groundMesh.material, "dispose"),
+      vi.spyOn(groundMesh.material.bumpMap!, "dispose"),
+      vi.spyOn(rocks.geometry, "dispose"),
+      vi.spyOn(rocks.material as THREE.Material, "dispose"),
+      vi.spyOn(monoliths.geometry, "dispose"),
+      vi.spyOn(monoliths.material as THREE.Material, "dispose"),
+    ];
+    terrain.dispose();
+    for (const spy of spies) expect(spy).toHaveBeenCalledTimes(1);
   });
 });
