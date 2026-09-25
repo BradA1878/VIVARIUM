@@ -97,6 +97,10 @@ export interface GradeLook {
   lift: RGB;
   gain: RGB;
   saturation: number;
+  /** the CSS `.vignette` overlay (App.vue / tokens.css) is the game's one
+   *  vignette and predates this grade; every world keeps this term at 0 so
+   *  the two never stack. Left in the shape rather than removed in case a
+   *  future grade wants its own darkening independent of the CSS layer. */
   vignette: number;
 }
 
@@ -130,7 +134,7 @@ export interface WorldLook {
 export const WORLD_LOOKS: Record<World, WorldLook> = {
   // ---- the ANCHOR: today's exact constants (Mars renders byte-for-byte as before)
   mars: {
-    grade: { lift: [4, 2, 7], gain: [255, 250, 240], saturation: 1.05, vignette: 0.2 },
+    grade: { lift: [4, 2, 7], gain: [255, 250, 240], saturation: 1.05, vignette: 0 },
     rockSeed: 98213,
     monolithSeed: 0x77aa,
     ground: { lo: 0x36_1c_15, hi: 0x78_40_2a, accent: 0x6c_3a_22, ridge: 0x18_0d_0b }, // RUST_LO/RUST_HI/OCHRE/BASALT
@@ -155,7 +159,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
 
   // ---- ceres: icy / pale blue-white, a weak pale sun, no dust to redden the sky
   ceres: {
-    grade: { lift: [3, 4, 7], gain: [248, 252, 255], saturation: 1.0, vignette: 0.18 },
+    grade: { lift: [3, 4, 7], gain: [248, 252, 255], saturation: 1.0, vignette: 0 },
     rockSeed: 0x1ce5,
     monolithSeed: 0x5ced,
     ground: { lo: 0x3a_44_4e, hi: 0xc8_d6_e2, accent: 0x9a_ae_c0, ridge: 0x26_2e_38 }, // slate → pale ice, blue-grey dune, deep shadow
@@ -181,7 +185,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
 
   // ---- io: volcanic / dark basalt + sulfur-yellow tints, harsh
   io: {
-    grade: { lift: [5, 4, 2], gain: [255, 250, 236], saturation: 1.04, vignette: 0.2 },
+    grade: { lift: [5, 4, 2], gain: [255, 250, 236], saturation: 1.04, vignette: 0 },
     rockSeed: 0x10_a0,
     monolithSeed: 0x10_b0,
     ground: { lo: 0x18_14_0e, hi: 0x8a_6e_1e, accent: 0xc0_98_24, ridge: 0x0c_0a_08 }, // near-black basalt → sulfur yellow
@@ -207,7 +211,7 @@ export const WORLD_LOOKS: Record<World, WorldLook> = {
 
   // ---- titan: hazy gold-orange, thick murky atmosphere, dim sun
   titan: {
-    grade: { lift: [5, 4, 2], gain: [255, 247, 232], saturation: 1.03, vignette: 0.22 },
+    grade: { lift: [5, 4, 2], gain: [255, 247, 232], saturation: 1.03, vignette: 0 },
     rockSeed: 0x71_7a,
     monolithSeed: 0x71_8b,
     ground: { lo: 0x2c_22_10, hi: 0x7e_64_2e, accent: 0x9c_7c_3a, ridge: 0x18_12_08 }, // dark tholin → murky gold

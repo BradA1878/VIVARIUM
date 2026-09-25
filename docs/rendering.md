@@ -211,8 +211,11 @@ The composer is allocated lazily and released/rebuilt on a bloom toggle; Low
 allocates no bloom mip-chain. A final FXAA pass cleans up small panel frames,
 antennae, and corridor rings after tone mapping, and applies each world's
 **final grade** in the same pass (`grade-fxaa.ts`: a black lift toward a tint,
-highlight gain, saturation, and a soft vignette, set from `worldlook.ts` on world
-changes via `PostFx.setGrade`). Folding the grade into FXAA adds no pass, so the
+highlight gain, and saturation, set from `worldlook.ts` on world changes via
+`PostFx.setGrade`). The shader also carries a vignette term, but every world
+keeps it at 0: the CSS `.vignette` overlay (`App.vue` / `tokens.css`) is
+already the game's one vignette, and the grade's own darkening stacked on top
+of it. Folding the grade into FXAA adds no pass, so the
 even-swap invariant below holds and High and Low grade identically. The scene target is HDR; the
 output target is 8-bit with no depth attachment. The final canvas does not
 need its own MSAA. Flare exposure and its cadence survive quality

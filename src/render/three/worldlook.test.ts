@@ -27,8 +27,9 @@ describe("world environment palettes", () => {
       expect(Math.min(...g.gain)).toBeGreaterThanOrEqual(220);
       expect(g.saturation).toBeGreaterThanOrEqual(0.9);
       expect(g.saturation).toBeLessThanOrEqual(1.15);
-      expect(g.vignette).toBeGreaterThanOrEqual(0);
-      expect(g.vignette).toBeLessThanOrEqual(0.35);
+      // the CSS .vignette overlay (App.vue / tokens.css) is the game's one
+      // vignette; the grade's own term stays at 0 so the two never stack
+      expect(g.vignette).toBe(0);
     });
   }
 });
