@@ -56,7 +56,7 @@ export const buildDome: KitBuilder = (ctx): KitMesh => {
 
   // --- Frosted dome cap -----------------------------------------------------
   const domeTint = isGreenhouse ? "#7fb98a" : "#787f8a";
-  const domeMat = materials.frostedDome(domeTint);
+  const domeMat = materials.domeShell(domeTint);
   // Upper hemisphere only (phiStart 0..PI on the vertical sweep).
   const domeGeo = new THREE.SphereGeometry(
     radius,
@@ -159,7 +159,9 @@ export const buildDome: KitBuilder = (ctx): KitMesh => {
       Math.PI / 2,
     );
     dishGeo.scale(1, 0.45, 1);
-    const dish = new THREE.Mesh(dishGeo, materials.panel());
+    const dishMat = materials.metal("#b8bec6", { rough: 0.35, metal: 0.6 });
+    dishMat.side = THREE.DoubleSide;
+    const dish = new THREE.Mesh(dishGeo, dishMat);
     dish.position.set(radius * 0.18, topY + mastH * 0.7, 0);
     dish.rotation.z = -Math.PI / 3;
     dish.castShadow = true;
@@ -237,7 +239,9 @@ export const buildDome: KitBuilder = (ctx): KitMesh => {
         Math.PI / 2,
       );
       dishGeo.scale(1, 0.4, 1);
-      const dish = new THREE.Mesh(dishGeo, materials.panel());
+      const dishMat = materials.metal("#b8bec6", { rough: 0.35, metal: 0.6 });
+      dishMat.side = THREE.DoubleSide;
+      const dish = new THREE.Mesh(dishGeo, dishMat);
       dish.position.y = topY + stubH;
       dish.rotation.z = -Math.PI / 5;
       dish.castShadow = true;

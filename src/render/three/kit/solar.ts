@@ -102,30 +102,6 @@ export const buildSolar: KitBuilder = (ctx: KitContext): KitMesh => {
     panelPivot.add(rail);
   }
 
-  // --- subtle cell grid: thin dark inset seams ------------------------------
-  // One vertical + one horizontal seam splits the panel into a 2×2 cell layout.
-  const seamMat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color("#0b1019"),
-    roughness: 0.35,
-    metalness: 0.6,
-  });
-  const seamWidth = cell * 0.012;
-  const seamY = panelThickness / 2 + 0.0005; // sit just on top of the glass
-  // seam running along Z (splits X)
-  const seamZ = new THREE.Mesh(
-    new THREE.BoxGeometry(seamWidth, panelThickness * 0.5, panelD * 0.98),
-    seamMat
-  );
-  seamZ.position.set(0, seamY, 0);
-  panelPivot.add(seamZ);
-  // seam running along X (splits Z)
-  const seamX = new THREE.Mesh(
-    new THREE.BoxGeometry(panelW * 0.98, panelThickness * 0.5, seamWidth),
-    seamMat
-  );
-  seamX.position.set(0, seamY, 0);
-  panelPivot.add(seamX);
-
   // --- status light on the frame --------------------------------------------
   const lightMat = materials.glow();
   const light = new THREE.Mesh(

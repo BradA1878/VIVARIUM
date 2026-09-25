@@ -31,14 +31,14 @@ interface FacilitySpec {
 function specFor(id: string): FacilitySpec {
   switch (id) {
     case "printer":
-      return { kind: "printer", metal: "#8a7f94" }; // violet-grey fabricator
+      return { kind: "printer", metal: "#838a96" }; // steel fabricator
     case "roverbay":
       return { kind: "roverbay", metal: "#76828e" }; // garage blue-grey
     case "fabricator":
       return { kind: "fabricator", metal: "#7d8a6e" }; // moss — the lineage's livery
     case "roboticsbay":
     default:
-      return { kind: "roboticsbay", metal: "#8c8470" }; // workshop tan
+      return { kind: "roboticsbay", metal: "#7f8790" }; // workshop steel
   }
 }
 
@@ -163,7 +163,15 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
     const carriage = new THREE.Group();
     carriage.name = "facility-gantry";
     group.add(carriage);
-    carriage.add(box(new THREE.BoxGeometry(cell * 0.1, cell * 0.07, spanD), trimMat, 0, postH, 0));
+    const crossbeamH = cell * 0.07;
+    const crossbeam = box(new THREE.BoxGeometry(cell * 0.1, crossbeamH, spanD), trimMat, 0, postH, 0);
+    carriage.add(crossbeam);
+    // safety-yellow hazard strip on the crossbeam's outward (top) face, sized
+    // to the beam's own length and a fraction of its height; parented to the
+    // beam itself so it rides the carriage's slide with no extra bookkeeping
+    const trimStripH = crossbeamH * 0.3;
+    const trimStripMat = materials.metal("#c9a23a", { rough: 0.55, metal: 0.3 });
+    crossbeam.add(box(new THREE.BoxGeometry(cell * 0.1, trimStripH, spanD), trimStripMat, 0, crossbeamH / 2 + trimStripH / 2, 0));
     // the tool block hangs from the crossbeam over a work floor
     carriage.add(box(new THREE.BoxGeometry(cell * 0.04, cell * 0.18, cell * 0.04), trimMat, 0, postH - cell * 0.12, 0, false)); // hoist cable
     const tool = new THREE.Mesh(new THREE.BoxGeometry(cell * 0.22, cell * 0.16, cell * 0.22), lightMat);

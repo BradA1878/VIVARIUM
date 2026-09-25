@@ -1,10 +1,11 @@
 /* ============================================================================
-   Corridor — a frosted pressurized connector that orients to its neighbours
-   instead of always facing world-X. The renderer hands it a 4-bit mask of which
-   sides connect (N=1,E=2,S=4,W=8); the mesh builds one half-tube ARM per set bit
-   plus a centre cap, so a run reads as a continuous pipe: straight / elbow / T /
-   cross / end-cap. Arms reach to the cell edge to meet a neighbour or a door's
-   airlock ("snap to opening"). alive ≈ sealed; unsealed reads dim.
+   Corridor — a nearly-opaque pressurized connector that orients to its
+   neighbours instead of always facing world-X. The renderer hands it a 4-bit
+   mask of which sides connect (N=1,E=2,S=4,W=8); the mesh builds one half-tube
+   ARM per set bit plus a centre cap, so a run reads as a continuous pipe:
+   straight / elbow / T / cross / end-cap. Arms reach to the cell edge to meet
+   a neighbour or a door's airlock ("snap to opening"). alive ≈ sealed;
+   unsealed reads dim.
    ============================================================================ */
 import * as THREE from "three";
 import type { KitBuilder, KitMesh, BuildingStatus, KitEnv } from "./contract";
@@ -23,9 +24,9 @@ export const buildCorridor: KitBuilder = (ctx): KitMesh => {
 
   const skinMat = ctx.materials.frostedDome();
   skinMat.transparent = true;
-  skinMat.opacity = 0.55;
+  skinMat.opacity = 0.9;
   skinMat.side = THREE.DoubleSide;
-  const ribMat = ctx.materials.metal();
+  const ribMat = ctx.materials.metal("#5a626c", { rough: 0.5, metal: 0.8 });
   const glowMat = ctx.materials.glow("#7fd4e8");
 
   // centre cap — a low frosted dome over the junction (always present)
