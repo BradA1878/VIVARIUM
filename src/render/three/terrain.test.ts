@@ -163,6 +163,18 @@ describe("expanded construction terrain", () => {
     terrain.dispose();
   });
 
+  it("hides and shows the decorative scenery without touching the ground", () => {
+    const terrain = new Terrain(new GridSpace(GRID_N));
+    const scenery = terrain.group.children.filter((c) => c instanceof THREE.InstancedMesh);
+    expect(scenery.map((c) => c.name).sort()).toEqual(["pebbles", "scenic-monoliths", "scenic-rocks"]);
+    terrain.setScenery(false);
+    expect(scenery.every((c) => !c.visible)).toBe(true);
+    expect(ground(terrain).visible).toBe(true);
+    terrain.setScenery(true);
+    expect(scenery.every((c) => c.visible)).toBe(true);
+    terrain.dispose();
+  });
+
   it("disposes everything it built", () => {
     const grid = new GridSpace(GRID_N);
     const terrain = new Terrain(grid);

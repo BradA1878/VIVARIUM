@@ -10,7 +10,7 @@ import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, DepositKind,
 import { DEFS, SIDE_DELTA } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { BridgeCore } from "@/worker/bridge";
-import { LADDER, PerfGovernor, STEP_HIGH, STEP_LOW, isSoftwareRenderer, snapHz, tunablesForPointer, tunablesForRenderer, type PerfStep } from "./perf";
+import { LADDER, PerfGovernor, SOFTWARE_PIXEL_RATIO, STEP_HIGH, STEP_LOW, isSoftwareRenderer, snapHz, tunablesForPointer, tunablesForRenderer, type PerfStep } from "./perf";
 import { SceneManager, nightLevel } from "./three/scene";
 import { Terrain } from "./three/terrain";
 import { GroundDetails } from "./three/ground-details";
@@ -207,6 +207,10 @@ export class ThreeRenderer {
   // falling behind on the GPU side.
   private governor: PerfGovernor;
   private fpsCap: number;
+  /** WebGL runs on a software rasterizer: AUTO stays on the bottom step, the
+   *  pixel ratio is capped at SOFTWARE_PIXEL_RATIO, and the decorative
+   *  scenery is hidden (see the constructor) */
+  private readonly software: boolean;
 
   // embodied colony: astronauts, deposits, vents, machines, the trader saucer
   private colonists = new Map<number, ColonistRec>();
@@ -269,12 +273,14 @@ export class ThreeRenderer {
     this.bridge = bridge;
     this.grid = new GridSpace(gridN);
     this.scene = new SceneManager(canvas);
+    this.software = isSoftwareRenderer(glRendererName(this.scene.renderer.getContext()));
     this.governor = new PerfGovernor(LADDER, {
       ...tunablesForPointer(typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches),
-      ...tunablesForRenderer(isSoftwareRenderer(glRendererName(this.scene.renderer.getContext()))),
+      ...tunablesForRenderer(this.software),
     });
     this.fpsCap = this.governor.step().fps;
     this.terrain = new Terrain(this.grid);
+    this.terrain.setScenery(!this.software);
     this.scene.scene.add(this.terrain.group);
     this.scene.scene.add(this.groundDetails.group);
     this.scene.scene.add(this.buildingsGroup);
@@ -542,7 +548,7 @@ export class ThreeRenderer {
    *  change for its start step, and scene defaults must not decide it. */
   private applyStep(s: PerfStep): void {
     this.setFpsCap(s.fps);
-    this.scene.setPixelRatio(s.ratio);
+    this.scene.setPixelRatio(this.software ? Math.min(s.ratio, SOFTWARE_PIXEL_RATIO) : s.ratio);
     this.scene.setBloom(s.bloom);
     this.scene.setShadows(s.shadows);
     this.scene.setShadowSize(s.shadowSize);
@@ -636,6 +642,7 @@ export class ThreeRenderer {
     this.scene.scene.remove(this.terrain.group);
     this.terrain.dispose();
     this.terrain = new Terrain(this.grid, world);
+    this.terrain.setScenery(!this.software);
     this.scene.scene.add(this.terrain.group);
     this.scene.setWorld(world);
     // quiet swap (parallel-colonies): drop the LEAVING colony's building meshes WITHOUT

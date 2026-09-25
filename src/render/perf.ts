@@ -111,6 +111,11 @@ export function tunablesForPointer(coarse: boolean): Partial<PerfTunables> {
   return coarse ? { startStep: 2, bestStep: 2 } : {};
 }
 
+/** pixel-ratio cap on a software renderer: a quarter of the fragments at a
+ *  DPR-1 window. Resolution is a small share of a CPU-rasterized frame (the
+ *  vertex work of the scenery is the larger one), but it is a free share. */
+export const SOFTWARE_PIXEL_RATIO = 0.5;
+
 /** a WebGL renderer name that means rasterizing on the CPU: SwiftShader (what
  *  headless Chromium uses without a GPU, as on CI runners), Mesa's llvmpipe /
  *  softpipe, or Windows' basic render driver */

@@ -298,6 +298,13 @@ export class Terrain {
     this.instancedMeshes.push(mesh);
   }
 
+  /** show or hide the decorative scenery (far rocks, monoliths, pebbles). The
+   *  renderer hides it on a software WebGL renderer, where its ~130k instanced
+   *  vertices are shaded on the CPU every frame; the ground stays. */
+  setScenery(visible: boolean): void {
+    for (const mesh of this.instancedMeshes) mesh.visible = visible;
+  }
+
   dispose(): void {
     for (const d of this.disposables) d.dispose();
     for (const mesh of this.instancedMeshes) mesh.dispose();

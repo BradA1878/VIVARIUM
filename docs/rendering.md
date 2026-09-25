@@ -268,6 +268,11 @@ GPU-bound device struggling on the top steps. A software WebGL renderer
 runner, or llvmpipe and similar) starts AUTO on the bottom step and stays there
 (`tunablesForRenderer`): its GPU work runs on the CPU in another process, so the
 frame body stays small while presented frames take hundreds of milliseconds.
+On a software renderer the renderer also caps the pixel ratio at 0.5
+(`SOFTWARE_PIXEL_RATIO`) and hides the decorative scenery (far rocks,
+monoliths, pebbles, `Terrain.setScenery`), whose ~130k instanced vertices the
+rasterizer would shade on the CPU every frame; with both, SwiftShader renders
+the reference colony about 1.6× faster than the pre-overhaul build did.
 Pinning HIGH still reaches step 0.
 
 Each frame the renderer measures the cost of the **frame body** — the time
