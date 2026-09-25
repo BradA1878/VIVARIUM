@@ -120,4 +120,24 @@ describe("post-processing quality transitions", () => {
     expect(ao()).toBeUndefined();
     fx.dispose();
   });
+
+  it("keeps an even number of buffer swaps per frame, so the scene always renders into the HDR target with depth", () => {
+    // The scene pass renders into the composer's read buffer. Only one of the
+    // two targets has depth (and HDR color); an odd swap count per frame would
+    // hand the scene the depthless 8-bit target on every other frame.
+    for (const bloom of [true, false]) {
+      for (const ao of [true, false]) {
+        const { fx, internals } = fixture();
+        fx.setEnabled(bloom);
+        fx.setAO(ao);
+        fx.render();
+        const composer = internals.composer!;
+        const swaps = composer.passes.filter((p) => p.enabled && p.needsSwap).length;
+        expect(swaps % 2, `bloom ${bloom}, ao ${ao}`).toBe(0);
+        expect(composer.readBuffer.texture.type).toBe(THREE.HalfFloatType);
+        expect(composer.readBuffer.depthBuffer).toBe(true);
+        fx.dispose();
+      }
+    }
+  });
 });

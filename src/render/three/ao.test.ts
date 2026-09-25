@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { AO_MIN_OPACITY, ColonyAOPass, aoVisible } from "./ao";
 
@@ -42,6 +42,28 @@ describe("ColonyAOPass", () => {
     pass.restoreVisibility();
     expect([solid.visible, ghost.visible, sprite.visible, hiddenAlready.visible]).toEqual([true, true, true, false]);
     pass.dispose();
+  });
+
+  it("multiplies AO onto the scene target in place and never swaps the composer buffers", () => {
+    const pass = new ColonyAOPass(new THREE.Scene(), new THREE.OrthographicCamera(), 32, 32);
+    expect(pass.needsSwap).toBe(false);
+    // stub the two GPU-facing helpers; GTAOPass.render() drives them in order
+    const draws: { material: THREE.Material; target: THREE.WebGLRenderTarget | null; clear: unknown }[] = [];
+    pass.renderOverride = vi.fn() as unknown as typeof pass.renderOverride;
+    pass.renderPass = ((_renderer: THREE.WebGLRenderer, material: THREE.Material, target: THREE.WebGLRenderTarget | null, clear?: unknown) => {
+      draws.push({ material, target, clear });
+    }) as typeof pass.renderPass;
+    const read = new THREE.WebGLRenderTarget(32, 32);
+    const write = new THREE.WebGLRenderTarget(32, 32);
+    pass.render({} as THREE.WebGLRenderer, write, read, 0, false);
+    const last = draws.at(-1)!;
+    expect(last.material).toBe(pass.blendMaterial);
+    expect(last.target).toBe(read); // the scene target itself, not the write buffer
+    expect(last.clear).toBeUndefined(); // no clear before the multiply
+    expect(draws.some((d) => d.target === write)).toBe(false);
+    pass.dispose();
+    read.dispose();
+    write.dispose();
   });
 
   it("builds the same denoise noise every time (deterministic output across rebuilds)", () => {

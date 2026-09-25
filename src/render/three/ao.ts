@@ -7,6 +7,11 @@
    aoVisible() is the whole rule; the subclass applies it and GTAOPass's own
    restoreVisibility() puts every object back. The denoise noise is seeded so
    the pass renders identically every time it is rebuilt.
+
+   The pass multiplies its occlusion straight onto the scene target and never
+   swaps the composer's buffers: PostFx relies on an even number of swaps per
+   frame so the scene always renders into the HDR target that has a depth
+   buffer (see postfx.ts).
    ============================================================================ */
 import * as THREE from "three";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
@@ -65,6 +70,25 @@ export class ColonyAOPass extends GTAOPass {
     this.updateGtaoMaterial({ radius: 0.5, distanceExponent: 1, thickness: 1, distanceFallOff: 1, scale: 1, samples: 16 });
     this.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
     this.blendIntensity = 0.9;
+    // GTAOPass still computes the G-buffer, AO and denoise with output Off; it
+    // just draws nothing. render() then blends the result in place.
+    this.output = GTAOPass.OUTPUT.Off;
+    this.needsSwap = false;
+  }
+
+  /** compute AO as GTAOPass does, then multiply it onto the scene target in
+   *  place (the blend material is a DstColor × src multiply with no depth test) */
+  override render(
+    renderer: THREE.WebGLRenderer,
+    writeBuffer: THREE.WebGLRenderTarget,
+    readBuffer: THREE.WebGLRenderTarget,
+    deltaTime: number,
+    maskActive: boolean,
+  ): void {
+    super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    this.blendMaterial.uniforms.intensity.value = this.blendIntensity;
+    this.blendMaterial.uniforms.tDiffuse.value = this.pdRenderTarget.texture;
+    this.renderPass(renderer, this.blendMaterial, readBuffer);
   }
 
   /** GTAOPass seeds its denoise noise from Math.random; a fixed stream keeps
