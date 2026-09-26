@@ -87,9 +87,14 @@ export function buildGraph(s: Snapshot): WorldGraph {
   return { nodes, edges };
 }
 
-/** buildings producing into a pool */
+/** buildings producing into a pool — for power that includes the solar, wind,
+ *  and geothermal generators, which feed it outside the recipe pass */
 export function producersOf(s: Snapshot, res: Resource): BuildingState[] {
-  return s.buildings.filter((b) => (DEFS[b.defId]?.produces[res] ?? 0) > 0);
+  return s.buildings.filter((b) => {
+    const d = DEFS[b.defId];
+    if (!d) return false;
+    return (d.produces[res] ?? 0) > 0 || (res === "power" && !!(d.solar || d.wind || d.steady));
+  });
 }
 
 /** buildings drawing from a pool */

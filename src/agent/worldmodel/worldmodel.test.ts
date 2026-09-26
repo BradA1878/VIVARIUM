@@ -4,6 +4,7 @@
    ============================================================================ */
 import { describe, it, expect } from "vitest";
 import { Colony } from "@/engine";
+import type { ColonyState } from "@/engine/state";
 import { buildGraph, diagnoseShortfall, summarizeDiagnosis, risks, producersOf } from "./index";
 
 function run(c: Colony, seconds: number, step = 0.2): void {
@@ -81,6 +82,18 @@ describe("root-cause diagnosis traces the cascade", () => {
     const starved = diagnoseShortfall(s, "oxygen").failing.find((f) => f.defId === "electrolysis");
     expect(starved?.reason).toBe("starved");
     expect(starved?.starvedOf).toBe("water");
+  });
+
+  it("a solar colony browned out at night blames the dark, not a missing generator", () => {
+    const c = new Colony(7);
+    const st = (c as unknown as { s: ColonyState }).s;
+    st.tod = 0.02;
+    st.pools.power.amount = 0;
+    c.tick(0.2);
+    const chain = summarizeDiagnosis(diagnoseShortfall(c.snapshot(), "oxygen"));
+    expect(chain[0]).toBe("oxygen: the electrolysis unit has gone dark");
+    expect(chain).toContain("the dark has taken the light");
+    expect(chain).not.toContain("nothing makes power");
   });
 
   it("power shortfall under a storm reads as an environmental cause", () => {
