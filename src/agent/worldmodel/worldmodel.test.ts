@@ -44,6 +44,30 @@ describe("root-cause diagnosis traces the cascade", () => {
     expect(phrase.toLowerCase()).toContain("water");
   });
 
+  it("reads the engine's reason: a damaged unit is damaged, not dark", () => {
+    const c = new Colony(7);
+    const s0 = c.snapshot();
+    const elec = s0.buildings.find((b) => b.defId === "electrolysis")!;
+    const state = (c as unknown as { s: { buildings: { uid: number; integrity: number }[] } }).s;
+    state.buildings.find((b) => b.uid === elec.uid)!.integrity = 0.2;
+    run(c, 0.4);
+    const d = diagnoseShortfall(c.snapshot(), "oxygen");
+    expect(d.failing.find((f) => f.defId === "electrolysis")?.reason).toBe("damaged");
+    expect(summarizeDiagnosis(d).join(" ")).toContain("is damaged");
+  });
+
+  it("falls back to the flags for a snapshot without offReason", () => {
+    const c = new Colony(7);
+    const extractor = c.snapshot().buildings.find((b) => b.defId === "extractor")!;
+    expect(c.removeAt(extractor.gx, extractor.gy)).toBe(true);
+    run(c, 80);
+    const s = c.snapshot();
+    for (const b of s.buildings) delete b.offReason;
+    const starved = diagnoseShortfall(s, "oxygen").failing.find((f) => f.defId === "electrolysis");
+    expect(starved?.reason).toBe("starved");
+    expect(starved?.starvedOf).toBe("water");
+  });
+
   it("power shortfall under a storm reads as an environmental cause", () => {
     const c = new Colony(2);
     // strip generation + buffer, then gut the light: power must bottom out and

@@ -8,7 +8,7 @@
    cascade — oxygen is failing because electrolysis is unfed because water is
    empty because the extractor lost power to the storm.
    ============================================================================ */
-import type { BuildingState, Resource, Snapshot } from "@shared/types";
+import type { BuildingState, OffReason, Resource, Snapshot } from "@shared/types";
 import { DEFS } from "@/engine";
 
 export type NodeKind = "building" | "pool" | "crew" | "hub" | "environment";
@@ -102,6 +102,7 @@ export type FailReason =
   | "unstaffed" // not enough labor
   | "unpowered" // shed in a brownout
   | "starved" // a non-power input is empty
+  | "damaged" // below working integrity, or a flare's electronics fault
   | "none";
 
 export interface FailingProducer {
@@ -126,7 +127,21 @@ export interface Diagnosis {
   environmental?: "night" | "storm";
 }
 
+/** the engine's own offReason, in the world model's words */
+function fromOffReason(r: OffReason): { reason: FailReason; starvedOf?: Resource } {
+  switch (r) {
+    case "seal": return { reason: "unsealed" };
+    case "crew": return { reason: "unstaffed" };
+    case "power": return { reason: "unpowered" };
+    case "damaged":
+    case "faulted": return { reason: "damaged" };
+    default: return { reason: "starved", starvedOf: r };
+  }
+}
+
 function reasonFor(b: BuildingState, s: Snapshot): { reason: FailReason; starvedOf?: Resource } {
+  // the tick records the first gate that failed; older snapshots lack it
+  if (b.offReason) return fromOffReason(b.offReason);
   const def = DEFS[b.defId];
   if (def.requiresPressure && !b.connected) return { reason: "unsealed" };
   if (def.staffing > 0 && !b.staffed) return { reason: "unstaffed" };

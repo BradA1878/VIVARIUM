@@ -105,6 +105,11 @@ export interface Pool {
   capacity: number;
 }
 
+/** why a building did not run this tick: the first production gate that failed,
+ *  in the tick's order — power, then damage (or a flare's electronics fault),
+ *  then the seal, then crew, then a missing input */
+export type OffReason = "power" | "damaged" | "faulted" | "seal" | "crew" | "water" | "oxygen" | "food";
+
 /** A placed building's live state (the parts the renderer/HUD read). */
 export interface BuildingState {
   uid: number;
@@ -124,6 +129,8 @@ export interface BuildingState {
   integrity: number;
   /** seconds an electronics fault keeps it offline (solar flare) */
   faulted: number;
+  /** why it did not run this tick; undefined when it ran or had nothing to run */
+  offReason?: OffReason;
   /** seconds until this instance's replication completes (replicates defs only);
    *  undefined until its first ticking tick — per-instance, unlike the colony-
    *  scalar roverFab/robotFab, because each lineage member runs its own clock */

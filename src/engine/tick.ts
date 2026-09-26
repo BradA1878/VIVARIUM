@@ -6,7 +6,7 @@
    Pure function of (state, dt, rng, emit). Mutates state in place. Emits events
    for the UI and (optionally) for VIVARIUM — never read back into the tick.
    ============================================================================ */
-import type { ColonyEvent, Resource } from "@shared/types";
+import type { ColonyEvent, OffReason, Resource } from "@shared/types";
 import { DEFS } from "./defs";
 import {
   PERSON, DAY_START, DAY_END,
@@ -170,25 +170,32 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   for (const b of s.buildings) if (!(powerNeed(b, mods) > 0)) b.online = true;
 
   // 4. Production — online AND connected AND staffed AND fed AND intact ---------
+  // offReason records the first gate that fails, in this order, for the badges,
+  // the HUD alert, and the narrator
   for (const b of s.buildings) {
-    b.util = 0; b.staffed = true; b.fed = true;
+    b.util = 0; b.staffed = true; b.fed = true; b.offReason = undefined;
     const d = DEFS[b.defId];
-    if (!b.online) continue;
-    if (!buildingFunctional(b)) { b.online = false; continue; } // hazard damage / fault
-    if (d.requiresPressure && !b.connected) { b.online = false; continue; }
+    if (!b.online) { b.offReason = "power"; continue; }
+    if (!buildingFunctional(b)) { // hazard damage / flare fault
+      b.online = false;
+      b.offReason = b.faulted > 0 ? "faulted" : "damaged";
+      continue;
+    }
+    if (d.requiresPressure && !b.connected) { b.online = false; b.offReason = "seal"; continue; }
     // staffing
     if (d.staffing > 0) {
       if (s.laborUsed + d.staffing <= s.labor) s.laborUsed += d.staffing;
-      else { b.staffed = false; b.online = false; continue; }
+      else { b.staffed = false; b.online = false; b.offReason = "crew"; continue; }
     }
     // non-power inputs available?
-    let ok = true;
+    let missing: Resource | null = null;
     for (const k in d.consumes) {
       if (k === "power") continue;
-      if (s.pools[k as Resource].amount < (d.consumes[k as Resource]! * dt)) { ok = false; break; }
+      if (s.pools[k as Resource].amount < (d.consumes[k as Resource]! * dt)) { missing = k as Resource; break; }
     }
-    if (!ok) {
+    if (missing) {
       b.fed = false; b.online = false;
+      b.offReason = missing as OffReason;
       if (d.staffing > 0) s.laborUsed -= d.staffing; // release the labor it claimed
       continue;
     }
