@@ -103,24 +103,26 @@ The preview and the worker run the same functions on the same data, so they agre
 
 Visible while any build tool is active (place, Corridor, Demolish); hidden otherwise. It reads the snapshot's `connected` flags (the engine's truth) and rebuilds only when a key built from the building list and connected set changes. Tiles sit just above the ground, like the placement tiles.
 
-## 5. Why a building is off: the engine's `fault` (engine)
+## 5. Why a building is off: the engine's `offReason` (engine)
 
 `BuildingState` gains:
 
 ```ts
-export type BuildingFault = "power" | "damaged" | "seal" | "crew" | "water" | "oxygen" | "food";
-fault?: BuildingFault;
+export type OffReason = "power" | "damaged" | "faulted" | "seal" | "crew" | "water" | "oxygen" | "food";
+offReason?: OffReason;
 ```
 
-The production pass in `tick.ts` already checks gates in a fixed order. It now records the first that fails: not online after the power pass (`"power"`), `!buildingFunctional` (`"damaged"`), sealed and not connected (`"seal"`), no labor (`"crew"`), a missing non-power input (that resource). `fault` is cleared at the start of each building's pass and stays undefined when the building runs or has nothing to run. It is derived state written every tick, so it is deterministic; it rides snapshots and saves with the other flags, and a save from before this change fills it on the next tick.
+(Named `offReason` rather than `fault` because `BuildingState.faulted` already exists: the solar-flare electronics-fault timer.)
 
-The world model's `reasonFor` reads `b.fault` when present (`seal` → unsealed, `crew` → unstaffed, `power` → unpowered, an input → starved with `starvedOf`, and a new `damaged` reason with prose "is damaged"), and falls back to today's derivation for snapshots that lack it. The badge, the alert, and the narrator then give the same reason.
+The production pass in `tick.ts` already checks gates in a fixed order. It now records the first that fails: not online after the power pass (`"power"`), `!buildingFunctional` (`"faulted"` while the flare-fault timer runs, else `"damaged"`), sealed and not connected (`"seal"`), no labor (`"crew"`), a missing non-power input (that resource). `offReason` is cleared at the start of each building's pass and stays undefined when the building runs or has nothing to run. It is derived state written every tick, so it is deterministic; it rides snapshots and saves with the other flags, and a save from before this change fills it on the next tick.
+
+The world model's `reasonFor` reads `b.offReason` when present (`seal` → unsealed, `crew` → unstaffed, `power` → unpowered, an input → starved with `starvedOf`, and `damaged`/`faulted` → a new `damaged` reason with prose "is damaged"), and falls back to today's derivation for snapshots that lack it. The badge, the alert, and the narrator then give the same reason.
 
 ## 6. Fault badges (render)
 
 `src/render/three/badges.ts` `FaultBadgeSystem`, built like `nametags.ts`: pooled `THREE.Sprite` billboards with a `CanvasTexture` cached per label, unlit, no depth test, canvas work only inside methods (node-test safe).
 
-- A small dark pill above the roof of any building with a `fault`: NO POWER, DAMAGED, NO SEAL, NO CREW, NO WATER (NO OXYGEN / NO FOOD for completeness).
+- A small dark pill above the roof of any building with an `offReason`: NO POWER, DAMAGED, FLARE FAULT, NO SEAL, NO CREW, NO WATER (NO OXYGEN / NO FOOD for completeness).
 - Corridors are excluded, so a brownout does not badge every corridor cell.
 - Updated when a snapshot changes; nothing per frame. The anchor height comes from the building mesh's bounds, taken once when the mesh is built.
 - The existing rust status light stays; the badge says why.
@@ -128,16 +130,16 @@ The world model's `reasonFor` reads `b.fault` when present (`seal` → unsealed,
 
 ## 7. HUD alert (UI)
 
-A pure `faultAlerts(snapshot)` in `ui/components/alerts.ts` adds one line per kind when its count is above zero, each carrying the uids:
+A pure `faultAlerts(buildings)` in `ui/components/alerts.ts` adds one line per kind when its count is above zero, each carrying the uids:
 
 - "N UNSEALED · no corridor to a hub"
 - "N UNSTAFFED · no free crew"
-- "N DAMAGED · repairing"
+- "N DAMAGED · offline until repaired" and "N FLARE FAULT · electronics recovering"
 - "N NO WATER · input empty" (and oxygen/food if they ever occur)
 
 Power faults are left to the existing BROWNOUT alert (the badges still name them per building). Lines are severity 2, listed after hazards.
 
-Fault lines render as buttons. Clicking one calls a store action that asks the renderer to `focusBuilding(uid)` for the next uid of that kind: the camera pans to the building (the camera rig offset the e2e already uses) and a dedicated outline pulses for about three seconds. Repeated clicks step through the list.
+Fault lines render as buttons. Clicking one calls a store action that asks the renderer to `focusBuilding(uid)` for the next uid of that kind: the camera pans to the building (the camera rig offset the e2e already uses) and the existing ring-pulse effect marks it. Repeated clicks step through the list.
 
 ## 8. Words the player reads
 
@@ -152,9 +154,9 @@ place tool (main) ── previewSeal(snapshot) ──▶ ghost tiles + placing s
       │ click
       ▼
 Command { place, connect: true } ──▶ worker: Colony.place → plan → building + corridors
-                                                   │ tick: sealNetwork → connected; production → fault
+                                                   │ tick: sealNetwork → connected; production → offReason
                                                    ▼
-snapshot ──▶ overlay (connected) · badges (fault) · alerts (fault) · narrator (fault)
+snapshot ──▶ overlay (connected) · badges (offReason) · alerts (offReason) · narrator (offReason)
 ```
 
 ## Testing
@@ -163,7 +165,7 @@ snapshot ──▶ overlay (connected) · badges (fault) · alerts (fault) · na
   - `seal.test.ts` — the rule: two hubs each root a network; a sealed chain docks; a surface building between two sealed buildings breaks the chain; corridors off an isolated second hub connect to it; no hub → nothing connected.
   - `seal.test.ts` — the planner: touching → no corridor; shortest path length; a blocked building → `no-route`; a dangling corridor is reused for free; the same inputs give the same path.
   - Placement: an affordable connect places building and corridors and charges `matCost + 2 × cells`; an unaffordable one places nothing; `no-route` places the building unsealed; `connect` omitted keeps today's behavior.
-  - Faults: each kind is set by the gate that fails first and cleared when the building runs.
+  - Off reasons: each kind is set by the gate that fails first and cleared when the building runs.
   - Existing tests that encode the old rule are rewritten: `engine.test.ts` "a sealed unit cut off from the hub goes offline" (docking now keeps the seed electrolysis sealed through the habs, so the test isolates a unit that touches nothing sealed) and the brownout test's comment that habs do not extend a seal.
   - The determinism and replay tests keep passing (the new rule is a pure function of state).
 - **Main thread (Vitest, node):** `sealPreviewText`, `badgeFaults`, `faultAlerts`, the overlay's cell and color sets, and the world model's fault mapping.
@@ -179,5 +181,5 @@ snapshot ──▶ overlay (connected) · badges (fault) · alerts (fault) · na
 5. Every hub pressurizes its own network; docked sealed buildings share the seal; surface buildings neither need nor pass it.
 6. While any build tool is active, the overlay marks the connected network in cyan and unconnected sealed buildings in rust.
 7. A building that is not running shows a badge naming the engine's first failing gate, and the narrator's diagnosis gives the same reason.
-8. The HUD alert counts unsealed, unstaffed, damaged, and starved buildings; clicking a line pans to them in turn and pulses the outline.
+8. The HUD alert counts unsealed, unstaffed, damaged, flare-faulted, and starved buildings; clicking a line pans to them in turn and marks each with a ring pulse.
 9. The engine stays deterministic; all unit tests, typecheck, build, and e2e pass locally and on CI.
