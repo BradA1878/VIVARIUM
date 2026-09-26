@@ -113,7 +113,7 @@ const KEYS: [string, string][] = [
   ["Del / Backspace", "remove the selected building"],
   ["L", "open / close the council log"],
   ["Esc", "cancel tool · close this panel"],
-  ["corridor", "select Corridor, then choose two sealed building doors"],
+  ["corridor", "manual runs: select Corridor, then click two sealed buildings"],
 ];
 </script>
 

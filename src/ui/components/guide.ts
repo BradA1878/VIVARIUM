@@ -137,8 +137,8 @@ export function guideObjective(
       return {
         eyebrow: "WATCH 1 OF 3 · PRESSURE",
         title: "Seal the food loop",
-        body: "Hydroponics is built, but it cannot make food without pressure. Link its door back to the Pressure Hub with a Corridor.",
-        hint: "Select Corridor, then choose the two sealed doors.",
+        body: "Hydroponics is built, but it is cut off from the pressure network and cannot make food. Connect it to the Pressure Hub with a Corridor.",
+        hint: "Select Corridor, click Hydroponics, then click the hub.",
       };
     }
     if (greenhouse && greenhouse.connected && (!greenhouse.online || !greenhouse.staffed)) {
@@ -152,8 +152,8 @@ export function guideObjective(
     return {
       eyebrow: "WATCH 1 OF 3 · FOOD",
       title: "Give the colony a food source",
-      body: "Place Hydroponics near the hub, then connect its sealed door. A building can exist on the surface and still be offline outside the pressure network.",
-      hint: "Palette → Hydroponics → Corridor → Pressure Hub.",
+      body: "Place Hydroponics near the hub. A sealed building lays its own corridor to the pressure network when placed; the placing strip shows the cost before you click.",
+      hint: "Palette → Hydroponics → click a cell near the hub.",
     };
   }
 

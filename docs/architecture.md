@@ -120,8 +120,10 @@ write. CLAUDE.md's multi-world bullet carries the full contract.
 ## The prediction seam
 
 The main thread occasionally needs to *predict* engine behaviour for instant
-feedback — the build ghost's valid/blocked tint, the auto-routed corridor preview.
-That lives in `engine/predict.ts` and `engine/route.ts` and is **advisory only**:
+feedback — the build ghost's valid/blocked tint, the auto-routed corridor preview,
+the corridor a sealed building will lay. That lives in `engine/predict.ts`,
+`engine/route.ts`, and `engine/seal.ts` (the same planner the worker's `place`
+runs, applied to the latest snapshot) and is **advisory only**:
 it mirrors engine rules for previews, but the worker remains the single source of
 truth. Predictions are never written back into simulation state.
 

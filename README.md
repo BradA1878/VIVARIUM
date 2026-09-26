@@ -70,9 +70,13 @@ shared/          the neutral vocabulary spoken across the wall (types.ts)
   ladder** takes the haul off your hands: idle colonists gather on their own, a
   drivable **rover** (F boards it) hauls in bulk, and **mining robots** work the
   field sol and night.
-- **Pressure, corridors, and doors.** The seal flood-fills from a Pressure Hub
-  through corridors; pressurized buildings have a rotatable door, and the Corridor
-  tile is a 2-click door-to-door auto-router.
+- **Pressure, corridors, and doors.** The seal floods out from every Pressure Hub
+  through corridors and sealed buildings, so docked modules share it. Placing a
+  sealed building lays its own corridor to the network (the ghost shows the route
+  and its cost first), a badge names why any building is off, and the HUD counts
+  unsealed and unstaffed buildings and pans to them. Pressurized buildings have a
+  rotatable door, and the Corridor tile is still a 2-click door-to-door
+  auto-router for manual runs.
 - **Alien traders.** A ship arrives on a window and offers a resource swap or
   permanent **alien tech** (capacity / passive-power / demand upgrades) for
   materials. Accept or decline while it's on the ground.

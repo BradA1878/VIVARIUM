@@ -14,8 +14,8 @@ storage `caps` it adds, and pressure/door requirements.
 
 | Building | Glyph | Role | Per-second |
 |---|---|---|---|
-| Pressure Hub | HUB | Source of the seal; everything floods out from here | −1.5 power |
-| Corridor | === | Carries the seal between hub and habs | −0.2 power |
+| Pressure Hub | HUB | A root of the seal; every hub floods it out | −1.5 power |
+| Corridor | === | Carries the seal between the network and sealed buildings | −0.2 power |
 | Habitat | HAB | Houses 4 colonists | −1.0 power |
 | Solar Array | PV | Power from sunlight; follows the sol, gutted by dust | +solar |
 | Battery Bank | BAT | Stores power (+120 cap) — the buffer through the dark | — |
@@ -83,7 +83,10 @@ ordering. The passes, in order:
    required) pressurized; outputs are scaled by how much it actually got. The
    labor pool is **population minus the injured** (the wounded are off shift), and
    role-matched staffing plus colony morale scale what a building **produces** —
-   never what it consumes. The **fission reactor** is deliberately a normal
+   never what it consumes. The first gate that fails is recorded on the
+   building as `offReason` (`power`, `damaged`, `faulted`, `seal`, `crew`, or
+   the missing input), cleared each tick; the fault badges, the HUD's fault
+   lines, and the narrator's world model all read it. The **fission reactor** is deliberately a normal
    recipe building here (water in, power out, engineer-staffed), so every gate
    applies untouched; the **materials printer**'s `producesMat` credits the
    build currency in this pass too, scaled by the same efficiency and clamped
@@ -148,13 +151,27 @@ robot flare-stun is a flat rule.
 
 ## Pressure, connectivity, doors, and routing
 
-- **Connectivity** (`connectivity.ts`) flood-fills the pressure seal from the hub
-  through conduits (corridors) and sealed buildings. A building that
-  `requiresPressure` only functions while connected.
+- **The seal** (`seal.ts`) — `sealNetwork` floods from **every hub** through
+  hubs, conduits (corridors), and sealed (`requiresPressure`) buildings, in a
+  fixed neighbour and scan order. Docked modules share the seal with no
+  corridor, and a second hub runs its own network. Surface buildings neither
+  need nor pass it. `connectivity.ts` writes the result to
+  `BuildingState.connected` every tick; a sealed building only functions while
+  connected.
+- **Auto-corridor** — `place` takes an optional `connect` flag (the placement
+  tool always sends it; a command without it means what it always did). For a
+  sealed building, `planSealRoute` runs a BFS from the free cells around the
+  footprint through empty cells and dangling corridors (reused for free) to the
+  first cell beside the network, and `place` lays the new cells at the
+  corridor's `matCost` each. Building plus corridor must be affordable or
+  nothing is placed; with no route the building is placed unsealed. The main
+  thread runs the same pure functions on snapshots for the ghost preview
+  (`BridgeCore.previewSeal`), so the preview and the worker agree.
 - **Doors** (`doors.ts`) — pressure buildings have a `door` side that turns with
-  `BuildingState.rot`. Doors are routing + visual only; the seal rule is unchanged.
+  `BuildingState.rot`. Doors are routing + visual only; the seal ignores them.
 - **Corridors** (`route.ts`) — the Corridor palette tile is a 2-click auto-route
-  mode that runs a BFS from door to door and lays the connecting tiles.
+  mode that runs a BFS from door to door and lays the connecting tiles; a click
+  on empty ground lays one cell.
 - **Pathfinding** (`pathfind.ts`) — unpossessed colonists route around buildings
   via a deterministic BFS to a building's door/access cell.
 

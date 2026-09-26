@@ -117,6 +117,24 @@ heat-shimmer cone; they never move or deplete, so there's no `setAmount`. The
 follow-cam unions over colonists ∪ rovers, and `placement.ts` dims a marker
 onto every vent cell while a `needsVent` tool is up.
 
+### The pressure network: overlay and fault badges
+
+`render/three/network-overlay.ts` tints the ground under the sealed network
+while any build tool is up: dim cyan under every cell of a connected hub,
+corridor, or sealed building, rust under a sealed building the seal does not
+reach, nothing under surface buildings. It is two `InstancedMesh`es of flat
+tiles, one per colour, that rebuild only when the connected set changes.
+
+`render/three/badges.ts` puts a pill over any building with an `offReason`
+(NO POWER, DAMAGED, FLARE FAULT, NO SEAL, NO CREW, NO WATER / NO OXYGEN / NO
+FOOD; corridors never get one). It follows the bubbles pattern: pooled sprites,
+a canvas texture drawn once per label, no depth test. The renderer re-syncs the
+overlay and the badges only when a snapshot lands, anchors each pill on the
+roof height measured when the building's mesh was built, and scales the pills
+with the camera view so they keep one on-screen size at any zoom.
+`focusBuilding(uid)` pans the camera to a building and rings it in rust (only
+the ring while piloting); the HUD's fault lines call it.
+
 ### Reaction bubbles
 
 `render/three/bubbles.ts` gives the crew visible reactions: tiny comic chips —
@@ -235,10 +253,10 @@ passes on Low; it prevents the old direct-render path from changing the palette.
 the top two ladder steps. It runs after bloom: it multiplies the HDR scene in
 place, so ahead of bloom it would darken emissives before the threshold test.
 `ColonyAOPass` extends three's `GTAOPass` with a stricter depth/normal
-pre-render: `aoVisible()` leaves out sprites (bubbles, name tags), points and
+pre-render: `aoVisible()` leaves out sprites (bubbles, name tags, fault badges), points and
 lines, anything that does not write depth (decals, beams, the placement ghost),
 transparent surfaces under 85% opacity (corridor skins, FX rings), and anything
-tagged `userData.noAO` (the placement door arrow, the astronaut and rover
+tagged `userData.noAO` (the placement door arrow, the network overlay tiles, the astronaut and rover
 possession rings, and the depot's glows, whose pulsing opacity would otherwise
 cross the 85% cut). Frosted domes still occlude. It also corrects two things in
 three r169's GTAO: the shader's view direction is only right for a perspective
@@ -405,7 +423,8 @@ asserts at least 2×); fully zoomed in (view 3), 0.0098, about 7×.
   **landing struts** while landed and folds them for flight.
 - `coords.ts` converts between engine grid cells and world space; `placement.ts`
   drives the build ghost and its valid/blocked tint (mirroring engine rules via the
-  prediction seam).
+  prediction seam), including the corridor a sealed building will lay
+  (`BridgeCore.previewSeal`), which it reports to the placing strip.
 
 ## `debugFx` — screenshotting the rare stuff (DEV only)
 

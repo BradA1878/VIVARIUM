@@ -20,20 +20,21 @@ to survive the night and the storms.
 
 ## Building order that works
 
-Place a **Pressure Hub** first — the seal flood-fills from it. Then:
+Place a **Pressure Hub** first — the seal floods out from it. Every sealed
+building you place after that lays its own corridor back to the network (see
+*The pressure network* below). Then:
 
-1. **Corridors** to carry the seal out from the hub (2-click auto-route).
-2. **Habitats** for population (4 colonists each), and **Solar + Batteries** for
+1. **Habitats** for population (4 colonists each), and **Solar + Batteries** for
    power day and night.
-3. An **Ice Extractor** (water) feeding an **Electrolysis Unit** (oxygen — life
+2. An **Ice Extractor** (water) feeding an **Electrolysis Unit** (oxygen — life
    support, served first in a brownout).
-4. **Hydroponics** for food once power is comfortable (it's shed early in a
+3. **Hydroponics** for food once power is comfortable (it's shed early in a
    brownout, so don't lean on it for oxygen).
-5. **Cisterns** and **Oxygen Tanks** to widen the buffers before the storms ramp.
-6. As the colony matures: a **Med-Bay** before the meteor sols get serious, and a
+4. **Cisterns** and **Oxygen Tanks** to widen the buffers before the storms ramp.
+5. As the colony matures: a **Med-Bay** before the meteor sols get serious, and a
    **Deflector Array** before the abductors find you (and keep it powered — it
    sheds early in a brownout).
-7. As the schematics emerge (see *New schematics* below): a **Wind Turbine** to
+6. As the schematics emerge (see *New schematics* below): a **Wind Turbine** to
    carry the night and the storms (wind peaks exactly when solar dies), a
    **Geothermal Tap** on one of the glowing fumarole **vents** — it only seats
    on a vent, and the vent cells are marked while the tool is up — then a
@@ -50,12 +51,33 @@ out the lowest-priority consumers first** — hydroponics before life support, l
 support before nothing. Watch the power rail fall at dusk and the battery carry the
 colony through; if the battery empties, the brownout cascade begins.
 
-## Pressure, doors, and rotation
+## The pressure network
 
-Pressurized buildings only function while connected to the hub through corridors.
-Each has a **door** on one side that turns when you **rotate** the building — doors
-are routing and visual only, but they decide where colonists and corridors connect.
-Plan your corridor runs to reach the doors.
+Sealed buildings (habitats, the water reclaimer, the electrolysis unit,
+hydroponics, the Med-Bay) only run while the seal reaches them. The seal floods
+out from **every Pressure Hub** through corridors and sealed buildings, so a
+module placed against a connected module shares its seal with no corridor, and a
+second hub starts a network of its own. Surface buildings (solar, batteries,
+extractors, tanks) neither need nor carry the seal.
+
+- **Placing** a sealed building lays the shortest corridor from it to the
+  network, reusing any loose corridor on the way. While you aim, the ghost draws
+  that corridor and the placing strip says what happens: *connects to the
+  network*, *lays N corridor cells · C mat (T total)*, *needs T mat, have M*
+  (the ghost turns rust and a click places nothing), or *no route to the network
+  · will be unsealed*.
+- **While any build tool is up**, an overlay tints the connected network cyan and
+  any cut-off sealed building rust.
+- **A building that is off** wears a badge saying why: NO POWER, NO SEAL, NO
+  CREW, DAMAGED, FLARE FAULT, or NO WATER / NO OXYGEN / NO FOOD. The HUD adds one
+  line per reason with a count (power stays with the BROWNOUT line); click a line
+  to pan to the next building it counts.
+
+Each sealed building has a **door** on one side that turns when you **rotate**
+it. Doors are routing and visual only: the Corridor tool routes door to door,
+colonists walk in through them, and the seal ignores them. The Corridor tool
+(click two buildings to route between them, or click empty ground for one cell)
+is still there for manual runs and repairs.
 
 ## The embodied colony
 
@@ -277,10 +299,11 @@ problem.
 
 | Input | Action |
 |---|---|
-| Build palette (bottom center) | Pick a building; click a cell to place. The ghost shows valid (cyan) / blocked (rust). Locked tiles show their unlock condition. |
+| Build palette (bottom center) | Pick a building; click a cell to place. The ghost shows valid (cyan) / blocked (rust); a sealed building's ghost also draws the corridor it will lay. Locked tiles show their unlock condition. |
 | Right-click | Cancel placement / deselect |
-| Corridor tile | 2-click auto-route mode (door → door) |
+| Corridor tile | Manual corridors: 2-click auto-route (door → door), or one click on empty ground |
 | Rotate control | Turn a building (moves its door) |
+| HUD fault line | Pan to the next building it counts (UNSEALED, UNSTAFFED, …) |
 | **F** | Take command: possess the **commander** → board a nearby rover → release |
 | **WASD** / arrows | Drive the possessed colonist or rover (camera-aligned) |
 | **P** / **E** | Pick up at a deposit / drop at the depot (while piloting) |

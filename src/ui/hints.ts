@@ -42,7 +42,7 @@ export const HINTS: Record<HintId, Hint> = {
   corridor: {
     id: "corridor",
     title: "NO PRESSURE",
-    body: "A sealed building only runs once a corridor links it to the hub. Pick the corridor tile, click the dark building, then click the hub — the route finds itself.",
+    body: "A sealed building runs only while it touches the pressure network: a hub, a corridor, or a connected sealed building. This one is cut off. Pick the corridor tile, click it, then click the hub, and the corridor is laid for you.",
   },
   brownout: {
     id: "brownout",

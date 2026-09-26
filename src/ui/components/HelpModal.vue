@@ -168,7 +168,7 @@ onBeforeUnmount(() => {
         <section class="help-section" aria-labelledby="help-watch-title">
           <h3 id="help-watch-title">YOUR FIRST WATCH</h3>
           <ol class="first-watch">
-            <li><b>Seal food.</b> Place Hydroponics and connect its door to the Pressure Hub with a Corridor.</li>
+            <li><b>Seal food.</b> Place Hydroponics near the Pressure Hub; it lays its own corridor to the pressure network.</li>
             <li><b>Prepare for night.</b> Keep generation ahead of demand and add a second Battery Bank.</li>
             <li><b>Bring home ore.</b> Materials pay for every expansion; mine a load and unload it at the depot.</li>
           </ol>
@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
           <section class="help-section compact" aria-labelledby="help-build-title">
             <h3 id="help-build-title">BUILDING</h3>
             <p>
-              Choose a module from the lower palette and place it on open ground. For pressure, select <b>Corridor</b> and choose two sealed doors. Buildings need crew, power, and inputs before they produce.
+              Choose a module from the lower palette and place it on open ground. A sealed module lays its own corridor to the pressure network, and the ghost shows the route and its cost first. Buildings need crew, power, and inputs before they produce; a badge over a building says what it is missing.
             </p>
           </section>
 
