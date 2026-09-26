@@ -192,8 +192,11 @@ describe("BridgeCore.previewSeal — the placement ghost's corridor plan", () =>
   // a 2×2 hub covering (2..3, 2..3); a habitat aimed at (8,2) is four cells east
   // of it, so the shortest corridor is (7,2) → (4,2)
   const hub = { uid: 1, defId: "hub", gx: 2, gy: 2 };
-  const withBuildings = (buildings: object[], materials = 100) =>
-    snap({ N: 16, buildings, materials: { amount: materials, capacity: 400 } } as never);
+  const withBuildings = (buildings: object[], materials = 100, vents: object[] = []) =>
+    snap({
+      N: 16, buildings, materials: { amount: materials, capacity: 400 },
+      vents, aquifers: [], depot: { gx: 15, gy: 15 },
+    } as never);
 
   it("is null before any snapshot and for a surface building", () => {
     const b = new TestBridge();
@@ -219,6 +222,16 @@ describe("BridgeCore.previewSeal — the placement ghost's corridor plan", () =>
     const b = new TestBridge();
     b.feed({ type: "snapshot", snapshot: withBuildings([hub], 31) });
     expect(b.previewSeal("hab", 8, 2)).toMatchObject({ kind: "corridor", total: 32, affordable: false });
+  });
+
+  it("keeps the corridor off a vent, as the worker does", () => {
+    const b = new TestBridge();
+    b.feed({ type: "snapshot", snapshot: withBuildings([hub], 100, [{ id: 1, gx: 5, gy: 2 }]) });
+    const p = b.previewSeal("hab", 8, 2);
+    expect(p?.kind).toBe("corridor");
+    if (p?.kind !== "corridor") return;
+    expect(p.path.some(([x, y]) => x === 5 && y === 2)).toBe(false);
+    expect(p.cells).toBe(5); // down a row past the vent to the hub's lower half: one cell longer
   });
 
   it("answers from the latest snapshot: a new network replaces the cached plan", () => {

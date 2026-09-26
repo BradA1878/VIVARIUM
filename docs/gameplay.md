@@ -61,7 +61,8 @@ second hub starts a network of its own. Surface buildings (solar, batteries,
 extractors, tanks) neither need nor carry the seal.
 
 - **Placing** a sealed building lays the shortest corridor from it to the
-  network, reusing any loose corridor on the way. While you aim, the ghost draws
+  network. It reuses loose corridors and cut-off sealed buildings on the way,
+  and never paves a vent, an aquifer site, or the depot. While you aim, the ghost draws
   that corridor and the placing strip says what happens: *connects to the
   network*, *lays N corridor cells · C mat (T total)*, *needs T mat, have M*
   (the ghost turns rust and a click places nothing), or *no route to the network

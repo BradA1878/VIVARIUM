@@ -85,6 +85,26 @@ export function sealNetwork(N: number, buildings: readonly SealBuilding[]): Seal
   return { cells, connected };
 }
 
+/** where the terrain sites are: engine state and snapshots both carry these */
+export interface SealSites {
+  vents: readonly { gx: number; gy: number }[];
+  aquifers: readonly { gx: number; gy: number }[];
+  depot: { gx: number; gy: number };
+}
+
+/** cells an auto-laid corridor leaves clear: vents (the geothermal tap's seat),
+ *  aquifer sites (the well's), and the collection depot */
+export function reservedCells(N: number, sites: SealSites): Set<number> {
+  const out = new Set<number>();
+  const add = (p: { gx: number; gy: number }) => {
+    if (p.gx >= 0 && p.gy >= 0 && p.gx < N && p.gy < N) out.add(p.gy * N + p.gx);
+  };
+  for (const v of sites.vents) add(v);
+  for (const a of sites.aquifers) add(a);
+  add(sites.depot);
+  return out;
+}
+
 /** how a new sealed building joins the network */
 export type SealPlan =
   | { kind: "touching" }
@@ -95,18 +115,21 @@ export type SealPlan =
  * The shortest corridor from a building's footprint to the sealed network.
  * `touching`: a footprint cell already borders the network. `corridor`: a
  * breadth-first search from the free cells around the footprint (footprint
- * scan order × NB order, so the answer is deterministic) through empty cells
- * and unconnected corridors (reused for free) to the first cell that borders
- * the network; `newCells` are the empty cells on that path, priced at the
- * corridor's matCost each. `no-route`: there is no network, or it is walled
- * off. The footprint is treated as occupied, so the building need not be
- * placed yet.
+ * scan order × NB order, so the answer is deterministic) to the first cell
+ * that borders the network, through empty cells that are not `reserved` and
+ * through anything that carries the seal but is not on the network yet (a
+ * dangling corridor, a stranded sealed building), which costs nothing and
+ * joins the network with it; `newCells` are the empty cells on that path,
+ * priced at the corridor's matCost each. `no-route`: there is no network, or
+ * it is walled off. The footprint is treated as occupied, so the building need
+ * not be placed yet.
  */
 export function planSealRoute(
   N: number,
   buildings: readonly SealBuilding[],
   network: SealNetwork,
   footprint: readonly [number, number][],
+  reserved: ReadonlySet<number> = new Set(),
 ): SealPlan {
   const inBounds = (x: number, y: number) => x >= 0 && y >= 0 && x < N && y < N;
   const bordersNetwork = (x: number, y: number): boolean => {
@@ -126,8 +149,8 @@ export function planSealRoute(
     const k = y * N + x;
     if (inFoot.has(k)) return false;
     const b = occ.get(k);
-    if (!b) return true;
-    return !!DEFS[b.defId]?.conduit && !network.cells.has(k); // a dangling corridor
+    if (!b) return !reserved.has(k);
+    return passesSeal(b.defId) && !network.cells.has(k); // dangling or stranded: carry it along
   };
 
   const prev = new Map<number, number>(); // cell → the cell it was reached from (-1 for a start cell)

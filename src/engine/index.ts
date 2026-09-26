@@ -7,8 +7,8 @@ export { DEFS, ORDER } from "./defs";
 export { doorCells, doorCellsOf, worldDoorSide, SIDE_DELTA } from "./doors";
 export { planRoute, routeCorridor, type RouteQuery } from "./route";
 export {
-  passesSeal, planSealRoute, sealNetwork, sealPreview,
-  type SealBuilding, type SealNetwork, type SealPlan, type SealPreview,
+  passesSeal, planSealRoute, reservedCells, sealNetwork, sealPreview,
+  type SealBuilding, type SealNetwork, type SealPlan, type SealPreview, type SealSites,
 } from "./seal";
 export { cellsFor } from "./grid";
 export { HAZARD_META, hazardMods } from "./hazards";

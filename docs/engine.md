@@ -161,9 +161,11 @@ robot flare-stun is a flat rule.
 - **Auto-corridor** — `place` takes an optional `connect` flag (the placement
   tool always sends it; a command without it means what it always did). For a
   sealed building, `planSealRoute` runs a BFS from the free cells around the
-  footprint through empty cells and dangling corridors (reused for free) to the
-  first cell beside the network, and `place` lays the new cells at the
-  corridor's `matCost` each. Building plus corridor must be affordable or
+  footprint to the first cell beside the network, through empty cells and
+  through anything that carries the seal but is off the network (a dangling
+  corridor, a stranded sealed building: free, and connected along the way). It
+  leaves vents, aquifer sites, and the depot unpaved (`reservedCells`). `place`
+  lays the new cells at the corridor's `matCost` each. Building plus corridor must be affordable or
   nothing is placed; with no route the building is placed unsealed. The main
   thread runs the same pure functions on snapshots for the ghost preview
   (`BridgeCore.previewSeal`), so the preview and the worker agree.

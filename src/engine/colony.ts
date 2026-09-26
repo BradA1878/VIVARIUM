@@ -17,7 +17,7 @@ import { RNG } from "./rng";
 import { canPlace, cellsFor, idx, inBounds, migrateGrid, siteAllows } from "./grid";
 import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
-import { planSealRoute, sealNetwork, type SealPlan } from "./seal";
+import { planSealRoute, reservedCells, sealNetwork, type SealPlan } from "./seal";
 import { recomputeConnectivity } from "./connectivity";
 import { recomputeCaps } from "./caps";
 import { spawnHazard, hazardViews, HAZARD_META, SCHED_FIRST } from "./hazards";
@@ -207,7 +207,8 @@ export class Colony {
     if (!def || !canPlace(this.s, def, gx, gy)) return false;
     let plan: SealPlan | null = null;
     if (connect && def.requiresPressure) {
-      plan = planSealRoute(this.s.N, this.s.buildings, sealNetwork(this.s.N, this.s.buildings), cellsFor(def, gx, gy));
+      const { N, buildings } = this.s;
+      plan = planSealRoute(N, buildings, sealNetwork(N, buildings), cellsFor(def, gx, gy), reservedCells(N, this.s));
       if (plan.kind === "corridor" && (def.matCost ?? 0) + plan.cost > this.s.materials.amount) return false;
     }
     this.build(def, gx, gy, rot);

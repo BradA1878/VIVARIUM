@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Colony } from "./colony";
 import { DEFS } from "./defs";
 import { cellsFor } from "./grid";
-import { planSealRoute, sealNetwork, sealPreview, type SealBuilding, type SealPlan } from "./seal";
+import { planSealRoute, reservedCells, sealNetwork, sealPreview, type SealBuilding, type SealPlan } from "./seal";
 import type { ColonyState } from "./state";
 
 let nextUid = 1;
@@ -117,6 +117,30 @@ describe("planSealRoute", () => {
     const b = planSealRoute(N, bs, sealNetwork(N, bs), foot("greenhouse", 7, 3));
     expect(a).toEqual(b);
     expect(a.kind).toBe("corridor");
+  });
+});
+
+describe("planSealRoute — cells it leaves alone, buildings it carries along", () => {
+  it("never paves a reserved cell (a vent, an aquifer site, the depot)", () => {
+    const hub = at("hub", 0, 0);
+    const blds = [hub];
+    const reserved = reservedCells(N, { vents: [{ gx: 3, gy: 0 }], aquifers: [{ gx: 3, gy: 1 }], depot: { gx: 2, gy: 2 } });
+    const plan = planSealRoute(N, blds, sealNetwork(N, blds), foot("hab", 6, 0), reserved) as Extract<SealPlan, { kind: "corridor" }>;
+    expect(plan.kind).toBe("corridor");
+    const key = ([x, y]: [number, number]) => y * N + x;
+    expect(plan.path.some((c) => reserved.has(key(c)))).toBe(false);
+    // the straight run along row 0 or 1 is closed; it has to come in below them
+    expect(plan.path.at(-1)).toEqual([1, 2]);
+  });
+
+  it("routes through a stranded sealed building rather than around it", () => {
+    // the hab at (3,0) is one empty cell short of the hub, so it is stranded
+    const hub = at("hub", 0, 0), stranded = at("hab", 3, 0);
+    const blds = [hub, stranded];
+    const net = sealNetwork(N, blds);
+    expect(net.connected.has(stranded.uid)).toBe(false);
+    const plan = planSealRoute(N, blds, net, foot("electrolysis", 4, 0));
+    expect(plan).toMatchObject({ kind: "corridor", newCells: [[2, 0]], cost: 2 });
   });
 });
 
@@ -238,6 +262,19 @@ describe("Colony.place with connect", () => {
     expect(c.place("hab", x, y)).toBe(true);
     expect(s.buildings.length).toBe(before + 1);
     expect(s.materials.amount).toBe(300 - (DEFS.hab.matCost ?? 0));
+  });
+
+  it("the laid corridor leaves the depot clear", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.materials.amount = 300;
+    // east of the hub the straight run would end on the depot, the first free
+    // cell beside the hub on that side
+    const [dx, dy] = [s.depot.gx, s.depot.gy];
+    expect(c.place("hab", dx + 5, dy, 0, true)).toBe(true);
+    expect(c.buildingAt(dx, dy)).toBeNull();
+    expect(s.buildings.at(-1)!.defId).toBe("corridor");
+    expect(s.buildings.find((b) => b.defId === "hab" && b.gx === dx + 5 && b.gy === dy)!.connected).toBe(true);
   });
 
   it("connect is ignored for surface buildings", () => {

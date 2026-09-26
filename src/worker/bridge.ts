@@ -10,7 +10,7 @@
    the worker wall doubles as the network seam (multiplayer co-op).
    ============================================================================ */
 import type { BuildingState, ColonyEvent, Difficulty, HazardKind, LegacyManifest, ShipmentManifest, Snapshot, World } from "@shared/types";
-import { DEFS, FUNC_THRESHOLD, cellsFor, planSealRoute, sealNetwork, sealPreview, type SaveData, type SealNetwork, type SealPreview } from "@/engine";
+import { DEFS, FUNC_THRESHOLD, cellsFor, planSealRoute, reservedCells, sealNetwork, sealPreview, type SaveData, type SealNetwork, type SealPreview } from "@/engine";
 import { buildingAtPredict, canPlacePredict, canMovePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
 import type { Command, Outbound, SimErrorContext } from "./protocol";
@@ -49,9 +49,9 @@ export abstract class BridgeCore {
   protected shipmentResolvers = new Map<number, Pending<ShipmentManifest>>();
   protected reqId = 1;
   protected occ: Set<string> | null = null;
-  /** the latest snapshot's sealed network, and the last seal preview (by def + cell);
-   *  both are dropped when a new snapshot lands */
-  private sealNet: SealNetwork | null = null;
+  /** the latest snapshot's sealed network and reserved cells, and the last seal
+   *  preview (by def + cell); all dropped when a new snapshot lands */
+  private sealNet: { net: SealNetwork; reserved: Set<number> } | null = null;
   private sealMemo: { key: string; value: SealPreview | null } | null = null;
   private disposed = false;
 
@@ -349,8 +349,8 @@ export abstract class BridgeCore {
     if (!snap || !def?.requiresPressure) return null;
     const key = `${defId}:${gx}:${gy}`;
     if (this.sealMemo?.key === key) return this.sealMemo.value;
-    if (!this.sealNet) this.sealNet = sealNetwork(snap.N, snap.buildings);
-    const plan = planSealRoute(snap.N, snap.buildings, this.sealNet, cellsFor(def, gx, gy));
+    if (!this.sealNet) this.sealNet = { net: sealNetwork(snap.N, snap.buildings), reserved: reservedCells(snap.N, snap) };
+    const plan = planSealRoute(snap.N, snap.buildings, this.sealNet.net, cellsFor(def, gx, gy), this.sealNet.reserved);
     const value = sealPreview(plan, def.matCost ?? 0, snap.materials.amount);
     this.sealMemo = { key, value };
     return value;
