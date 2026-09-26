@@ -14,7 +14,7 @@ import {
   TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
 import { RNG } from "./rng";
-import { canPlace, cellsFor, idx, inBounds, migrateGrid } from "./grid";
+import { canPlace, cellsFor, idx, inBounds, migrateGrid, siteAllows } from "./grid";
 import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
 import { planSealRoute, sealNetwork, type SealPlan } from "./seal";
@@ -272,7 +272,7 @@ export class Colony {
     const def = DEFS[b.defId];
     const oldCells = cellsFor(def, b.gx, b.gy);
     for (const [x, y] of oldCells) this.s.grid[idx(this.s.N, x, y)] = 0;
-    let ok = true;
+    let ok = siteAllows(this.s, def, gx, gy); // a geothermal tap / aquifer well stays on a site
     for (const [x, y] of cellsFor(def, gx, gy)) {
       if (!inBounds(this.s.N, x, y) || this.s.grid[idx(this.s.N, x, y)] !== 0) { ok = false; break; }
     }

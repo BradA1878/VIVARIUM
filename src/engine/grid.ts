@@ -29,12 +29,23 @@ export function canPlace(s: ColonyState, def: BuildingDef, gx: number, gy: numbe
     if (!inBounds(s.N, x, y)) return false;
     if (s.grid[idx(s.N, x, y)] !== 0) return false;
   }
-  // terrain-restricted: the geothermal tap must cover a vent cell
-  if (def.needsVent && !cellsFor(def, gx, gy).some(([x, y]) =>
-    s.vents.some((v) => v.gx === x && v.gy === y))) return false;
-  // terrain-restricted: the aquifer well must cover an aquifer site
-  if (def.needsAquifer && !cellsFor(def, gx, gy).some(([x, y]) =>
-    s.aquifers.some((a) => a.gx === x && a.gy === y))) return false;
+  return siteAllows(s, def, gx, gy);
+}
+
+interface SiteCell { gx: number; gy: number }
+
+/** terrain-restricted defs: the geothermal tap must cover a vent cell and the
+ *  aquifer well an aquifer site; every other def fits anywhere. Takes engine
+ *  state or a snapshot, so placement, moves, and the main thread's prediction
+ *  share one rule. */
+export function siteAllows(
+  sites: { vents: readonly SiteCell[]; aquifers: readonly SiteCell[] },
+  def: BuildingDef, gx: number, gy: number,
+): boolean {
+  const covers = (list: readonly SiteCell[]) =>
+    cellsFor(def, gx, gy).some(([x, y]) => list.some((p) => p.gx === x && p.gy === y));
+  if (def.needsVent && !covers(sites.vents)) return false;
+  if (def.needsAquifer && !covers(sites.aquifers)) return false;
   return true;
 }
 

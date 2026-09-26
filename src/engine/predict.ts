@@ -6,7 +6,7 @@
    ============================================================================ */
 import type { BuildingState, Snapshot } from "@shared/types";
 import { DEFS } from "./defs";
-import { cellsFor } from "./grid";
+import { cellsFor, siteAllows } from "./grid";
 
 /** occupancy set keyed "x,y" built from a snapshot's buildings */
 export function occupancy(snap: Snapshot): Set<string> {
@@ -31,13 +31,7 @@ export function canPlacePredict(
     if (x < 0 || y < 0 || x >= snap.N || y >= snap.N) return false;
     if (o.has(`${x},${y}`)) return false;
   }
-  // terrain-restricted (mirrors grid.ts): geothermal must cover a vent cell
-  if (def.needsVent && !cellsFor(def, gx, gy).some(([x, y]) =>
-    snap.vents.some((v) => v.gx === x && v.gy === y))) return false;
-  // terrain-restricted (mirrors grid.ts): the aquifer well must cover a site
-  if (def.needsAquifer && !cellsFor(def, gx, gy).some(([x, y]) =>
-    snap.aquifers.some((a) => a.gx === x && a.gy === y))) return false;
-  return true;
+  return siteAllows(snap, def, gx, gy); // the geothermal tap / aquifer well sites
 }
 
 /** can building `uid` be relocated to (gx,gy)? (its own cells don't block it) */
@@ -52,7 +46,7 @@ export function canMovePredict(snap: Snapshot, uid: number, gx: number, gy: numb
     if (x < 0 || y < 0 || x >= snap.N || y >= snap.N) return false;
     if (occ.has(`${x},${y}`)) return false;
   }
-  return true;
+  return siteAllows(snap, def, gx, gy); // a site-bound building stays on a site
 }
 
 export function buildingAtPredict(snap: Snapshot, gx: number, gy: number): BuildingState | null {

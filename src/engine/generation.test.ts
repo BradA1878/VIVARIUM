@@ -12,7 +12,7 @@ import { Colony, DEFS, ORDER } from "./index";
 import { windLevel } from "./wind";
 import { BUILDING_ROLE, roleMatchCount, roleOf } from "./roster";
 import { moraleMult } from "./morale";
-import { canPlacePredict } from "./predict";
+import { canMovePredict, canPlacePredict } from "./predict";
 import { baseCenter } from "./colonists";
 import type { ColonyState } from "./state";
 import { emptyColonist } from "./state";
@@ -352,6 +352,29 @@ describe("geothermal tap — the first terrain-restricted building", () => {
     const snap = c.snapshot();
     expect(canPlacePredict(snap, "geothermal", off!.x, off!.y)).toBe(false);
     expect(canPlacePredict(snap, "geothermal", v.gx, v.gy)).toBe(true);
+  });
+
+  it("stays on a vent: a move off it is refused, in the engine and the prediction", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.unlocked.push("geothermal", "aquifer");
+    s.materials.amount = 300;
+    const free = (x: number, y: number) => s.grid[y * s.N + x] === 0;
+    const onSite = (list: { gx: number; gy: number }[], x: number, y: number) => list.some((p) => p.gx === x && p.gy === y);
+    for (const [defId, sites] of [["geothermal", s.vents], ["aquifer", s.aquifers]] as const) {
+      const home = sites[0];
+      expect(c.place(defId, home.gx, home.gy)).toBe(true);
+      const b = s.buildings.at(-1)!;
+      let off: { x: number; y: number } | null = null;
+      for (let x = 0; x < s.N && !off; x++)
+        for (let y = 0; y < s.N && !off; y++) if (free(x, y) && !onSite(sites, x, y)) off = { x, y };
+      expect(canMovePredict(c.snapshot(), b.uid, off!.x, off!.y)).toBe(false);
+      expect(c.move(b.uid, off!.x, off!.y)).toBe(false);
+      expect([b.gx, b.gy]).toEqual([home.gx, home.gy]);
+      const other = sites.find((p) => (p.gx !== home.gx || p.gy !== home.gy) && free(p.gx, p.gy))!;
+      expect(canMovePredict(c.snapshot(), b.uid, other.gx, other.gy)).toBe(true);
+      expect(c.move(b.uid, other.gx, other.gy)).toBe(true); // site to site is fine
+    }
   });
 
   it("a tap on a vent yields flat steady power, day or night", () => {
