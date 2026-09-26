@@ -15,7 +15,7 @@ type DebugWindow = Window & {
       camFocus: Vector3;
       running: boolean;
       raf: number;
-      placed: Map<number, { mesh: { object: { position: { x: number; z: number } } } }>;
+      placed: Map<number, { defId: string; mesh: { object: { uuid: string; position: { x: number; z: number } } } }>;
       setQuality(q: "auto" | "low" | "high"): void;
       governor: { pin(index: number | null): void };
       start(): void;
@@ -87,6 +87,26 @@ test("a moved building mesh follows the authoritative footprint", async ({ page 
     // The solar array has a 2x2 footprint (CELL = 1).
     return { gx: b.gx, gy: b.gy, x: mesh.position.x, z: mesh.position.z };
   }, move)).toEqual({ gx: move.gx, gy: move.gy, x: move.gx + 0.5 - move.offset, z: move.gy + 0.5 - move.offset });
+});
+
+test("a uid that now names another kind of building gets that building's mesh", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  await startColony(page);
+  // two colonies on one world both number their buildings from 1, so a colony
+  // switch hands the renderer a known uid for a different building
+  const before = await page.evaluate(async () => {
+    const { bridge, renderer } = (window as DebugWindow).__viv;
+    const save = await bridge.save();
+    const hab = save.state.buildings.find((b) => b.defId === "hab")!;
+    const uuid = renderer.placed.get(hab.uid)!.mesh.object.uuid;
+    hab.defId = "medbay"; // same 1×1 footprint
+    await bridge.load(save);
+    return { uid: hab.uid, uuid };
+  });
+  await expect.poll(() => page.evaluate(({ uid, uuid }) => {
+    const entry = (window as DebugWindow).__viv.renderer.placed.get(uid);
+    return entry ? { defId: entry.defId, sameMesh: entry.mesh.object.uuid === uuid } : null;
+  }, before)).toEqual({ defId: "medbay", sameMesh: false });
 });
 
 test("construction reaches all four expanded edges through the canvas", async ({ page }, testInfo) => {

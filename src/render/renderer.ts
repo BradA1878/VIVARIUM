@@ -686,15 +686,19 @@ export class ThreeRenderer {
     // the demolish-puff storm, and re-seed (seededOnce=false) so the INCOMING colony's
     // buildings don't all pop in. The curtain masks the one-frame rebuild; this keeps the
     // FX calm regardless of curtain timing.
-    for (const [, entry] of this.placed) {
-      const door = entry.mesh.object.getObjectByName("door");
-      if (door) entry.mesh.object.remove(door);
-      this.buildingsGroup.remove(entry.mesh.object);
-      entry.mesh.dispose();
-    }
-    this.placed.clear();
-    this.spawnFx.clear();
+    for (const [uid, entry] of this.placed) this.dropPlaced(uid, entry);
     this.seededOnce = false; // the incoming colony seeds quietly, like the first frame
+  }
+
+  /** take a building's mesh out of the scene and free it. The door parts are
+   *  shared (owned by this class), so they are detached before the kit's dispose. */
+  private dropPlaced(uid: number, entry: Placed): void {
+    const door = entry.mesh.object.getObjectByName("door");
+    if (door) entry.mesh.object.remove(door);
+    this.buildingsGroup.remove(entry.mesh.object);
+    entry.mesh.dispose();
+    this.placed.delete(uid);
+    this.spawnFx.delete(uid);
   }
 
   /** add meshes for new buildings, drop meshes for removed ones, update glows */
@@ -724,6 +728,14 @@ export class ThreeRenderer {
     for (const b of snap.buildings) {
       seen.add(b.uid);
       let entry = this.placed.get(b.uid);
+      // a uid now naming another kind of building (two colonies on one world
+      // both number from 1, so a colony switch reuses them): rebuild it, quietly
+      let reused = false;
+      if (entry && entry.defId !== b.defId) {
+        this.dropPlaced(b.uid, entry);
+        entry = undefined;
+        reused = true;
+      }
       if (!entry) {
         const def = DEFS[b.defId];
         if (!def) continue;
@@ -737,7 +749,7 @@ export class ThreeRenderer {
         this.placed.set(b.uid, entry);
         // placed pop: scale-in + a cyan ring — only after the scene is seeded,
         // so the first snapshot (construction/load) doesn't pop everything
-        if (this.seededOnce) {
+        if (this.seededOnce && !reused) {
           mesh.object.scale.setScalar(0.05);
           this.spawnFx.set(b.uid, 0);
           this.hazardFx.ringPulse(c, FX_CYAN, 1.2);
@@ -788,19 +800,12 @@ export class ThreeRenderer {
 
     // remove vanished buildings
     for (const [uid, entry] of this.placed) {
-      if (!seen.has(uid)) {
-        // detach the door first — its geo/mats are shared, owned by this class
-        const door = entry.mesh.object.getObjectByName("door");
-        if (door) entry.mesh.object.remove(door);
-        this.buildingsGroup.remove(entry.mesh.object);
-        // demolish puff — suppressed when a hazard just destroyed this cell
-        // (building_destroyed already bursts via hazardFx.onEvent)
-        const ts = this.recentDestroyed.get(`${entry.gx},${entry.gy}`);
-        if (ts === undefined || now - ts > 1000) this.hazardFx.puff(entry.mesh.object.position);
-        entry.mesh.dispose();
-        this.placed.delete(uid);
-        this.spawnFx.delete(uid);
-      }
+      if (seen.has(uid)) continue;
+      // demolish puff — suppressed when a hazard just destroyed this cell
+      // (building_destroyed already bursts via hazardFx.onEvent)
+      const ts = this.recentDestroyed.get(`${entry.gx},${entry.gy}`);
+      if (ts === undefined || now - ts > 1000) this.hazardFx.puff(entry.mesh.object.position);
+      this.dropPlaced(uid, entry);
     }
     this.seededOnce = true;
   }
@@ -1352,14 +1357,9 @@ export class ThreeRenderer {
     this.doorSillGeo.dispose();
     this.doorGlowMat.dispose();
     this.doorSillMat.dispose();
-    for (const entry of this.placed.values()) {
-      // detach the door first (as on removal) so the kit dispose can't
-      // re-dispose the shared door geo/mats already disposed above
-      const door = entry.mesh.object.getObjectByName("door");
-      if (door) entry.mesh.object.remove(door);
-      entry.mesh.dispose();
-    }
-    this.placed.clear();
+    // dropPlaced detaches the doors first, so the kit dispose can't re-dispose
+    // the shared door geo/mats already disposed above
+    for (const [uid, entry] of this.placed) this.dropPlaced(uid, entry);
     this.bubbles.dispose();
     for (const rec of this.colonists.values()) rec.mesh.dispose();
     this.colonists.clear();
