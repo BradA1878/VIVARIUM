@@ -84,3 +84,94 @@ export function sealNetwork(N: number, buildings: readonly SealBuilding[]): Seal
   }
   return { cells, connected };
 }
+
+/** how a new sealed building joins the network */
+export type SealPlan =
+  | { kind: "touching" }
+  | { kind: "corridor"; path: [number, number][]; newCells: [number, number][]; cost: number }
+  | { kind: "no-route" };
+
+/**
+ * The shortest corridor from a building's footprint to the sealed network.
+ * `touching`: a footprint cell already borders the network. `corridor`: a
+ * breadth-first search from the free cells around the footprint (footprint
+ * scan order × NB order, so the answer is deterministic) through empty cells
+ * and unconnected corridors (reused for free) to the first cell that borders
+ * the network; `newCells` are the empty cells on that path, priced at the
+ * corridor's matCost each. `no-route`: there is no network, or it is walled
+ * off. The footprint is treated as occupied, so the building need not be
+ * placed yet.
+ */
+export function planSealRoute(
+  N: number,
+  buildings: readonly SealBuilding[],
+  network: SealNetwork,
+  footprint: readonly [number, number][],
+): SealPlan {
+  const inBounds = (x: number, y: number) => x >= 0 && y >= 0 && x < N && y < N;
+  const bordersNetwork = (x: number, y: number): boolean => {
+    for (const [ox, oy] of NB) {
+      const nx = x + ox, ny = y + oy;
+      if (inBounds(nx, ny) && network.cells.has(ny * N + nx)) return true;
+    }
+    return false;
+  };
+  if (footprint.some(([x, y]) => bordersNetwork(x, y))) return { kind: "touching" };
+  if (network.cells.size === 0) return { kind: "no-route" };
+
+  const occ = occupancyOf(N, buildings);
+  const inFoot = new Set(footprint.map(([x, y]) => y * N + x));
+  const passable = (x: number, y: number): boolean => {
+    if (!inBounds(x, y)) return false;
+    const k = y * N + x;
+    if (inFoot.has(k)) return false;
+    const b = occ.get(k);
+    if (!b) return true;
+    return !!DEFS[b.defId]?.conduit && !network.cells.has(k); // a dangling corridor
+  };
+
+  const prev = new Map<number, number>(); // cell → the cell it was reached from (-1 for a start cell)
+  const queue: number[] = [];
+  for (const [x, y] of footprint) {
+    for (const [ox, oy] of NB) {
+      const nx = x + ox, ny = y + oy;
+      if (!passable(nx, ny)) continue;
+      const k = ny * N + nx;
+      if (prev.has(k)) continue;
+      prev.set(k, -1);
+      queue.push(k);
+    }
+  }
+  for (let head = 0; head < queue.length; head++) {
+    const k = queue[head];
+    const x = k % N, y = (k - x) / N;
+    if (bordersNetwork(x, y)) {
+      const path: [number, number][] = [];
+      for (let c = k; c !== -1; c = prev.get(c)!) path.push([c % N, Math.floor(c / N)]);
+      path.reverse();
+      const newCells = path.filter(([px, py]) => !occ.has(py * N + px));
+      return { kind: "corridor", path, newCells, cost: newCells.length * (DEFS.corridor?.matCost ?? 0) };
+    }
+    for (const [ox, oy] of NB) {
+      const nx = x + ox, ny = y + oy;
+      if (!passable(nx, ny)) continue;
+      const nk = ny * N + nx;
+      if (prev.has(nk)) continue;
+      prev.set(nk, k);
+      queue.push(nk);
+    }
+  }
+  return { kind: "no-route" };
+}
+
+/** a plan priced for the player: what the whole placement costs and whether it is affordable */
+export type SealPreview =
+  | { kind: "touching" }
+  | { kind: "corridor"; path: [number, number][]; cells: number; cost: number; total: number; affordable: boolean }
+  | { kind: "no-route" };
+
+export function sealPreview(plan: SealPlan, buildingCost: number, materials: number): SealPreview {
+  if (plan.kind !== "corridor") return plan;
+  const total = buildingCost + plan.cost;
+  return { kind: "corridor", path: plan.path, cells: plan.newCells.length, cost: plan.cost, total, affordable: total <= materials };
+}
