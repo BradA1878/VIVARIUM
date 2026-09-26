@@ -413,7 +413,7 @@ export class PlacementController {
       if (src) this.outlineBuilding(src.gx, src.gy, src.defId, CYAN);
       if (isDoor && b && b.uid !== this.routeSource) {
         const path = this.bridge.previewRoute(this.routeSource, b.uid);
-        if (path) { this.layPath(path, CYAN); return; }
+        if (path) { this.layPath(path, this.routeAffordable(path) ? CYAN : RUST); return; }
         this.useTiles(0, RUST); // no route — show source only
         return;
       }
@@ -426,6 +426,12 @@ export class PlacementController {
     if (isDoor && b) { this.outlineBuilding(b.gx, b.gy, b.defId, CYAN); this.useTiles(0, CYAN); }
     else if (hover && !b) { const t = this.useTiles(1, CYAN); const c = this.grid.cellCenter(hover.gx, hover.gy); t[0].position.set(c.x, 0.03, c.z); }
     else this.useTiles(0, CYAN);
+  }
+
+  /** can the colony pay for every new cell of a route? (the worker lays all or none) */
+  private routeAffordable(path: [number, number][]): boolean {
+    const fresh = path.filter(([x, y]) => !this.bridge.buildingAt(x, y)).length;
+    return fresh * (DEFS.corridor.matCost ?? 0) <= (this.bridge.latest?.materials.amount ?? 0);
   }
 
   private layPath(path: [number, number][], color: THREE.Color): void {

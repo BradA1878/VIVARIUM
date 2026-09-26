@@ -4,6 +4,7 @@
    ============================================================================ */
 import { describe, it, expect } from "vitest";
 import { Colony, DEFS, doorCells, routeCorridor } from "./index";
+import type { ColonyState } from "./state";
 
 describe("door geometry rotates with the building", () => {
   it("a habitat's door exit cell turns a quarter at a time", () => {
@@ -62,5 +63,24 @@ describe("Colony.route lays a corridor run between two doors", () => {
     expect(ok).toBe(true);
     const after = c.snapshot().buildings.filter((bb) => bb.defId === "corridor").length;
     expect(after).toBeGreaterThan(before); // corridors were laid along the path
+  });
+
+  it("refuses a run it cannot pay for in full, and lays nothing", () => {
+    const c = new Colony(1);
+    const s = (c as unknown as { s: ColonyState }).s;
+    c.place("electrolysis", 1, 1, 0); // door south → exit (1,2)
+    c.place("electrolysis", 1, 6, 2); // door north → exit (1,5): four new cells, 8 mat
+    const a = c.buildingAt(1, 1)!.uid;
+    const b = c.buildingAt(1, 6)!.uid;
+    const corridors = () => s.buildings.filter((x) => x.defId === "corridor").length;
+    const before = corridors();
+    s.materials.amount = 7;
+    expect(c.route(a, b)).toBe(false);
+    expect(corridors()).toBe(before);
+    expect(s.materials.amount).toBe(7);
+    s.materials.amount = 8;
+    expect(c.route(a, b)).toBe(true);
+    expect(corridors()).toBe(before + 4);
+    expect(s.materials.amount).toBe(0);
   });
 });

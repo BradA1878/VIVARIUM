@@ -255,9 +255,11 @@ export class Colony {
     };
     const path = planRoute(this.s.buildings, this.s.N, blocked, fromUid, toUid);
     if (!path) return false;
-    for (const [x, y] of path) {
-      if (this.s.grid[idx(this.s.N, x, y)] === 0) this.build(DEFS.corridor, x, y, 0);
-    }
+    // all or nothing, like place with connect: a run that stops short costs
+    // materials and connects nothing
+    const fresh = path.filter(([x, y]) => this.s.grid[idx(this.s.N, x, y)] === 0);
+    if (fresh.length * (DEFS.corridor.matCost ?? 0) > this.s.materials.amount) return false;
+    for (const [x, y] of fresh) this.build(DEFS.corridor, x, y, 0);
     recomputeConnectivity(this.s);
     return true;
   }
