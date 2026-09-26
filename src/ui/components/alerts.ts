@@ -46,7 +46,9 @@ const FAULT_ORDER: readonly FaultReason[] = ["seal", "crew", "damaged", "faulted
 const FAULT_COPY: Record<FaultReason, { label: string; sub: string }> = {
   seal: { label: "UNSEALED", sub: "no corridor to a hub" },
   crew: { label: "UNSTAFFED", sub: "no free crew" },
-  damaged: { label: "DAMAGED", sub: "offline until repaired" },
+  // not "offline": a damaged solar array, tank, or hub keeps working (integrity
+  // repairs itself at a fixed rate either way)
+  damaged: { label: "DAMAGED", sub: "repairs itself over time" },
   faulted: { label: "FLARE FAULT", sub: "electronics recovering" },
   water: { label: "NO WATER", sub: "input tank empty" },
   oxygen: { label: "NO OXYGEN", sub: "input tank empty" },
@@ -58,6 +60,15 @@ const FAULT_COPY: Record<FaultReason, { label: string; sub: string }> = {
  * §7). Conduits are excluded (a brownout should not badge every corridor
  * cell), and so is "power" (BROWNOUT already reports it). Lines are listed
  * in a fixed severity order and only when their count is above zero. */
+/** the building a fault line shows next: the first after the one shown last,
+ *  in building order, wrapping. Keyed on the uid rather than an index, so a
+ *  building fixed or added between clicks never repeats or skips one. */
+export function nextFaultUid(uids: readonly number[], last: number | undefined): number | undefined {
+  if (uids.length === 0) return undefined;
+  if (last === undefined) return uids[0];
+  return uids.find((u) => u > last) ?? uids[0];
+}
+
 export function faultAlerts(buildings: readonly BuildingState[]): FaultAlert[] {
   const uidsByReason = new Map<FaultReason, number[]>();
   for (const b of buildings) {

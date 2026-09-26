@@ -42,7 +42,7 @@ export const HINTS: Record<HintId, Hint> = {
   corridor: {
     id: "corridor",
     title: "NO PRESSURE",
-    body: "A sealed building runs only while it touches the pressure network: a hub, a corridor, or a connected sealed building. This one is cut off. Pick the corridor tile, click it, then click the hub, and the corridor is laid for you.",
+    body: "Sealed buildings lay their own corridor when placed. NO SEAL means this one has no route to a hub, or its corridor was cut: clear a path, move it closer to the base, or lay a corridor with the Corridor tool.",
   },
   brownout: {
     id: "brownout",

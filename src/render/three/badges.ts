@@ -57,7 +57,7 @@ const PAD = 16;
 const BADGE_H = 0.5;
 const ANCHOR_LIFT = 0.12; // above the anchor point (the roof height)
 /** fallback aspect for a texture with neither recorded dimensions nor an
- *  image to measure — the test stub `() => new THREE.Texture()` has both. */
+ *  image to measure, like the tests' stub `() => new THREE.Texture()` */
 const DEFAULT_ASPECT = 3.2;
 
 /** Default factory: draws a dark pill with the fault label. Canvas work

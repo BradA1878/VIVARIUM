@@ -39,6 +39,7 @@ import { Hints, type Hint, type HintId } from "../hints";
 import { leaderId, boardableRover } from "../lead";
 import { alienTechFromEvent } from "../alienTech";
 import { endCopy } from "../endReport";
+import { nextFaultUid } from "../components/alerts";
 
 // player preferences (persisted) — gate the director, the live narrator, render
 // quality, the audio gains, and the next run's difficulty. The deep watch below
@@ -65,7 +66,7 @@ const hover: Ref<HoverInfo | null> = ref(null);
 const selected: Ref<SelectInfo | null> = ref(null);
 /** the corridor a sealed building will lay, while one is aimed (Inspector's placing strip) */
 const placePreview: ShallowRef<SealPreview | null> = shallowRef(null);
-/** per fault line (alert key): the index of the building it showed last */
+/** per fault line (alert key): the uid of the building it showed last */
 const faultCursor = new Map<string, number>();
 /** the contextual teaching toast currently on screen (HintToast.vue renders it) */
 const hintToast: Ref<Hint | null> = ref(null);
@@ -1132,10 +1133,10 @@ function shipments(): Shipment[] {
 
 /** a HUD fault line was clicked: show the next building it counts, in turn */
 function focusFault(k: string, uids: readonly number[]): void {
-  if (!renderer || uids.length === 0) return;
-  const next = ((faultCursor.get(k) ?? -1) + 1) % uids.length;
-  faultCursor.set(k, next);
-  renderer.focusBuilding(uids[next]);
+  const uid = nextFaultUid(uids, faultCursor.get(k));
+  if (!renderer || uid === undefined) return;
+  faultCursor.set(k, uid);
+  renderer.focusBuilding(uid);
 }
 
 export function useColony() {

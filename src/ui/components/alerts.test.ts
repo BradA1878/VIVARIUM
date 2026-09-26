@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BuildingState, OffReason } from "@shared/types";
-import { brownoutShed, faultAlerts, quakeAlertSub, resupplyAlertCopy } from "./alerts";
+import { brownoutShed, faultAlerts, nextFaultUid, quakeAlertSub, resupplyAlertCopy } from "./alerts";
 
 function bld(uid: number, defId: string, offReason?: OffReason): BuildingState {
   return {
@@ -71,7 +71,7 @@ describe("faultAlerts", () => {
       { k: "off-seal", sev: 2, txt: "1 UNSEALED", sub: "no corridor to a hub", uids: [1] },
     ]);
     expect(faultAlerts([bld(1, "hab", "damaged")])).toEqual([
-      { k: "off-damaged", sev: 2, txt: "1 DAMAGED", sub: "offline until repaired", uids: [1] },
+      { k: "off-damaged", sev: 2, txt: "1 DAMAGED", sub: "repairs itself over time", uids: [1] },
     ]);
     expect(faultAlerts([bld(1, "hab", "faulted")])).toEqual([
       { k: "off-faulted", sev: 2, txt: "1 FLARE FAULT", sub: "electronics recovering", uids: [1] },
@@ -102,5 +102,25 @@ describe("brownoutShed", () => {
 
   it("keeps its old scope: a shed surface building alone is not reported", () => {
     expect(brownoutShed([bld(1, "extractor", "power")])).toBe(false);
+  });
+});
+
+describe("nextFaultUid", () => {
+  it("starts at the first building and cycles in order, wrapping", () => {
+    const uids = [5, 9, 12];
+    const seen: (number | undefined)[] = [];
+    let last: number | undefined;
+    for (let i = 0; i < 4; i++) { last = nextFaultUid(uids, last); seen.push(last); }
+    expect(seen).toEqual([5, 9, 12, 5]);
+  });
+
+  it("neither repeats nor skips when the list changes between clicks", () => {
+    expect(nextFaultUid([9, 12], 9)).toBe(12); // 5 was fixed after 9 was shown: 12 is next, not 9 again
+    expect(nextFaultUid([5, 7, 9, 12], 9)).toBe(12); // 7 was added before the cursor: nothing skipped
+    expect(nextFaultUid([5, 12], 9)).toBe(12); // the one shown last is gone: the one after it
+  });
+
+  it("has nothing to show for an empty line", () => {
+    expect(nextFaultUid([], 3)).toBeUndefined();
   });
 });
