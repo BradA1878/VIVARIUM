@@ -88,7 +88,7 @@ describe("brownout sheds the lowest priority first (doc §2.4 pass 3)", () => {
     const c = new Colony(42);
     // Build a greenhouse next to the sealed cluster and starve the grid by
     // running deep into the night with heavy draw and little battery.
-    // The northern corridor meets the hub directly; habs do not extend a seal.
+    // The northern corridor meets the hub directly and carries the seal to it.
     const hub = c.snapshot().buildings.find((b) => b.defId === "hub")!;
     expect(c.place("corridor", hub.gx, hub.gy - 1)).toBe(true);
     expect(c.place("greenhouse", hub.gx, hub.gy - 3)).toBe(true);
