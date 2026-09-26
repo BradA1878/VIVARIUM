@@ -87,6 +87,8 @@ function drawBadge(label: string): THREE.Texture {
   ctx.fillText(label, w / 2, TEX_H / 2 + 2);
 
   const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas colours are sRGB, as in bubbles.ts
+  tex.generateMipmaps = false;
   tex.minFilter = THREE.LinearFilter; // NPOT-safe, no mipmaps
   tex.userData.badgeWidth = w;
   tex.userData.badgeHeight = TEX_H;
