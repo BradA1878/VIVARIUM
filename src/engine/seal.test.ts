@@ -249,4 +249,57 @@ describe("Colony.place with connect", () => {
     expect(c.place("battery", x, y, 0, true)).toBe(true);
     expect(s.buildings.length).toBe(before + 1);
   });
+
+  // the snapshot the host sends after each command must show the network as it
+  // now is, even while paused (no tick): the overlay reads these flags
+  describe("connected flags follow every command, not only the tick", () => {
+    /** the seed electrolysis docks to the network through one corridor, north of it */
+    const seed = () => {
+      const c = new Colony(7);
+      const s = stateOf(c);
+      s.materials.amount = 300;
+      const elec = s.buildings.find((b) => b.defId === "electrolysis")!;
+      return { c, s, elec, cut: [elec.gx, elec.gy - 1] as const };
+    };
+
+    it("the seed colony is sealed before its first tick", () => {
+      const { elec } = seed();
+      expect(elec.connected).toBe(true);
+    });
+
+    it("remove and a hand-laid corridor update the flags at once", () => {
+      const { c, elec, cut } = seed();
+      expect(c.removeAt(...cut)).toBe(true);
+      expect(elec.connected).toBe(false);
+      expect(c.place("corridor", ...cut)).toBe(true); // no connect
+      expect(elec.connected).toBe(true);
+    });
+
+    it("a moved building takes its flag with it", () => {
+      const { c, s, elec } = seed();
+      const home = [elec.gx, elec.gy] as const;
+      const [x, y] = farEmptyCell(s);
+      expect(c.move(elec.uid, x, y)).toBe(true);
+      expect(elec.connected).toBe(false);
+      expect(c.move(elec.uid, ...home)).toBe(true);
+      expect(elec.connected).toBe(true);
+    });
+
+    it("a two-click route reconnects at once", () => {
+      const { c, s, elec, cut } = seed();
+      expect(c.removeAt(...cut)).toBe(true);
+      const hub = s.buildings.find((b) => DEFS[b.defId].isHub)!;
+      expect(c.route(elec.uid, hub.uid)).toBe(true);
+      expect(elec.connected).toBe(true);
+    });
+
+    it("loading a save re-derives stale flags from the buildings", () => {
+      const { c, elec } = seed();
+      const data = c.serialize();
+      const saved = data.state.buildings.find((b) => b.uid === elec.uid)!;
+      saved.connected = false; // as a save from before the rule would carry it
+      const loaded = stateOf(Colony.load(data));
+      expect(loaded.buildings.find((b) => b.uid === elec.uid)!.connected).toBe(true);
+    });
+  });
 });

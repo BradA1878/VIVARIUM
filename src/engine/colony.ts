@@ -210,17 +210,25 @@ export class Colony {
       plan = planSealRoute(this.s.N, this.s.buildings, sealNetwork(this.s.N, this.s.buildings), cellsFor(def, gx, gy));
       if (plan.kind === "corridor" && (def.matCost ?? 0) + plan.cost > this.s.materials.amount) return false;
     }
-    const b = emptyBuilding(this.s.uidCounter++, defId, gx, gy, rot);
+    this.build(def, gx, gy, rot);
+    if (plan?.kind === "corridor") for (const [x, y] of plan.newCells) this.build(DEFS.corridor, x, y, 0);
+    recomputeConnectivity(this.s);
+    return true;
+  }
+
+  /** put a building down and pay for it, if it fits. Leaves the connected flags
+   *  to the caller, which refreshes them once per command: every command that
+   *  changes the building list does, so the flags (and the snapshot's network)
+   *  are current even while the sim is paused and no tick runs. */
+  private build(def: BuildingDef, gx: number, gy: number, rot: Side): boolean {
+    if (!canPlace(this.s, def, gx, gy)) return false;
+    const b = emptyBuilding(this.s.uidCounter++, def.id, gx, gy, rot);
     this.s.buildings.push(b);
     for (const [x, y] of cellsFor(def, gx, gy)) this.s.grid[idx(this.s.N, x, y)] = b.uid;
     this.s.materials.amount = Math.max(0, this.s.materials.amount - (def.matCost ?? 0)); // pay for it
     this.recomputeCaps();
-    this.emit({ type: "build", defId, name: def.name });
+    this.emit({ type: "build", defId: def.id, name: def.name });
     if (def.isHub) this.emit({ type: "hub_online" });
-    if (plan?.kind === "corridor") for (const [x, y] of plan.newCells) this.place("corridor", x, y);
-    // connected flags now, not next tick: a second placement in this batch docks
-    // to this one, and a snapshot sent before the next tick shows it sealed
-    if (connect) recomputeConnectivity(this.s);
     return true;
   }
 
@@ -233,6 +241,7 @@ export class Colony {
     for (const [x, y] of cellsFor(def, b.gx, b.gy)) this.s.grid[idx(this.s.N, x, y)] = 0;
     this.s.buildings = this.s.buildings.filter((x) => x.uid !== id);
     this.recomputeCaps();
+    recomputeConnectivity(this.s);
     return true;
   }
 
@@ -247,13 +256,14 @@ export class Colony {
     const path = planRoute(this.s.buildings, this.s.N, blocked, fromUid, toUid);
     if (!path) return false;
     for (const [x, y] of path) {
-      if (this.s.grid[idx(this.s.N, x, y)] === 0) this.place("corridor", x, y);
+      if (this.s.grid[idx(this.s.N, x, y)] === 0) this.build(DEFS.corridor, x, y, 0);
     }
+    recomputeConnectivity(this.s);
     return true;
   }
 
   /** relocate a placed building to a new footprint, if it fits (keeps its uid,
-   *  rotation, integrity, etc.). Connectivity recomputes next tick. */
+   *  rotation, integrity, etc.). */
   move(uid: number, gx: number, gy: number): boolean {
     const b = this.s.buildings.find((x) => x.uid === uid);
     if (!b) return false;
@@ -270,6 +280,7 @@ export class Colony {
     }
     for (const [x, y] of cellsFor(def, gx, gy)) this.s.grid[idx(this.s.N, x, y)] = b.uid;
     b.gx = gx; b.gy = gy;
+    recomputeConnectivity(this.s);
     return true;
   }
 
@@ -618,6 +629,9 @@ export class Colony {
     // already carry these values, but this repairs legacy/inconsistent payloads
     // and guarantees the permanent upgrade remains the source of truth.
     recomputeCaps(c.s);
+    // and the seal: flags derive from the building list, so a current save is
+    // unchanged, and one from before the pressure-network rule gets today's
+    recomputeConnectivity(c.s);
     c.events = [];
     return c;
   }
