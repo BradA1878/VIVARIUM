@@ -244,3 +244,15 @@ describe("BridgeCore.previewSeal — the placement ghost's corridor plan", () =>
     expect(b.previewSeal("hab", 8, 2)).toEqual({ kind: "touching" });
   });
 });
+
+describe("BridgeCore.place", () => {
+  it("sends connect only when it is true, so other placements keep their old shape", () => {
+    const b = new TestBridge();
+    b.place("hab", 3, 4, 1, true);
+    b.place("battery", 5, 6);
+    expect(b.sent).toEqual([
+      { type: "place", defId: "hab", gx: 3, gy: 4, rot: 1, connect: true },
+      { type: "place", defId: "battery", gx: 5, gy: 6, rot: 0 },
+    ]);
+  });
+});

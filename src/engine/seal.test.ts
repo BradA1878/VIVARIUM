@@ -16,6 +16,13 @@ describe("sealNetwork — the pressure rule", () => {
     expect([...net.connected].sort((x, y) => x - y)).toEqual([a.uid, b.uid, habB.uid].sort((x, y) => x - y));
   });
 
+  it("a corridor off a second, isolated hub carries that hub's seal", () => {
+    const a = at("hub", 0, 0), b = at("hub", 10, 10), run = at("corridor", 12, 10), hab = at("hab", 13, 10);
+    const net = sealNetwork(N, [a, b, run, hab]);
+    expect(net.connected.has(run.uid)).toBe(true);
+    expect(net.connected.has(hab.uid)).toBe(true);
+  });
+
   it("docked sealed buildings share the seal through each other", () => {
     const hub = at("hub", 0, 0), hab = at("hab", 2, 0), elec = at("electrolysis", 3, 0), med = at("medbay", 4, 0);
     const net = sealNetwork(N, [hub, hab, elec, med]);

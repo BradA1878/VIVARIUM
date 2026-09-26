@@ -83,6 +83,21 @@ describe("SimHost", () => {
     expect(removed).toBe(base);
   });
 
+  it("place passes connect to the colony: the worker lays the corridor only when asked", () => {
+    const buildingsOf = (host: SimHost) =>
+      (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot.buildings;
+    const habAt = (host: SimHost) => buildingsOf(host).find((b) => b.defId === "hab" && b.gx === 12 && b.gy === 6);
+    const connected = new SimHost(1);
+    const base = buildingsOf(connected).length;
+    connected.applyCommand({ type: "place", defId: "hab", gx: 12, gy: 6, connect: true });
+    expect(buildingsOf(connected).length).toBeGreaterThan(base + 1); // the hab and its corridor
+    expect(habAt(connected)?.connected).toBe(true);
+    const plain = new SimHost(1);
+    plain.applyCommand({ type: "place", defId: "hab", gx: 12, gy: 6 });
+    expect(buildingsOf(plain).length).toBe(base + 1);
+    expect(habAt(plain)?.connected).toBe(false);
+  });
+
   it("reset with a difficulty switches it; plain reset keeps it", () => {
     const host = new SimHost(3);
     const snapOf = (msgs: Outbound[]) =>

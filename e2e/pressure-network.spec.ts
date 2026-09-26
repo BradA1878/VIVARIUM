@@ -149,12 +149,16 @@ test("a cut corridor unseals a building: badge, alert, and the alert finds it", 
     () => (window as DebugWindow).__viv.renderer.faultBadges.pool.some((slot) => slot.sprite.visible && slot.label === "NO SEAL"),
   )).toBe(true);
 
-  await line.click();
-  await expect.poll(() => page.evaluate(({ gx, gy }) => {
+  // the pan is an exact jump (the rig offset does not ease), so the building
+  // must start well off centre and end on it
+  const offCentre = () => page.evaluate(({ gx, gy }) => {
     const { renderer: r } = (window as DebugWindow).__viv;
     const p = r.grid.cellCenter(gx, gy).project(r.scene.camera);
-    return Math.abs(p.x) < 0.2 && Math.abs(p.y) < 0.2;
-  }, target), { timeout: 15_000 }).toBe(true);
+    return Math.hypot(p.x, p.y);
+  }, target);
+  expect(await offCentre()).toBeGreaterThan(0.1);
+  await line.click();
+  await expect.poll(offCentre, { timeout: 15_000 }).toBeLessThan(0.05);
 });
 
 test("piloting from the touch button drops the build tool and its overlay", async ({ page }, testInfo) => {
