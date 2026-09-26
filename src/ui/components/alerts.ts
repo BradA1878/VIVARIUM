@@ -1,3 +1,5 @@
+import type { BuildingState, OffReason } from "@shared/types";
+import { DEFS } from "@/engine";
 import { fmt } from "@/ui/format";
 
 export interface ResupplyAlertCopy {
@@ -19,4 +21,51 @@ export function resupplyAlertCopy(secondsRemaining: number): ResupplyAlertCopy {
     txt: "EARTH RESUPPLY — AUTOMATIC",
     sub: `no action required · adding power, water, oxygen, and food · departs in ${fmt(secondsRemaining)}s`,
   };
+}
+
+export interface FaultAlert {
+  k: string;
+  sev: 2;
+  txt: string;
+  sub: string;
+  uids: number[];
+}
+
+/** off-reasons this alert covers, in the order the lines are listed. Power is
+ * left out: the existing BROWNOUT alert already covers it. */
+type FaultReason = Exclude<OffReason, "power">;
+const FAULT_ORDER: readonly FaultReason[] = ["seal", "crew", "damaged", "faulted", "water", "oxygen", "food"];
+
+const FAULT_COPY: Record<FaultReason, { label: string; sub: string }> = {
+  seal: { label: "UNSEALED", sub: "no corridor to a hub" },
+  crew: { label: "UNSTAFFED", sub: "no free crew" },
+  damaged: { label: "DAMAGED", sub: "offline until repaired" },
+  faulted: { label: "FLARE FAULT", sub: "electronics recovering" },
+  water: { label: "NO WATER", sub: "input tank empty" },
+  oxygen: { label: "NO OXYGEN", sub: "input tank empty" },
+  food: { label: "NO FOOD", sub: "input tank empty" },
+};
+
+/** One HUD line per off-reason, each carrying the uids of every affected
+ * building so a click can cycle through them (doc: pressure network design
+ * §7). Conduits are excluded (a brownout should not badge every corridor
+ * cell), and so is "power" (BROWNOUT already reports it). Lines are listed
+ * in a fixed severity order and only when their count is above zero. */
+export function faultAlerts(buildings: readonly BuildingState[]): FaultAlert[] {
+  const uidsByReason = new Map<FaultReason, number[]>();
+  for (const b of buildings) {
+    if (DEFS[b.defId]?.conduit) continue;
+    const reason = b.offReason;
+    if (!reason || reason === "power") continue;
+    const uids = uidsByReason.get(reason);
+    if (uids) uids.push(b.uid); else uidsByReason.set(reason, [b.uid]);
+  }
+  const out: FaultAlert[] = [];
+  for (const reason of FAULT_ORDER) {
+    const uids = uidsByReason.get(reason);
+    if (!uids || uids.length === 0) continue;
+    const { label, sub } = FAULT_COPY[reason];
+    out.push({ k: "off-" + reason, sev: 2, txt: `${uids.length} ${label}`, sub, uids });
+  }
+  return out;
 }
