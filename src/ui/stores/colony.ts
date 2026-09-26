@@ -885,6 +885,7 @@ const controls = {
     if (s.possessed == null) {
       const lead = leaderId(s);
       if (lead == null) return; // no one left to command
+      clearTool(); // piloting locks construction: no ghost, strip, or overlay left up (every entry point)
       bridge.setPaused(false); // piloting runs the clock
       bridge.possess(lead);
       return;

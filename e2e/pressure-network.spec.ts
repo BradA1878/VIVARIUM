@@ -156,3 +156,16 @@ test("a cut corridor unseals a building: badge, alert, and the alert finds it", 
     return Math.abs(p.x) < 0.2 && Math.abs(p.y) < 0.2;
   }, target), { timeout: 15_000 }).toBe(true);
 });
+
+test("piloting from the touch button drops the build tool and its overlay", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "tablet-width console");
+  await page.setViewportSize({ width: 880, height: 640 }); // the PILOT COMMANDER button shows at ≤900px
+  await startColony(page);
+  const overlayVisible = () => page.evaluate(() => (window as DebugWindow).__viv.renderer.networkOverlay.group.visible);
+  await page.getByRole("button", { name: /^Habitat/ }).click();
+  await expect.poll(overlayVisible).toBe(true);
+  await page.getByRole("button", { name: /PILOT COMMANDER/ }).click();
+  await expect.poll(() => page.evaluate(() => (window as DebugWindow).__viv.bridge.latest!.possessed)).not.toBeNull();
+  await expect.poll(overlayVisible).toBe(false);
+  await expect(page.locator(".inspect", { hasText: "PLACING" })).toHaveCount(0);
+});
