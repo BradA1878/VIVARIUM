@@ -4,13 +4,15 @@ import { useColony } from "@/ui/stores/colony";
 import { fmt } from "@/ui/format";
 import { DEFS } from "@/engine";
 import type { HazardKind } from "@shared/types";
-import { quakeAlertSub, resupplyAlertCopy } from "./alerts";
+import { faultAlerts, quakeAlertSub, resupplyAlertCopy } from "./alerts";
 
 interface AlertItem {
   k: string;
   sev: 1 | 2 | 3;
   txt: string;
   sub: string;
+  /** the buildings a fault line counts: the line is a button that shows the next one */
+  uids?: number[];
 }
 
 const HAZARD: Record<HazardKind, { name: string; effect: string }> = {
@@ -21,7 +23,7 @@ const HAZARD: Record<HazardKind, { name: string; effect: string }> = {
   quake:    { name: "MARSQUAKE", effect: "the seal is shaking loose" },
 };
 
-const { snapshot } = useColony();
+const { snapshot, focusFault } = useColony();
 const s = computed(() => snapshot.value);
 
 const items = computed<AlertItem[]>(() => {
@@ -75,6 +77,9 @@ const items = computed<AlertItem[]>(() => {
     out.push({ k: "brown", sev: 2, txt: "BROWNOUT — load shed", sub: "demand exceeds supply" });
   }
 
+  // buildings that are off for a reason other than power: unsealed, unstaffed, …
+  out.push(...faultAlerts(cur.buildings));
+
   // the evil UFO — a rare hostile abductor overhead
   if (cur.ufo && cur.ufo.phase !== "leaving") {
     const grabbing = cur.ufo.phase === "hovering";
@@ -107,12 +112,20 @@ const items = computed<AlertItem[]>(() => {
     aria-atomic="false"
     aria-relevant="additions"
   >
-    <div v-for="it in items" :key="it.k" :class="'alert sev' + it.sev">
+    <component
+      :is="it.uids ? 'button' : 'div'"
+      v-for="it in items"
+      :key="it.k"
+      :class="'alert sev' + it.sev"
+      :type="it.uids ? 'button' : undefined"
+      :title="it.uids ? 'show the next one' : undefined"
+      @click="it.uids && focusFault(it.k, it.uids)"
+    >
       <span class="alert-bar" aria-hidden="true" />
-      <div>
-        <div class="alert-txt">{{ it.txt }}</div>
-        <div class="alert-sub">{{ it.sub }}</div>
-      </div>
-    </div>
+      <span>
+        <span class="alert-txt">{{ it.txt }}</span>
+        <span class="alert-sub">{{ it.sub }}</span>
+      </span>
+    </component>
   </div>
 </template>

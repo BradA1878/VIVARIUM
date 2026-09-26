@@ -65,6 +65,8 @@ const hover: Ref<HoverInfo | null> = ref(null);
 const selected: Ref<SelectInfo | null> = ref(null);
 /** the corridor a sealed building will lay, while one is aimed (Inspector's placing strip) */
 const placePreview: ShallowRef<SealPreview | null> = shallowRef(null);
+/** per fault line (alert key): the index of the building it showed last */
+const faultCursor = new Map<string, number>();
 /** the contextual teaching toast currently on screen (HintToast.vue renders it) */
 const hintToast: Ref<Hint | null> = ref(null);
 /** the rare, independent acquisition notice rendered by AlienTechReveal. It is
@@ -1128,10 +1130,18 @@ function shipments(): Shipment[] {
   return shipmentsInTransit();
 }
 
+/** a HUD fault line was clicked: show the next building it counts, in turn */
+function focusFault(k: string, uids: readonly number[]): void {
+  if (!renderer || uids.length === 0) return;
+  const next = ((faultCursor.get(k) ?? -1) + 1) % uids.length;
+  faultCursor.set(k, next);
+  renderer.focusBuilding(uids[next]);
+}
+
 export function useColony() {
   return {
     snapshot, messages, tool, demolish, hover, selected, placePreview, hintToast, alienTechReveal, logOpen, startScreen,
-    pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, dismissAlienTechReveal, toggleLog,
+    pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, dismissAlienTechReveal, toggleLog, focusFault,
     runHistory, runEpitaph, directorDossier, colonies, shipments, activeSlot: activeSlotRef, controls,
     mode, capabilities, roster, netStatus, simError, dismissSimError,
   };
