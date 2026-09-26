@@ -101,6 +101,7 @@ describe("HostRelay — co-op authority", () => {
     fire.cmd(cmd({ type: "place", defId: "hab", gx: 1, gy: 1 }) as never, "A" as never);
     fire.cmd(cmd({ type: "setPaused", value: true }) as never, "A" as never);
     fire.cmd(cmd({ type: "remove", gx: 1, gy: 1 }) as never, "A" as never);
+    fire.cmd(cmd({ type: "setMode", uid: 1, mode: "off" }) as never, "A" as never);
 
     expect(calls.length).toBe(before); // nothing forwarded
   });

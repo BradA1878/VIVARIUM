@@ -98,6 +98,14 @@ describe("SimHost", () => {
     expect(habAt(plain)?.connected).toBe(false);
   });
 
+  it("setMode reaches the colony", () => {
+    const host = new SimHost(1);
+    const snap = () => (host.snapshotMessage() as Extract<Outbound, { type: "snapshot" }>).snapshot;
+    const elec = snap().buildings.find((b) => b.defId === "electrolysis")!;
+    host.applyCommand({ type: "setMode", uid: elec.uid, mode: "off" });
+    expect(snap().buildings.find((b) => b.uid === elec.uid)!.mode).toBe("off");
+  });
+
   it("reset with a difficulty switches it; plain reset keeps it", () => {
     const host = new SimHost(3);
     const snapOf = (msgs: Outbound[]) =>

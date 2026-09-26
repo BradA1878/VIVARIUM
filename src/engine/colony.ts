@@ -4,7 +4,7 @@
    commands, advances the tick, and buffers events for an observer to drain.
    ============================================================================ */
 import type {
-  BuildingDef, BuildingState, ColonyEvent, DefeatCause, Difficulty, HazardKind,
+  BuildingDef, BuildingMode, BuildingState, ColonyEvent, DefeatCause, Difficulty, HazardKind,
   LegacyManifest, Resource, ShipmentManifest, Side, Snapshot, World,
 } from "@shared/types";
 import { DEFS } from "./defs";
@@ -19,6 +19,7 @@ import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
 import { planSealRoute, reservedCells, sealNetwork, type SealPlan } from "./seal";
 import { recomputeConnectivity } from "./connectivity";
+import { modesFor } from "./modes";
 import { recomputeCaps } from "./caps";
 import { spawnHazard, hazardViews, HAZARD_META, SCHED_FIRST } from "./hazards";
 import type { ColonyState, SaveData, Pilot, HazardInstance } from "./state";
@@ -293,6 +294,17 @@ export class Colony {
     const b = this.buildingAt(gx, gy);
     if (!b) return false;
     b.rot = ((b.rot + 1) % 4) as Side;
+    return true;
+  }
+
+  /** the player's crew setting for one building. False, changing nothing, for
+   *  an unknown uid or a setting the building does not offer. */
+  setMode(uid: number, mode: BuildingMode): boolean {
+    const b = this.s.buildings.find((x) => x.uid === uid);
+    const def = b ? DEFS[b.defId] : undefined;
+    if (!b || !def || !modesFor(def).includes(mode)) return false;
+    if (mode === "normal") delete b.mode;
+    else b.mode = mode;
     return true;
   }
 

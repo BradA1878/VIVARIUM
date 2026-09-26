@@ -9,7 +9,7 @@
    core over a Trystero data channel — the renderer/store can't tell them apart, so
    the worker wall doubles as the network seam (multiplayer co-op).
    ============================================================================ */
-import type { BuildingState, ColonyEvent, Difficulty, HazardKind, LegacyManifest, ShipmentManifest, Snapshot, World } from "@shared/types";
+import type { BuildingMode, BuildingState, ColonyEvent, Difficulty, HazardKind, LegacyManifest, ShipmentManifest, Snapshot, World } from "@shared/types";
 import { DEFS, FUNC_THRESHOLD, cellsFor, planSealRoute, reservedCells, sealNetwork, sealPreview, type SaveData, type SealNetwork, type SealPreview } from "@/engine";
 import { buildingAtPredict, canPlacePredict, canMovePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
@@ -250,6 +250,8 @@ export abstract class BridgeCore {
   rotate(gx: number, gy: number): void { this.send({ type: "rotate", gx, gy }); }
   rotateUid(uid: number): void { const b = this.buildingByUid(uid); if (b) this.send({ type: "rotate", gx: b.gx, gy: b.gy }); }
   move(uid: number, gx: number, gy: number): void { this.send({ type: "move", uid, gx, gy }); }
+  /** the player's crew setting for one building */
+  setMode(uid: number, mode: BuildingMode): void { this.send({ type: "setMode", uid, mode }); }
   route(fromUid: number, toUid: number): void { this.send({ type: "route", fromUid, toUid }); }
   triggerHazard(kind: HazardKind, intensity?: number): void { this.send({ type: "triggerHazard", kind, intensity }); }
   setDirector(value: boolean): void { this.send({ type: "setDirector", value }); }

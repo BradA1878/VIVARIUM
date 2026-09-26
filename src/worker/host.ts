@@ -32,6 +32,7 @@ export class SimHost {
       case "remove": this.colony.removeAt(cmd.gx, cmd.gy); break;
       case "rotate": this.colony.rotateAt(cmd.gx, cmd.gy); break;
       case "move": this.colony.move(cmd.uid, cmd.gx, cmd.gy); break;
+      case "setMode": this.colony.setMode(cmd.uid, cmd.mode); break;
       case "route": this.colony.route(cmd.fromUid, cmd.toUid); break;
       case "triggerHazard": this.colony.triggerHazard(cmd.kind, cmd.intensity); break;
       case "setDirector": this.colony.setDirector(cmd.value); break;

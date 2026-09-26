@@ -3,7 +3,7 @@
    Main thread sends Commands; the worker (which owns the engine) sends Outbound
    messages: atomic state/event frames and correlated operation responses.
    ============================================================================ */
-import { RESOURCES, type ColonyEvent, type Difficulty, type HazardKind, type LegacyManifest, type ShipmentManifest, type Snapshot, type World } from "@shared/types";
+import { RESOURCES, type BuildingMode, type ColonyEvent, type Difficulty, type HazardKind, type LegacyManifest, type ShipmentManifest, type Snapshot, type World } from "@shared/types";
 import type { SaveData } from "@/engine";
 
 // ---- main thread → worker ----------------------------------------------------
@@ -13,6 +13,8 @@ export type Command =
   | { type: "remove"; gx: number; gy: number }
   | { type: "rotate"; gx: number; gy: number }
   | { type: "move"; uid: number; gx: number; gy: number }
+  // the player's crew setting for one building (FIRST / NORMAL / OFF)
+  | { type: "setMode"; uid: number; mode: BuildingMode }
   | { type: "route"; fromUid: number; toUid: number }
   | { type: "triggerHazard"; kind: HazardKind; intensity?: number }
   | { type: "setDirector"; value: boolean }

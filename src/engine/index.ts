@@ -11,6 +11,7 @@ export {
   type SealBuilding, type SealNetwork, type SealPlan, type SealPreview, type SealSites,
 } from "./seal";
 export { cellsFor } from "./grid";
+export { modesFor } from "./modes";
 export { HAZARD_META, hazardMods } from "./hazards";
 export { TECH_DEFS, TECH_IDS, isKnownTech, type TechDef } from "./techs";
 export { RNG } from "./rng";

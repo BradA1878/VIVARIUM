@@ -110,6 +110,10 @@ export interface Pool {
  *  then the seal, then crew, then a missing input */
 export type OffReason = "power" | "damaged" | "faulted" | "seal" | "crew" | "water" | "oxygen" | "food";
 
+/** the player's crew setting for a building: FIRST is staffed before NORMAL;
+ *  OFF does nothing at all (no crew, no power, no output) */
+export type BuildingMode = "first" | "normal" | "off";
+
 /** A placed building's live state (the parts the renderer/HUD read). */
 export interface BuildingState {
   uid: number;
@@ -131,6 +135,8 @@ export interface BuildingState {
   faulted: number;
   /** why it did not run this tick; undefined when it ran or had nothing to run */
   offReason?: OffReason;
+  /** the player's crew setting; undefined means NORMAL, so saves carry only what was set */
+  mode?: "first" | "off";
   /** seconds until this instance's replication completes (replicates defs only);
    *  undefined until its first ticking tick — per-instance, unlike the colony-
    *  scalar roverFab/robotFab, because each lineage member runs its own clock */

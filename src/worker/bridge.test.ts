@@ -245,7 +245,7 @@ describe("BridgeCore.previewSeal — the placement ghost's corridor plan", () =>
   });
 });
 
-describe("BridgeCore.place", () => {
+describe("BridgeCore commands", () => {
   it("sends connect only when it is true, so other placements keep their old shape", () => {
     const b = new TestBridge();
     b.place("hab", 3, 4, 1, true);
@@ -254,5 +254,11 @@ describe("BridgeCore.place", () => {
       { type: "place", defId: "hab", gx: 3, gy: 4, rot: 1, connect: true },
       { type: "place", defId: "battery", gx: 5, gy: 6, rot: 0 },
     ]);
+  });
+
+  it("setMode sends the uid and the setting", () => {
+    const b = new TestBridge();
+    b.setMode(7, "first");
+    expect(b.sent).toEqual([{ type: "setMode", uid: 7, mode: "first" }]);
   });
 });
