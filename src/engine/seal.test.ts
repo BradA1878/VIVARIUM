@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { Colony } from "./colony";
 import { DEFS } from "./defs";
 import { cellsFor } from "./grid";
 import { planSealRoute, sealNetwork, sealPreview, type SealBuilding, type SealPlan } from "./seal";
+import type { ColonyState } from "./state";
 
 let nextUid = 1;
 const at = (defId: string, gx: number, gy: number): SealBuilding => ({ uid: nextUid++, defId, gx, gy });
@@ -129,5 +131,122 @@ describe("sealPreview", () => {
   it("passes touching and no-route through", () => {
     expect(sealPreview({ kind: "touching" }, 24, 0)).toEqual({ kind: "touching" });
     expect(sealPreview({ kind: "no-route" }, 24, 0)).toEqual({ kind: "no-route" });
+  });
+});
+
+describe("Colony.place with connect", () => {
+  const stateOf = (c: Colony) => (c as unknown as { s: ColonyState }).s;
+  /** the first cell (scan order) at least `minDist` from every building, with a
+   *  clear radius-1 ring, so a 1×1 sealed building placed there must route */
+  const farEmptyCell = (s: ColonyState, minDist = 7): [number, number] => {
+    const occupied = (x: number, y: number) => x < 0 || y < 0 || x >= s.N || y >= s.N || s.grid[y * s.N + x] !== 0;
+    for (let y = 1; y < s.N - 1; y++)
+      for (let x = 1; x < s.N - 1; x++) {
+        let clear = true;
+        for (let dy = -1; dy <= 1 && clear; dy++) for (let dx = -1; dx <= 1 && clear; dx++) if (occupied(x + dx, y + dy)) clear = false;
+        if (!clear) continue;
+        const far = s.buildings.every((b) => Math.abs(b.gx - x) + Math.abs(b.gy - y) >= minDist);
+        if (far) return [x, y];
+      }
+    throw new Error("no far empty cell");
+  };
+  const count = (s: ColonyState, defId: string) => s.buildings.filter((b) => b.defId === defId).length;
+
+  it("lays the corridor, charges the building plus 2 per new cell, and connects it", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.materials.amount = 300;
+    const [x, y] = farEmptyCell(s);
+    const corridorsBefore = count(s, "corridor");
+    expect(c.place("hab", x, y, 0, true)).toBe(true);
+    const laid = count(s, "corridor") - corridorsBefore;
+    expect(laid).toBeGreaterThan(0);
+    expect(s.materials.amount).toBe(300 - (DEFS.hab.matCost ?? 0) - laid * (DEFS.corridor.matCost ?? 0));
+    expect(s.buildings.find((b) => b.defId === "hab" && b.gx === x && b.gy === y)!.connected).toBe(true);
+  });
+
+  it("places nothing when the building fits the budget but the corridor does not", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    const [x, y] = farEmptyCell(s);
+    s.materials.amount = (DEFS.hab.matCost ?? 0) + 1;
+    const before = s.buildings.length;
+    expect(c.place("hab", x, y, 0, true)).toBe(false);
+    expect(s.buildings.length).toBe(before);
+    expect(s.materials.amount).toBe((DEFS.hab.matCost ?? 0) + 1);
+  });
+
+  it("exact materials are enough", () => {
+    const probe = new Colony(7);
+    const ps = stateOf(probe);
+    ps.materials.amount = 300; // under the cap: placing re-clamps materials to capacity
+    const [x, y] = farEmptyCell(ps);
+    expect(probe.place("hab", x, y, 0, true)).toBe(true);
+    const spent = 300 - ps.materials.amount;
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.materials.amount = spent;
+    expect(c.place("hab", x, y, 0, true)).toBe(true);
+    expect(s.materials.amount).toBe(0);
+  });
+
+  it("touching the base lays no corridor", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.materials.amount = 300;
+    const hub = s.buildings.find((b) => b.defId === "hub")!;
+    // the first empty cell bordering the hub's 2×2 footprint
+    const ring: [number, number][] = [];
+    for (let i = 0; i < 2; i++) ring.push([hub.gx + i, hub.gy - 1], [hub.gx + 2, hub.gy + i], [hub.gx + i, hub.gy + 2], [hub.gx - 1, hub.gy + i]);
+    const spot = ring.find(([x, y]) => x >= 0 && y >= 0 && x < s.N && y < s.N && s.grid[y * s.N + x] === 0)!;
+    const before = s.buildings.length;
+    expect(c.place("electrolysis", spot[0], spot[1], 0, true)).toBe(true);
+    expect(s.buildings.length).toBe(before + 1);
+    expect(s.buildings.at(-1)!.connected).toBe(true);
+  });
+
+  it("a second placement in the same batch docks to the first", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.materials.amount = 500;
+    const [x, y] = farEmptyCell(s);
+    expect(c.place("hab", x, y, 0, true)).toBe(true);
+    const before = s.buildings.length;
+    expect(c.place("electrolysis", x + 1, y, 0, true) || c.place("electrolysis", x - 1, y, 0, true)).toBe(true);
+    expect(s.buildings.length).toBe(before + 1); // docked: no corridor
+    expect(s.buildings.at(-1)!.connected).toBe(true);
+  });
+
+  it("with no route the building is placed unsealed", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.materials.amount = 300;
+    for (const hub of s.buildings.filter((b) => DEFS[b.defId].isHub)) expect(c.removeAt(hub.gx, hub.gy)).toBe(true);
+    const [x, y] = farEmptyCell(s);
+    const before = s.buildings.length;
+    expect(c.place("hab", x, y, 0, true)).toBe(true);
+    expect(s.buildings.length).toBe(before + 1);
+    expect(s.buildings.at(-1)!.connected).toBe(false);
+  });
+
+  it("without connect nothing changes from before", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.materials.amount = 300;
+    const [x, y] = farEmptyCell(s);
+    const before = s.buildings.length;
+    expect(c.place("hab", x, y)).toBe(true);
+    expect(s.buildings.length).toBe(before + 1);
+    expect(s.materials.amount).toBe(300 - (DEFS.hab.matCost ?? 0));
+  });
+
+  it("connect is ignored for surface buildings", () => {
+    const c = new Colony(7);
+    const s = stateOf(c);
+    s.materials.amount = 300;
+    const [x, y] = farEmptyCell(s);
+    const before = s.buildings.length;
+    expect(c.place("battery", x, y, 0, true)).toBe(true);
+    expect(s.buildings.length).toBe(before + 1);
   });
 });

@@ -8,7 +8,8 @@ import type { SaveData } from "@/engine";
 
 // ---- main thread → worker ----------------------------------------------------
 export type Command =
-  | { type: "place"; defId: string; gx: number; gy: number; rot?: number }
+  // connect: a sealed building also lays the shortest corridor to the network
+  | { type: "place"; defId: string; gx: number; gy: number; rot?: number; connect?: boolean }
   | { type: "remove"; gx: number; gy: number }
   | { type: "rotate"; gx: number; gy: number }
   | { type: "move"; uid: number; gx: number; gy: number }

@@ -28,7 +28,7 @@ export class SimHost {
    *  request/response operations return correlated acknowledgments. */
   applyCommand(cmd: Command): Outbound[] {
     switch (cmd.type) {
-      case "place": this.colony.place(cmd.defId, cmd.gx, cmd.gy, (cmd.rot ?? 0) as 0 | 1 | 2 | 3); break;
+      case "place": this.colony.place(cmd.defId, cmd.gx, cmd.gy, (cmd.rot ?? 0) as 0 | 1 | 2 | 3, cmd.connect === true); break;
       case "remove": this.colony.removeAt(cmd.gx, cmd.gy); break;
       case "rotate": this.colony.rotateAt(cmd.gx, cmd.gy); break;
       case "move": this.colony.move(cmd.uid, cmd.gx, cmd.gy); break;

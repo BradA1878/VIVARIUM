@@ -236,7 +236,10 @@ export abstract class BridgeCore {
   }
 
   // ---- commands -------------------------------------------------------------
-  place(defId: string, gx: number, gy: number, rot = 0): void { this.send({ type: "place", defId, gx, gy, rot }); }
+  /** `connect`: a sealed building also lays its own corridor (sent only when true) */
+  place(defId: string, gx: number, gy: number, rot = 0, connect = false): void {
+    this.send({ type: "place", defId, gx, gy, rot, ...(connect ? { connect: true } : {}) });
+  }
   remove(gx: number, gy: number): void { this.send({ type: "remove", gx, gy }); }
   rotate(gx: number, gy: number): void { this.send({ type: "rotate", gx, gy }); }
   rotateUid(uid: number): void { const b = this.buildingByUid(uid); if (b) this.send({ type: "rotate", gx: b.gx, gy: b.gy }); }

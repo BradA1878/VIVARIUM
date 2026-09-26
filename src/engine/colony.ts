@@ -17,6 +17,8 @@ import { RNG } from "./rng";
 import { canPlace, cellsFor, idx, inBounds, migrateGrid } from "./grid";
 import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
+import { planSealRoute, sealNetwork, type SealPlan } from "./seal";
+import { recomputeConnectivity } from "./connectivity";
 import { recomputeCaps } from "./caps";
 import { spawnHazard, hazardViews, HAZARD_META, SCHED_FIRST } from "./hazards";
 import type { ColonyState, SaveData, Pilot, HazardInstance } from "./state";
@@ -196,9 +198,18 @@ export class Colony {
     return !!def && canPlace(this.s, def, gx, gy);
   }
 
-  place(defId: string, gx: number, gy: number, rot: Side = 0): boolean {
+  /** place a building. With `connect`, a sealed building also lays the shortest
+   *  corridor to the network (seal.ts planSealRoute) in the same call — all or
+   *  nothing: if the building plus that corridor costs more than the materials
+   *  on hand, nothing is placed. With no route it is placed unsealed. */
+  place(defId: string, gx: number, gy: number, rot: Side = 0, connect = false): boolean {
     const def = DEFS[defId];
     if (!def || !canPlace(this.s, def, gx, gy)) return false;
+    let plan: SealPlan | null = null;
+    if (connect && def.requiresPressure) {
+      plan = planSealRoute(this.s.N, this.s.buildings, sealNetwork(this.s.N, this.s.buildings), cellsFor(def, gx, gy));
+      if (plan.kind === "corridor" && (def.matCost ?? 0) + plan.cost > this.s.materials.amount) return false;
+    }
     const b = emptyBuilding(this.s.uidCounter++, defId, gx, gy, rot);
     this.s.buildings.push(b);
     for (const [x, y] of cellsFor(def, gx, gy)) this.s.grid[idx(this.s.N, x, y)] = b.uid;
@@ -206,6 +217,10 @@ export class Colony {
     this.recomputeCaps();
     this.emit({ type: "build", defId, name: def.name });
     if (def.isHub) this.emit({ type: "hub_online" });
+    if (plan?.kind === "corridor") for (const [x, y] of plan.newCells) this.place("corridor", x, y);
+    // connected flags now, not next tick: a second placement in this batch docks
+    // to this one, and a snapshot sent before the next tick shows it sealed
+    if (connect) recomputeConnectivity(this.s);
     return true;
   }
 
