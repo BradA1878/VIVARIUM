@@ -23,6 +23,13 @@ export function resupplyAlertCopy(secondsRemaining: number): ResupplyAlertCopy {
   };
 }
 
+/** load shedding: a sealed building went dark because the grid could not
+ *  power it. Reads the engine's reason, so a damaged or flare-faulted building
+ *  (offline, yet connected, staffed, and fed) is not taken for a brownout. */
+export function brownoutShed(buildings: readonly BuildingState[]): boolean {
+  return buildings.some((b) => !!DEFS[b.defId]?.requiresPressure && b.offReason === "power");
+}
+
 export interface FaultAlert {
   k: string;
   sev: 2;

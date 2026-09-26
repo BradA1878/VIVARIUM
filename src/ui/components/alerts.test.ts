@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BuildingState, OffReason } from "@shared/types";
-import { faultAlerts, quakeAlertSub, resupplyAlertCopy } from "./alerts";
+import { brownoutShed, faultAlerts, quakeAlertSub, resupplyAlertCopy } from "./alerts";
 
 function bld(uid: number, defId: string, offReason?: OffReason): BuildingState {
   return {
@@ -85,5 +85,22 @@ describe("faultAlerts", () => {
     expect(faultAlerts([bld(1, "greenhouse", "food")])).toEqual([
       { k: "off-food", sev: 2, txt: "1 NO FOOD", sub: "input tank empty", uids: [1] },
     ]);
+  });
+});
+
+describe("brownoutShed", () => {
+  it("is a sealed building shed for power", () => {
+    expect(brownoutShed([bld(1, "electrolysis", "power")])).toBe(true);
+  });
+
+  it("is not a damaged or flare-faulted building, though it is offline, connected, staffed, and fed", () => {
+    for (const reason of ["damaged", "faulted"] as const) {
+      const b = { ...bld(1, "electrolysis", reason), staffed: true, fed: true, connected: true, online: false };
+      expect(brownoutShed([b])).toBe(false);
+    }
+  });
+
+  it("keeps its old scope: a shed surface building alone is not reported", () => {
+    expect(brownoutShed([bld(1, "extractor", "power")])).toBe(false);
   });
 });

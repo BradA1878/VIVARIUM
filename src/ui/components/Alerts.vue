@@ -2,9 +2,8 @@
 import { computed } from "vue";
 import { useColony } from "@/ui/stores/colony";
 import { fmt } from "@/ui/format";
-import { DEFS } from "@/engine";
 import type { HazardKind } from "@shared/types";
-import { faultAlerts, quakeAlertSub, resupplyAlertCopy } from "./alerts";
+import { brownoutShed, faultAlerts, quakeAlertSub, resupplyAlertCopy } from "./alerts";
 
 interface AlertItem {
   k: string;
@@ -61,19 +60,7 @@ const items = computed<AlertItem[]>(() => {
     }
   }
 
-  const brown = cur.buildings.some((b) => {
-    const def = DEFS[b.defId];
-    return (
-      def != null &&
-      def.requiresPressure &&
-      b.connected &&
-      b.staffed &&
-      b.fed &&
-      !b.online &&
-      (def.consumes.power ?? 0) > 0
-    );
-  });
-  if (brown) {
+  if (brownoutShed(cur.buildings)) {
     out.push({ k: "brown", sev: 2, txt: "BROWNOUT — load shed", sub: "demand exceeds supply" });
   }
 
