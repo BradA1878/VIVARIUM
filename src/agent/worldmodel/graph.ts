@@ -98,11 +98,12 @@ export function consumersOf(s: Snapshot, res: Resource): BuildingState[] {
 }
 
 export type FailReason =
-  | "unsealed" // requiresPressure but not connected to the hub
+  | "unsealed" // a sealed building the pressure seal does not reach
   | "unstaffed" // not enough labor
   | "unpowered" // shed in a brownout
   | "starved" // a non-power input is empty
-  | "damaged" // below working integrity, or a flare's electronics fault
+  | "damaged" // below working integrity
+  | "faulted" // a solar flare's electronics fault
   | "none";
 
 export interface FailingProducer {
@@ -133,8 +134,8 @@ function fromOffReason(r: OffReason): { reason: FailReason; starvedOf?: Resource
     case "seal": return { reason: "unsealed" };
     case "crew": return { reason: "unstaffed" };
     case "power": return { reason: "unpowered" };
-    case "damaged":
-    case "faulted": return { reason: "damaged" };
+    case "damaged": return { reason: "damaged" };
+    case "faulted": return { reason: "faulted" };
     default: return { reason: "starved", starvedOf: r };
   }
 }

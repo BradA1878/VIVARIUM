@@ -56,6 +56,21 @@ describe("root-cause diagnosis traces the cascade", () => {
     expect(summarizeDiagnosis(d).join(" ")).toContain("is damaged");
   });
 
+  it.each([
+    ["seal", "unsealed", "has lost its seal"],
+    ["crew", "unstaffed", "stands without hands"],
+    ["power", "unpowered", "has gone dark"],
+    ["faulted", "faulted", "has a flare fault"],
+  ] as const)("names the engine's %s reason as %s, in the badge's terms", (offReason, reason, prose) => {
+    const s = new Colony(7).snapshot();
+    const elec = s.buildings.find((b) => b.defId === "electrolysis")!;
+    elec.online = false;
+    elec.offReason = offReason;
+    const d = diagnoseShortfall(s, "oxygen");
+    expect(d.failing.find((f) => f.defId === "electrolysis")?.reason).toBe(reason);
+    expect(summarizeDiagnosis(d)[0]).toBe(`oxygen: the electrolysis unit ${prose}`);
+  });
+
   it("falls back to the flags for a snapshot without offReason", () => {
     const c = new Colony(7);
     const extractor = c.snapshot().buildings.find((b) => b.defId === "extractor")!;

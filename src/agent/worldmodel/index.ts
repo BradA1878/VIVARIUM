@@ -66,6 +66,7 @@ export function summarizeDiagnosis(d: Diagnosis): string[] {
           : f.reason === "unstaffed" ? "stands without hands"
           : f.reason === "unpowered" ? "has gone dark"
           : f.reason === "damaged" ? "is damaged"
+          : f.reason === "faulted" ? "has a flare fault"
           : "falters";
         chain.push(`${cur.resource}: the ${f.name.toLowerCase()} ${why}`);
       } else if (cur.demandExceedsSupply) {
