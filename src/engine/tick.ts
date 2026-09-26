@@ -23,6 +23,7 @@ import { RESOURCES } from "@shared/types";
 import type { ColonyState } from "./state";
 import { buildingFunctional, pilotOf } from "./state";
 import { recomputeConnectivity } from "./connectivity";
+import { productionOrder } from "./modes";
 import { updateHazards, hazardMods, type HazardMods } from "./hazards";
 import { availableColonistLabor, stepColonists } from "./colonists";
 import { updateInjuries } from "./injury";
@@ -157,7 +158,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
 
   // 3. Power demand by priority — brownout sheds the bottom first ---------------
   const consumers = s.buildings
-    .filter((b) => powerNeed(b, mods) > 0)
+    .filter((b) => b.mode !== "off" && powerNeed(b, mods) > 0) // an OFF building draws nothing
     .sort((a, b) => DEFS[b.defId].priority - DEFS[a.defId].priority);
   let powerAvail = s.pools.power.amount; // what's in the battery this tick
   for (const b of s.buildings) b.online = false;
@@ -166,15 +167,17 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
     if (powerAvail >= need) { b.online = true; powerAvail -= need; }
     else b.online = false;
   }
-  // buildings with no power draw are "online" if other gates pass
-  for (const b of s.buildings) if (!(powerNeed(b, mods) > 0)) b.online = true;
+  // buildings with no power draw are "online" if other gates pass (never an OFF one)
+  for (const b of s.buildings) if (b.mode !== "off" && !(powerNeed(b, mods) > 0)) b.online = true;
 
   // 4. Production — online AND connected AND staffed AND fed AND intact ---------
   // offReason records the first gate that fails, in this order, for the badges,
-  // the HUD alert, and the narrator
-  for (const b of s.buildings) {
+  // the HUD alert, and the narrator. Buildings the player set to FIRST are
+  // visited (and so staffed) first; OFF ones do nothing.
+  for (const b of productionOrder(s.buildings)) {
     b.util = 0; b.staffed = true; b.fed = true; b.offReason = undefined;
     const d = DEFS[b.defId];
+    if (b.mode === "off") { b.online = false; b.offReason = "off"; continue; } // the player switched it off
     if (!b.online) { b.offReason = "power"; continue; }
     if (!buildingFunctional(b)) { // hazard damage / flare fault
       b.online = false;

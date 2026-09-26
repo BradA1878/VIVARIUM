@@ -37,7 +37,7 @@ function bld(uid: number, gx = 1, gy = 1): BuildingState {
 function colonist(id: number, x: number, y: number, carryAmt = 0, possessed = false): ColonistView {
   return {
     id, name: "Unit", role: "miner", x, y, facing: 0, state: "idle", injury: 0,
-    carryKind: carryAmt > 0 ? "ore" : null, carryAmt, possessed,
+    carryKind: carryAmt > 0 ? "ore" : null, carryAmt, possessed, workUid: null,
   };
 }
 

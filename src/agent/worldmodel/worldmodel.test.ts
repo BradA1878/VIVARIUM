@@ -62,6 +62,7 @@ describe("root-cause diagnosis traces the cascade", () => {
     ["crew", "unstaffed", "stands without hands"],
     ["power", "unpowered", "has gone dark"],
     ["faulted", "faulted", "has a flare fault"],
+    ["off", "off", "is switched off"],
   ] as const)("names the engine's %s reason as %s, in the badge's terms", (offReason, reason, prose) => {
     const s = new Colony(7).snapshot();
     const elec = s.buildings.find((b) => b.defId === "electrolysis")!;

@@ -88,6 +88,12 @@ describe("faultAlerts", () => {
   });
 });
 
+describe("faultAlerts and OFF", () => {
+  it("ignores OFF, the player's choice", () => {
+    expect(faultAlerts([bld(1, "hab", "off")])).toEqual([]);
+  });
+});
+
 describe("brownoutShed", () => {
   it("is a sealed building shed for power", () => {
     expect(brownoutShed([bld(1, "electrolysis", "power")])).toBe(true);

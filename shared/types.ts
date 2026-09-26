@@ -107,8 +107,9 @@ export interface Pool {
 
 /** why a building did not run this tick: the first production gate that failed,
  *  in the tick's order — power, then damage (or a flare's electronics fault),
- *  then the seal, then crew, then a missing input */
-export type OffReason = "power" | "damaged" | "faulted" | "seal" | "crew" | "water" | "oxygen" | "food";
+ *  then the seal, then crew, then a missing input; "off" when the player
+ *  switched it off */
+export type OffReason = "power" | "damaged" | "faulted" | "seal" | "crew" | "water" | "oxygen" | "food" | "off";
 
 /** the player's crew setting for a building: FIRST is staffed before NORMAL;
  *  OFF does nothing at all (no crew, no power, no output) */
@@ -246,6 +247,8 @@ export interface ColonistView {
   carryKind: DepositKind | null;
   carryAmt: number;
   possessed: boolean;
+  /** the building this colonist is posted to (a staffed building that ran this tick), or null */
+  workUid: number | null;
 }
 
 /** a drivable rover — the colony's bulk hauler, possessed through the SAME id

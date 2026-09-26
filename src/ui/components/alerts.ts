@@ -39,8 +39,9 @@ export interface FaultAlert {
 }
 
 /** off-reasons this alert covers, in the order the lines are listed. Power is
- * left out: the existing BROWNOUT alert already covers it. */
-type FaultReason = Exclude<OffReason, "power">;
+ * left out (the existing BROWNOUT alert covers it), and so is OFF (the
+ * player's choice, not a fault). */
+type FaultReason = Exclude<OffReason, "power" | "off">;
 const FAULT_ORDER: readonly FaultReason[] = ["seal", "crew", "damaged", "faulted", "water", "oxygen", "food"];
 
 const FAULT_COPY: Record<FaultReason, { label: string; sub: string }> = {
@@ -55,11 +56,6 @@ const FAULT_COPY: Record<FaultReason, { label: string; sub: string }> = {
   food: { label: "NO FOOD", sub: "input tank empty" },
 };
 
-/** One HUD line per off-reason, each carrying the uids of every affected
- * building so a click can cycle through them (doc: pressure network design
- * §7). Conduits are excluded (a brownout should not badge every corridor
- * cell), and so is "power" (BROWNOUT already reports it). Lines are listed
- * in a fixed severity order and only when their count is above zero. */
 /** the building a fault line shows next: the first after the one shown last,
  *  in building order, wrapping. Keyed on the uid rather than an index, so a
  *  building fixed or added between clicks never repeats or skips one. */
@@ -69,12 +65,18 @@ export function nextFaultUid(uids: readonly number[], last: number | undefined):
   return uids.find((u) => u > last) ?? uids[0];
 }
 
+/** One HUD line per off-reason, each carrying the uids of every affected
+ * building so a click can cycle through them (doc: pressure network design
+ * §7). Conduits are excluded (a brownout should not badge every corridor
+ * cell), and so are "power" (BROWNOUT already reports it) and "off" (the
+ * player switched it off; that is not a fault). Lines are listed in a fixed
+ * severity order and only when their count is above zero. */
 export function faultAlerts(buildings: readonly BuildingState[]): FaultAlert[] {
   const uidsByReason = new Map<FaultReason, number[]>();
   for (const b of buildings) {
     if (DEFS[b.defId]?.conduit) continue;
     const reason = b.offReason;
-    if (!reason || reason === "power") continue;
+    if (!reason || reason === "power" || reason === "off") continue;
     const uids = uidsByReason.get(reason);
     if (uids) uids.push(b.uid); else uidsByReason.set(reason, [b.uid]);
   }

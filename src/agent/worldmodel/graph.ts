@@ -109,6 +109,7 @@ export type FailReason =
   | "starved" // a non-power input is empty
   | "damaged" // below working integrity
   | "faulted" // a solar flare's electronics fault
+  | "off" // switched off by the player
   | "none";
 
 export interface FailingProducer {
@@ -141,6 +142,7 @@ function fromOffReason(r: OffReason): { reason: FailReason; starvedOf?: Resource
     case "power": return { reason: "unpowered" };
     case "damaged": return { reason: "damaged" };
     case "faulted": return { reason: "faulted" };
+    case "off": return { reason: "off" };
     default: return { reason: "starved", starvedOf: r };
   }
 }

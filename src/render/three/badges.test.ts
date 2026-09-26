@@ -23,6 +23,7 @@ describe("OFF_REASON_LABEL", () => {
       water: "NO WATER",
       oxygen: "NO OXYGEN",
       food: "NO FOOD",
+      off: "OFF",
     });
   });
 });

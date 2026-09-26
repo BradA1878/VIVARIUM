@@ -13,20 +13,13 @@
    engine.
    ============================================================================ */
 import * as THREE from "three";
-import type { BuildingState, OffReason } from "@shared/types";
+import type { BuildingState } from "@shared/types";
+import { OFF_REASON_LABEL } from "@shared/offReason";
 import { DEFS } from "@/engine";
 
-/** the pill text for each reason a building recorded on its last tick */
-export const OFF_REASON_LABEL: Record<OffReason, string> = {
-  power: "NO POWER",
-  damaged: "DAMAGED",
-  faulted: "FLARE FAULT",
-  seal: "NO SEAL",
-  crew: "NO CREW",
-  water: "NO WATER",
-  oxygen: "NO OXYGEN",
-  food: "NO FOOD",
-};
+/** the pill text for each reason a building recorded on its last tick (shared
+ *  with the UI's card and hover chip) */
+export { OFF_REASON_LABEL };
 
 export interface BadgeSpec { uid: number; label: string }
 

@@ -23,6 +23,7 @@ import { buildingFunctional, emptyColonist, isPiloted, pilotOf, removePilot } fr
 import { idx, inBounds, cellsFor } from "./grid";
 import { doorCells } from "./doors";
 import { findPath } from "./pathfind";
+import { productionOrder } from "./modes";
 import { BUILDING_ROLE, nameOf, roleOf } from "./roster";
 import {
   CARGO_KINDS, cargoTotal, colonyNeedsGather, depotCenter, dropCargoAtDepot, dropCarryAtDepot,
@@ -173,17 +174,29 @@ export function reconcileColonists(s: ColonyState): void {
 }
 
 /** assign each colonist a job (a staffed building slot) + a home, deterministically.
- *  Slots come from buildings that need staffing, in uid order; pass 1 hands each
+ *  Slots come first from the staffed buildings that ran this tick, in the order
+ *  the production pass staffed them (FIRST ones first), so the colonist posted
+ *  to a running building is the one running it; the staffed buildings that
+ *  stopped (power, damage, the seal, an empty input) follow in the same order,
+ *  so their crew stays on post rather than wandering off to gather. OFF
+ *  buildings get no slot: switching one off frees its worker. Pass 1 hands each
  *  slot the lowest-id unclaimed colonist whose role matches the building, pass 2
  *  backfills the rest in id order. The injured are off shift — eligible for
  *  neither pass. Surplus colonists idle at a hab. */
 function assign(s: ColonyState): void {
-  const byUid = [...s.buildings].sort((a, b) => a.uid - b.uid);
-  const slots: { uid: number; defId: string }[] = [];
-  for (const b of byUid) {
+  const running: BuildingState[] = [];
+  const stopped: BuildingState[] = [];
+  for (const b of productionOrder(s.buildings)) {
     const d = DEFS[b.defId];
-    if (d && d.staffing > 0) for (let k = 0; k < d.staffing; k++) slots.push({ uid: b.uid, defId: b.defId });
+    if (!d || d.staffing <= 0 || b.mode === "off") continue;
+    (b.online && b.staffed && b.fed ? running : stopped).push(b);
   }
+  const slots: { uid: number; defId: string }[] = [];
+  for (const b of [...running, ...stopped]) {
+    for (let k = 0; k < DEFS[b.defId].staffing; k++) slots.push({ uid: b.uid, defId: b.defId });
+  }
+  const runningSlots = running.reduce((n, b) => n + DEFS[b.defId].staffing, 0);
+  const byUid = [...s.buildings].sort((a, b) => a.uid - b.uid);
   const habs = byUid.filter((b) => (DEFS[b.defId]?.popCap ?? 0) > 0);
   const colonists = [...s.colonists].sort((a, b) => a.id - b.id);
 
@@ -193,8 +206,13 @@ function assign(s: ColonyState): void {
     const j = free.findIndex(match);
     if (j >= 0) workers[i] = free.splice(j, 1)[0];
   };
-  slots.forEach((slot, i) => claim(i, (c) => BUILDING_ROLE[slot.defId] === roleOf(c.id)));
-  slots.forEach((_, i) => { if (!workers[i]) claim(i, () => true); });
+  // both passes over one group of slots: role matches first, then anyone
+  const fill = (from: number, to: number): void => {
+    for (let i = from; i < to; i++) claim(i, (c) => BUILDING_ROLE[slots[i].defId] === roleOf(c.id));
+    for (let i = from; i < to; i++) if (!workers[i]) claim(i, () => true);
+  };
+  fill(0, runningSlots); // every running building gets its worker first
+  fill(runningSlots, slots.length); // the stopped ones take whoever is left
 
   for (const c of colonists) c.workUid = null;
   workers.forEach((c, i) => { if (c) c.workUid = slots[i].uid; });
@@ -399,6 +417,7 @@ export function colonistViews(s: ColonyState): ColonistView[] {
     id: c.id, name: nameOf(c.id), role: roleOf(c.id),
     x: c.x, y: c.y, facing: c.facing, state: c.state, injury: c.injury,
     carryKind: c.carryKind, carryAmt: c.carryAmt, possessed: isPiloted(s, c.id),
+    workUid: c.workUid ?? null,
   }));
 }
 

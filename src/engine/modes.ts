@@ -13,3 +13,11 @@ export function modesFor(def: BuildingDef): BuildingMode[] {
   if ((def.consumes.power ?? 0) > 0 && !def.isHub && !def.conduit && !def.popCap) return ["normal", "off"];
   return [];
 }
+
+/** the order the production pass (and the crew posting after it) visits
+ *  buildings: FIRST ones, then the rest, each in build order. The same array
+ *  when nothing is set to FIRST, so a colony without settings runs as before. */
+export function productionOrder<B extends { mode?: "first" | "off" }>(buildings: B[]): B[] {
+  if (!buildings.some((b) => b.mode === "first")) return buildings;
+  return [...buildings.filter((b) => b.mode === "first"), ...buildings.filter((b) => b.mode !== "first")];
+}
