@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
+import type { SealPreview } from "@/engine";
 import type { BridgeCore } from "@/worker/bridge";
 import { aoVisible } from "./ao";
 import { GridSpace } from "./coords";
@@ -26,7 +27,8 @@ function fixture() {
   const bridge = {
     latest: { possessed: null as number | null },
     place: vi.fn(),
-    canPlace: () => true,
+    canPlace: vi.fn(() => true),
+    previewSeal: vi.fn((): SealPreview | null => null),
     buildingAt: (gx: number, gy: number) => buildings.find((b) => b.gx === gx && b.gy === gy),
     buildingByUid: (uid: number) => buildings.find((b) => b.uid === uid),
   };
@@ -44,7 +46,9 @@ function fixture() {
     });
     canvas.dispatchEvent(event);
   };
-  return { controller, bridge, select, dispatch, input };
+  const preview = vi.fn();
+  controller.onPreview(preview);
+  return { controller, bridge, select, dispatch, input, preview };
 }
 
 describe("placement click coordinates", () => {
@@ -57,7 +61,7 @@ describe("placement click coordinates", () => {
     }
     dispatch("pointermove", 3, 1);
     dispatch("click", 4, 2);
-    expect(bridge.place.mock.calls).toEqual([["battery", 4, 2, 0]]);
+    expect(bridge.place.mock.calls).toEqual([["battery", 4, 2, 0, true]]);
   });
 
   it("selects the current clicked building rather than the last rendered hover", () => {
@@ -84,11 +88,11 @@ describe("placement click coordinates", () => {
     dispatch("click", 1, 1, pointerType);
     expect(bridge.place).not.toHaveBeenCalled();
     dispatch("click", 1, 1, pointerType);
-    expect(bridge.place.mock.calls).toEqual([["battery", 1, 1, 0]]);
+    expect(bridge.place.mock.calls).toEqual([["battery", 1, 1, 0, true]]);
     dispatch("click", 3, 2, pointerType);
     expect(bridge.place).toHaveBeenCalledTimes(1);
     dispatch("click", 3, 2, pointerType);
-    expect(bridge.place).toHaveBeenLastCalledWith("battery", 3, 2, 0);
+    expect(bridge.place).toHaveBeenLastCalledWith("battery", 3, 2, 0, true);
   });
 
   it("keeps piloting and camera drag-click suppression ahead of construction", () => {
@@ -114,5 +118,89 @@ describe("placement overlay", () => {
     controller.group.traverse((o) => { if (o !== controller.group && o.visible) shown.push(o); });
     expect(shown.some((o) => (o as THREE.Mesh).geometry instanceof THREE.ConeGeometry)).toBe(true);
     for (const o of shown) expect(aoVisible(o), (o as THREE.Mesh).geometry.type).toBe(false);
+  });
+});
+
+describe("sealed placement preview", () => {
+  const corridor = (affordable: boolean): SealPreview => ({
+    kind: "corridor", path: [[3, 2], [4, 2]], cells: 2, cost: 4, total: 28, affordable,
+  });
+  /** the ghost tiles on screen, in pool order */
+  const shownTiles = (controller: PlacementController) =>
+    controller.group.children.filter(
+      (o): o is THREE.Mesh => o instanceof THREE.Mesh && o.geometry instanceof THREE.PlaneGeometry && o.visible,
+    );
+  const hexOf = (tile: THREE.Mesh) => (tile.material as THREE.MeshBasicMaterial).color.getHexString();
+
+  it("draws the planned corridor beside the footprint and reports the preview once", () => {
+    const { controller, bridge, dispatch, preview } = fixture();
+    bridge.previewSeal.mockReturnValue(corridor(true));
+    controller.setTool("hab");
+    dispatch("pointermove", 2, 2);
+    controller.update();
+    controller.update(); // an unchanged aim does not re-report
+    expect(bridge.previewSeal).toHaveBeenLastCalledWith("hab", 2, 2);
+    const tiles = shownTiles(controller);
+    expect(tiles).toHaveLength(3); // the habitat's one cell + two corridor cells
+    expect(tiles.slice(1).map((t) => t.position.y)).toEqual([0.04, 0.04]);
+    expect(tiles.every((t) => hexOf(t) === "7fd4e8")).toBe(true);
+    expect(preview.mock.calls).toEqual([[corridor(true)]]);
+  });
+
+  it("an unaffordable corridor turns the whole ghost rust", () => {
+    const { controller, bridge, dispatch } = fixture();
+    bridge.previewSeal.mockReturnValue(corridor(false));
+    controller.setTool("hab");
+    dispatch("pointermove", 2, 2);
+    controller.update();
+    const tiles = shownTiles(controller);
+    expect(tiles).toHaveLength(3);
+    expect(tiles.every((t) => hexOf(t) === "e8784f")).toBe(true);
+  });
+
+  it("asks for no plan where the building cannot go", () => {
+    const { controller, bridge, dispatch, preview } = fixture();
+    bridge.canPlace.mockReturnValue(false);
+    controller.setTool("hab");
+    dispatch("pointermove", 2, 2);
+    controller.update();
+    expect(bridge.previewSeal).not.toHaveBeenCalled();
+    expect(preview).not.toHaveBeenCalled(); // null from the start: nothing to clear
+  });
+
+  it("clears the preview when the tool drops or the cursor leaves the canvas", () => {
+    const { controller, bridge, dispatch, preview } = fixture();
+    bridge.previewSeal.mockReturnValue({ kind: "touching" });
+    controller.setTool("hab");
+    dispatch("pointermove", 2, 2);
+    controller.update();
+    dispatch("pointerleave", 2, 2);
+    controller.update();
+    expect(preview.mock.calls).toEqual([[{ kind: "touching" }], [null]]);
+    dispatch("pointermove", 2, 2);
+    controller.update();
+    controller.clearTool();
+    controller.update();
+    expect(preview.mock.calls.slice(2)).toEqual([[{ kind: "touching" }], [null]]);
+  });
+
+  it("places with connect, so the worker lays the corridor", () => {
+    const { controller, bridge, dispatch } = fixture();
+    controller.setTool("hab");
+    dispatch("click", 2, 2);
+    expect(bridge.place.mock.calls).toEqual([["hab", 2, 2, 0, true]]);
+  });
+
+  it("reports whether a build tool is up", () => {
+    const { controller } = fixture();
+    expect(controller.hasTool()).toBe(false);
+    controller.setTool("hab");
+    expect(controller.hasTool()).toBe(true);
+    controller.setDemolish();
+    expect(controller.hasTool()).toBe(true);
+    controller.setRoute();
+    expect(controller.hasTool()).toBe(true);
+    controller.clearTool();
+    expect(controller.hasTool()).toBe(false);
   });
 });

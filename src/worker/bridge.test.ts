@@ -187,3 +187,47 @@ describe("BridgeCore — the error channel", () => {
     expect(n).toBe(1);
   });
 });
+
+describe("BridgeCore.previewSeal — the placement ghost's corridor plan", () => {
+  // a 2×2 hub covering (2..3, 2..3); a habitat aimed at (8,2) is four cells east
+  // of it, so the shortest corridor is (7,2) → (4,2)
+  const hub = { uid: 1, defId: "hub", gx: 2, gy: 2 };
+  const withBuildings = (buildings: object[], materials = 100) =>
+    snap({ N: 16, buildings, materials: { amount: materials, capacity: 400 } } as never);
+
+  it("is null before any snapshot and for a surface building", () => {
+    const b = new TestBridge();
+    expect(b.previewSeal("hab", 8, 2)).toBeNull();
+    b.feed({ type: "snapshot", snapshot: withBuildings([hub]) });
+    expect(b.previewSeal("solar", 8, 2)).toBeNull();
+  });
+
+  it("plans the corridor the worker would lay and prices the whole placement", () => {
+    const b = new TestBridge();
+    b.feed({ type: "snapshot", snapshot: withBuildings([hub]) });
+    expect(b.previewSeal("hab", 8, 2)).toEqual({
+      kind: "corridor",
+      path: [[7, 2], [6, 2], [5, 2], [4, 2]],
+      cells: 4,
+      cost: 8,
+      total: 32, // the habitat's 24 + four corridor cells at 2
+      affordable: true,
+    });
+  });
+
+  it("marks the placement unaffordable when building + corridor exceed the materials", () => {
+    const b = new TestBridge();
+    b.feed({ type: "snapshot", snapshot: withBuildings([hub], 31) });
+    expect(b.previewSeal("hab", 8, 2)).toMatchObject({ kind: "corridor", total: 32, affordable: false });
+  });
+
+  it("answers from the latest snapshot: a new network replaces the cached plan", () => {
+    const b = new TestBridge();
+    b.feed({ type: "snapshot", snapshot: withBuildings([hub]) });
+    const first = b.previewSeal("hab", 8, 2);
+    expect(b.previewSeal("hab", 8, 2)).toBe(first); // same aim, same snapshot: cached
+    const corridors = [4, 5, 6, 7].map((gx, i) => ({ uid: 10 + i, defId: "corridor", gx, gy: 2 }));
+    b.feed({ type: "snapshot", snapshot: withBuildings([hub, ...corridors]) });
+    expect(b.previewSeal("hab", 8, 2)).toEqual({ kind: "touching" });
+  });
+});

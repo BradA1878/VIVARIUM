@@ -1,18 +1,23 @@
 <script setup lang="ts">
 /* Inspector chip — what's under the cursor or what's being placed (doc §4.3
    bottom-center). Shows the active tool, the demolish mode, or the building the
-   cursor is hovering over. */
+   cursor is hovering over. Placing a sealed building adds one line: the
+   corridor it will lay to the pressure network, or why it can't. */
 import { computed } from "vue";
 import { useColony } from "@/ui/stores/colony";
 import { DEFS } from "@/engine";
+import { sealPreviewText } from "@/ui/sealPreview";
 
-const { tool, demolish, hover, selected, clearTool, rotate, capabilities } = useColony();
+const { snapshot, tool, demolish, hover, selected, placePreview, clearTool, rotate, capabilities } = useColony();
 
 const linking = computed(() => tool.value === "corridor");
 const toolDef = computed(() => (tool.value && tool.value !== "corridor" ? DEFS[tool.value] : null));
 const selectedDef = computed(() => (selected.value ? DEFS[selected.value.defId] : null));
 const hoverDef = computed(() => (hover.value?.defId ? DEFS[hover.value.defId] : null));
 const hoverHasDoor = computed(() => hoverDef.value?.door != null);
+const sealLine = computed(() =>
+  placePreview.value ? sealPreviewText(placePreview.value, snapshot.value?.materials.amount ?? 0) : null,
+);
 </script>
 
 <template>
@@ -41,6 +46,7 @@ const hoverHasDoor = computed(() => hoverDef.value?.door != null);
   <div v-else-if="toolDef && capabilities.canBuild" class="inspect">
     <span class="ins-glyph">{{ toolDef.glyph }}</span>
     <span class="ins-name">PLACING {{ toolDef.name.toUpperCase() }}</span>
+    <span v-if="sealLine" class="ins-seal" :class="{ warn: sealLine.warn }">{{ sealLine.text }}</span>
     <span class="ins-hint hint-mouse">click to place{{ toolDef.door != null ? " · R to rotate the door" : "" }} · right-click or Cancel to stop</span>
     <span class="ins-hint hint-touch">tap to aim · tap the aim again to place</span>
     <span class="inspect-actions">
@@ -64,6 +70,9 @@ const hoverHasDoor = computed(() => hoverDef.value?.door != null);
   .hint-mouse { display: none; }
   .hint-touch { display: inline; }
 }
+
+.ins-seal { color: var(--cyan); font-size: 10px; white-space: nowrap; }
+.ins-seal.warn { color: var(--rust); }
 
 .inspect-touch { display: none; }
 @media (pointer: coarse), (max-width: 900px) {

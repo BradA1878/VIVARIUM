@@ -26,7 +26,7 @@ import {
   addShipment, maturedShipments, removeShipments, shipmentsInTransit, type Shipment,
 } from "@/persistence/colonies";
 import { nextSeedFrom, slotId, WORLD_META, catchupSteps } from "../founding";
-import type { SaveData } from "@/engine";
+import type { SaveData, SealPreview } from "@/engine";
 import type { HazardKind } from "@shared/types";
 import { clockOf, fmt } from "../format";
 import { useSettings } from "./settings";
@@ -63,6 +63,8 @@ const tool: Ref<string | null> = ref(null);
 const demolish = ref(false);
 const hover: Ref<HoverInfo | null> = ref(null);
 const selected: Ref<SelectInfo | null> = ref(null);
+/** the corridor a sealed building will lay, while one is aimed (Inspector's placing strip) */
+const placePreview: ShallowRef<SealPreview | null> = shallowRef(null);
 /** the contextual teaching toast currently on screen (HintToast.vue renders it) */
 const hintToast: Ref<Hint | null> = ref(null);
 /** the rare, independent acquisition notice rendered by AlienTechReveal. It is
@@ -705,6 +707,7 @@ export function initColony(b: BridgeCore, r: ThreeRenderer, m: ColonyMode = "sol
     }
   });
   r.onHover((info) => { hover.value = info; });
+  r.onPlacePreview((preview) => { placePreview.value = preview; });
 
   // the agent layer observes the event stream — the council speaks (doc §0, §3.3).
   // Engine events AND the Sentinel's anomaly events route through the same path.
@@ -1127,7 +1130,7 @@ function shipments(): Shipment[] {
 
 export function useColony() {
   return {
-    snapshot, messages, tool, demolish, hover, selected, hintToast, alienTechReveal, logOpen, startScreen,
+    snapshot, messages, tool, demolish, hover, selected, placePreview, hintToast, alienTechReveal, logOpen, startScreen,
     pick, toggleDemolish, clearTool, rotate, removeSelected, dismissHint, dismissAlienTechReveal, toggleLog,
     runHistory, runEpitaph, directorDossier, colonies, shipments, activeSlot: activeSlotRef, controls,
     mode, capabilities, roster, netStatus, simError, dismissSimError,

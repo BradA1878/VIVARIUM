@@ -7,6 +7,9 @@
 
    Modes:
    - place: footprint ghost + a door arrow; R rotates; click places with rotation.
+     A sealed building also previews the corridor it will lay to the pressure
+     network (bridge.previewSeal) and places with `connect`, so the worker lays
+     it; an unaffordable corridor turns the whole ghost rust.
    - demolish: highlight + click removes.
    - route (the Corridor tool): click a door-building = source, click another =
      auto-route corridors door→door; clicking empty hand-lays a single corridor.
@@ -22,7 +25,7 @@
    ============================================================================ */
 import * as THREE from "three";
 import type { Side } from "@shared/types";
-import { DEFS, doorCells, SIDE_DELTA } from "@/engine";
+import { DEFS, doorCells, SIDE_DELTA, type SealPreview } from "@/engine";
 import type { BridgeCore } from "@/worker/bridge";
 import { CELL, GridSpace } from "./coords";
 
@@ -68,7 +71,9 @@ export class PlacementController {
 
   private hoverCb: ((info: HoverInfo | null) => void) | null = null;
   private selectCb: ((info: SelectInfo | null) => void) | null = null;
+  private previewCb: ((preview: SealPreview | null) => void) | null = null;
   private lastHoverKey = "";
+  private lastPreviewKey = "";
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -115,6 +120,10 @@ export class PlacementController {
   clearTool(): void { this.tool = null; this.routeSource = null; this.setSelected(null); this.syncCursor(); }
   onHover(cb: (info: HoverInfo | null) => void): void { this.hoverCb = cb; }
   onSelect(cb: (info: SelectInfo | null) => void): void { this.selectCb = cb; }
+  /** the seal preview while aiming a sealed building, null otherwise */
+  onPreview(cb: (preview: SealPreview | null) => void): void { this.previewCb = cb; }
+  /** any build tool up (place, Corridor, Demolish) — the network overlay shows then */
+  hasTool(): boolean { return this.tool !== null; }
 
   private syncCursor(): void {
     this.canvas.classList.toggle("placement-active", this.tool !== null);
@@ -172,7 +181,7 @@ export class PlacementController {
     const { gx, gy } = cell;
     if (!this.tool) { this.onSelectClick(gx, gy); return; }
     if (this.tool.kind === "demolish") { this.bridge.remove(gx, gy); return; }
-    if (this.tool.kind === "place") { this.bridge.place(this.tool.defId, gx, gy, this.ghostRot); return; }
+    if (this.tool.kind === "place") { this.bridge.place(this.tool.defId, gx, gy, this.ghostRot, true); return; }
     if (this.tool.kind === "route") {
       const b = this.bridge.buildingAt(gx, gy);
       const isDoor = !!(b && DEFS[b.defId]?.door != null);
@@ -228,6 +237,7 @@ export class PlacementController {
     if (this.hasPointer) this.hover = this.cellAtNdc();
 
     this.emitHover();
+    if (this.tool?.kind !== "place" || !this.hover) this.emitPreview(null); // drawPlaceGhost emits otherwise
     this.arrow.visible = false;
 
     if (!this.tool) {
@@ -265,6 +275,16 @@ export class PlacementController {
     this.hoverCb({ gx: this.hover.gx, gy: this.hover.gy, defId: b?.defId });
   }
 
+  private emitPreview(preview: SealPreview | null): void {
+    if (!this.previewCb) return;
+    const key = !preview ? ""
+      : preview.kind === "corridor" ? `corridor:${preview.cells}:${preview.cost}:${preview.total}:${preview.affordable}`
+      : preview.kind;
+    if (key === this.lastPreviewKey) return;
+    this.lastPreviewKey = key;
+    this.previewCb(preview);
+  }
+
   // ---- tile pool ------------------------------------------------------------
   /** ensure `n` tiles exist and return them; hide the rest. Every served tile
    *  is reset to the shared ghost material — a caller that dims some of them
@@ -289,12 +309,16 @@ export class PlacementController {
   private drawPlaceGhost(): void {
     const def = DEFS[(this.tool as { defId: string }).defId];
     const ok = this.bridge.canPlace(def.id, this.hover!.gx, this.hover!.gy);
-    const col = ok ? CYAN : RUST;
+    // a sealed building: the corridor the worker will lay to reach the network
+    const seal = ok ? this.bridge.previewSeal(def.id, this.hover!.gx, this.hover!.gy) : null;
+    const path = seal?.kind === "corridor" ? seal.path : [];
+    const blocked = !ok || (seal?.kind === "corridor" && !seal.affordable);
+    const col = blocked ? RUST : CYAN;
     // a needsVent tool (the geothermal tap) also marks every vent cell with a
     // dim tile behind the footprint ghost — the terrain answers "place WHERE?"
     const vents = def.needsVent ? this.bridge.latest?.vents ?? [] : [];
     const footN = def.foot[0] * def.foot[1];
-    const tiles = this.useTiles(footN + vents.length, col);
+    const tiles = this.useTiles(footN + path.length + vents.length, col);
     (this.outline.material as THREE.LineBasicMaterial).color.copy(col);
 
     let i = 0;
@@ -303,6 +327,10 @@ export class PlacementController {
         const c = this.grid.cellCenter(this.hover!.gx + dx, this.hover!.gy + dy);
         tiles[i++].position.set(c.x, 0.03, c.z);
       }
+    for (const [px, py] of path) {
+      const c = this.grid.cellCenter(px, py);
+      tiles[i++].position.set(c.x, 0.04, c.z);
+    }
     for (const v of vents) {
       const t = tiles[i++];
       t.material = this.ventMat; // dimmer than the ghost, never recolored by it
@@ -314,6 +342,7 @@ export class PlacementController {
     // door arrow: show where the (rotated) door will face
     const d = doorCells(def, this.hover!.gx, this.hover!.gy, this.ghostRot);
     if (d) this.showArrow(d.exit[0], d.exit[1], d.side, col);
+    this.emitPreview(seal);
   }
 
   /** no cursor over the canvas: a needsVent tool still marks every vent cell,

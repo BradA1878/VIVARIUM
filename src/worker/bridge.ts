@@ -10,7 +10,7 @@
    the worker wall doubles as the network seam (multiplayer co-op).
    ============================================================================ */
 import type { BuildingState, ColonyEvent, Difficulty, HazardKind, LegacyManifest, ShipmentManifest, Snapshot, World } from "@shared/types";
-import { DEFS, FUNC_THRESHOLD, type SaveData } from "@/engine";
+import { DEFS, FUNC_THRESHOLD, cellsFor, planSealRoute, sealNetwork, sealPreview, type SaveData, type SealNetwork, type SealPreview } from "@/engine";
 import { buildingAtPredict, canPlacePredict, canMovePredict, occupancy } from "@/engine/predict";
 import { planRoute } from "@/engine/route";
 import type { Command, Outbound, SimErrorContext } from "./protocol";
@@ -49,6 +49,10 @@ export abstract class BridgeCore {
   protected shipmentResolvers = new Map<number, Pending<ShipmentManifest>>();
   protected reqId = 1;
   protected occ: Set<string> | null = null;
+  /** the latest snapshot's sealed network, and the last seal preview (by def + cell);
+   *  both are dropped when a new snapshot lands */
+  private sealNet: SealNetwork | null = null;
+  private sealMemo: { key: string; value: SealPreview | null } | null = null;
   private disposed = false;
 
   /** the most recent snapshot, or null until the first arrives */
@@ -80,6 +84,8 @@ export abstract class BridgeCore {
     }
     this.latest = next;
     this.occ = null;
+    this.sealNet = null;
+    this.sealMemo = null;
     for (const fn of this.snapshotSubs) fn(next);
   }
 
@@ -332,6 +338,22 @@ export abstract class BridgeCore {
       return !!b && !DEFS[b.defId]?.conduit; // empty/corridor passable; else blocked
     };
     return planRoute(this.latest.buildings, this.latest.N, blocked, fromUid, toUid);
+  }
+
+  /** predict how a sealed building placed here joins the pressure network (the
+   *  ghost preview): the same planner the worker's `place` runs, on the latest
+   *  snapshot. Null for a surface building or before the first snapshot. */
+  previewSeal(defId: string, gx: number, gy: number): SealPreview | null {
+    const snap = this.latest;
+    const def = DEFS[defId];
+    if (!snap || !def?.requiresPressure) return null;
+    const key = `${defId}:${gx}:${gy}`;
+    if (this.sealMemo?.key === key) return this.sealMemo.value;
+    if (!this.sealNet) this.sealNet = sealNetwork(snap.N, snap.buildings);
+    const plan = planSealRoute(snap.N, snap.buildings, this.sealNet, cellsFor(def, gx, gy));
+    const value = sealPreview(plan, def.matCost ?? 0, snap.materials.amount);
+    this.sealMemo = { key, value };
+    return value;
   }
 
   /** drop all subscriptions + pending saves (subclasses tear down their transport) */

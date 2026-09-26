@@ -7,7 +7,7 @@
    ============================================================================ */
 import * as THREE from "three";
 import type { BuildingDef, BuildingState, ColonistAct, ColonyEvent, DepositKind, Snapshot, World } from "@shared/types";
-import { DEFS, SIDE_DELTA } from "@/engine";
+import { DEFS, SIDE_DELTA, type SealPreview } from "@/engine";
 import { leaderId } from "@/ui/lead";
 import type { BridgeCore } from "@/worker/bridge";
 import { LADDER, PerfGovernor, SOFTWARE_PIXEL_RATIO, STEP_HIGH, STEP_LOW, isSoftwareRenderer, snapHz, tunablesForPointer, tunablesForRenderer, type PerfStep } from "./perf";
@@ -388,6 +388,7 @@ export class ThreeRenderer {
   clearTool(): void { this.placement.clearTool(); }
   onHover(cb: (info: HoverInfo | null) => void): void { this.placement.onHover(cb); }
   onSelect(cb: (info: SelectInfo | null) => void): void { this.placement.onSelect(cb); }
+  onPlacePreview(cb: (preview: SealPreview | null) => void): void { this.placement.onPreview(cb); }
 
   // graphics tier — this exact signature is the contract the settings UI
   // consumes. HIGH/LOW pin the governor's ladder to the legacy steps; AUTO
