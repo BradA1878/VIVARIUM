@@ -132,6 +132,8 @@ export class NetworkOverlay {
   }
 
   dispose(): void {
+    this.okMesh.dispose(); // frees the instance buffers (three r169 does it only here)
+    this.badMesh.dispose();
     this.geo.dispose();
     this.okMat.dispose();
     this.badMat.dispose();

@@ -110,12 +110,14 @@ describe("NetworkOverlay", () => {
     overlay.dispose();
   });
 
-  it("dispose disposes the shared geometry and both materials", () => {
+  it("dispose releases both instanced meshes, the shared geometry, and both materials", () => {
     const overlay = new NetworkOverlay(grid);
     const [a, b] = meshes(overlay);
+    const meshSpies = [a, b].map((m) => vi.spyOn(m, "dispose"));
     const geoSpy = vi.spyOn(a.geometry, "dispose");
     const matSpies = [a, b].map((m) => vi.spyOn(m.material as THREE.Material, "dispose"));
     overlay.dispose();
+    for (const s of meshSpies) expect(s).toHaveBeenCalledTimes(1); // frees the instance buffers
     expect(geoSpy).toHaveBeenCalled();
     for (const s of matSpies) expect(s).toHaveBeenCalled();
   });
