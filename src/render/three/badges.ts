@@ -44,16 +44,17 @@ export function badgeSpecs(buildings: readonly BuildingState[]): BadgeSpec[] {
 
 export type BadgeTextureFactory = (label: string) => THREE.Texture;
 
-const FONT = '"IBM Plex Mono", ui-monospace, monospace';
+const FONT = '600 34px "IBM Plex Mono", ui-monospace, monospace'; // bold: it reads at ~15px tall
 const PANEL = "rgba(12, 16, 20, 0.82)";
 const INK = "#e8784f";
 const HAIR = "rgba(232, 120, 79, 0.55)";
 
 const TEX_H = 64; // canvas height (authored at ~2x for crispness)
-const FONT_PX = 34;
 const PAD = 16;
 
-const BADGE_H = 0.3;      // world height of the badge sprite
+/** world height of a badge at scale 1 (the renderer's overview zoom): about
+ *  15px on an 800px-tall view. setScale keeps that on-screen size at any zoom. */
+const BADGE_H = 0.5;
 const ANCHOR_LIFT = 0.12; // above the anchor point (the roof height)
 /** fallback aspect for a texture with neither recorded dimensions nor an
  *  image to measure — the test stub `() => new THREE.Texture()` has both. */
@@ -65,7 +66,7 @@ const DEFAULT_ASPECT = 3.2;
  *  the DOM again. */
 function drawBadge(label: string): THREE.Texture {
   const measure = document.createElement("canvas").getContext("2d")!;
-  measure.font = `${FONT_PX}px ${FONT}`;
+  measure.font = FONT;
   const w = Math.ceil(measure.measureText(label).width) + PAD * 2;
 
   const cv = document.createElement("canvas");
@@ -80,7 +81,7 @@ function drawBadge(label: string): THREE.Texture {
   ctx.lineWidth = 2;
   ctx.strokeStyle = HAIR;
   ctx.stroke();
-  ctx.font = `${FONT_PX}px ${FONT}`;
+  ctx.font = FONT;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = INK;
@@ -120,6 +121,8 @@ export class FaultBadgeSystem {
   private textures = new Map<string, THREE.Texture>();
   /** the specs+anchors key from the last sync; an unchanged call is a no-op */
   private lastKey = "";
+  /** size multiplier from setScale */
+  private scale = 1;
 
   constructor(makeTexture?: BadgeTextureFactory) {
     this.group.name = "faultbadges";
@@ -158,6 +161,15 @@ export class FaultBadgeSystem {
     for (let i = shown; i < this.pool.length; i++) this.pool[i].sprite.visible = false;
   }
 
+  /** Multiply every badge's size by k. The renderer passes the camera's view
+   *  over its overview view, so a badge keeps its on-screen size as the camera
+   *  zooms. A call that barely changes k does nothing. */
+  setScale(k: number): void {
+    if (Math.abs(k - this.scale) < 1e-4) return;
+    this.scale = k;
+    for (const slot of this.pool) if (slot.label !== null) this.size(slot);
+  }
+
   private slot(i: number): Slot {
     let slot = this.pool[i];
     if (!slot) {
@@ -179,9 +191,14 @@ export class FaultBadgeSystem {
     const mat = slot.sprite.material as THREE.SpriteMaterial;
     mat.map = tex;
     mat.needsUpdate = true;
-    const aspect = aspectOf(tex);
-    slot.sprite.scale.set(BADGE_H * aspect, BADGE_H, 1);
     slot.label = label;
+    this.size(slot);
+  }
+
+  /** height from the scale, width from the label texture's aspect */
+  private size(slot: Slot): void {
+    const h = BADGE_H * this.scale;
+    slot.sprite.scale.set(h * aspectOf((slot.sprite.material as THREE.SpriteMaterial).map!), h, 1);
   }
 
   private texture(label: string): THREE.Texture {

@@ -195,4 +195,27 @@ describe("FaultBadgeSystem", () => {
     for (const spy of textureSpies) expect(spy).toHaveBeenCalledTimes(1);
     expect(badges.group.children).toHaveLength(0);
   });
+
+  it("setScale resizes every painted badge, keeping its aspect; later badges paint at that scale", () => {
+    const factory = () => {
+      const tex = new THREE.Texture();
+      tex.userData.badgeWidth = 192;
+      tex.userData.badgeHeight = 64; // aspect 3
+      return tex;
+    };
+    const badges = new FaultBadgeSystem(factory);
+    badges.sync([{ uid: 1, label: "NO SEAL" }], () => new THREE.Vector3());
+    const first = badges.group.children[0] as THREE.Sprite;
+    const h = first.scale.y;
+    expect(first.scale.x).toBeCloseTo(3 * h);
+
+    badges.setScale(0.5);
+    expect(first.scale.y).toBeCloseTo(h / 2);
+    expect(first.scale.x).toBeCloseTo(1.5 * h);
+
+    badges.sync([{ uid: 1, label: "NO SEAL" }, { uid: 2, label: "NO CREW" }], () => new THREE.Vector3());
+    const second = badges.group.children[1] as THREE.Sprite;
+    expect(second.scale.y).toBeCloseTo(h / 2);
+    badges.dispose();
+  });
 });

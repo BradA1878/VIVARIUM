@@ -27,7 +27,7 @@ export interface OverlayCell {
 const OK_COLOR = "#7fd4e8";
 const OK_OPACITY = 0.18;
 const BAD_COLOR = "#e8784f";
-const BAD_OPACITY = 0.32;
+const BAD_OPACITY = 0.45; // the building covers most of its tile: the rim that shows must read
 const TILE_Y = 0.025;
 
 /** true for a def whose cells carry the seal: a hub, a conduit (corridor), or

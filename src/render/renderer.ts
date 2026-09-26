@@ -35,6 +35,8 @@ import { buildDepot, type DepotMesh } from "./three/depot";
 import { buildSupplyPod, type SupplyPodMesh } from "./three/supplypod";
 import { BubbleSystem, directActionReaction, reactionFor } from "./three/bubbles";
 import { NameTagSystem } from "./three/nametags";
+import { NetworkOverlay } from "./three/network-overlay";
+import { FaultBadgeSystem, badgeSpecs } from "./three/badges";
 
 interface Placed {
   mesh: KitMesh;
@@ -42,6 +44,9 @@ interface Placed {
   /** anchor cell, kept fresh across `move` — transient FX key on it */
   gx: number;
   gy: number;
+  /** world height of the roof, measured once when the mesh is built (before any
+   *  scale-in); the fault badge sits on it */
+  topY: number;
 }
 
 /** a colonist's render record: its mesh plus the interpolated transform we lerp
@@ -94,6 +99,10 @@ interface RobotRec {
 
 /** the established signature cyan, for transient FX (placed / possession rings) */
 const FX_CYAN = 0x7fd4e8;
+/** the camera's overview view (world half-height): framing the colony */
+const OVERVIEW_VIEW = 13;
+/** the fault rust, for the ring that marks a building the HUD pointed at */
+const FX_RUST = 0xe8784f;
 const FX_CYAN_DIM = 0x3f6a74;
 /** the evil UFO's hot red, for abduction FX at the saucer */
 const UFO_RED = 0xff3322;
@@ -228,6 +237,13 @@ export class ThreeRenderer {
   /** reaction bubbles — pooled comic chips above colonists' heads */
   private bubbles = new BubbleSystem();
   private nameTags = new NameTagSystem();
+  /** the sealed network, cell by cell, while a build tool is up */
+  private networkOverlay: NetworkOverlay;
+  /** a pill over any building that is off, naming why */
+  private faultBadges = new FaultBadgeSystem();
+  /** the snapshot the overlay and badges last synced to — they follow
+   *  snapshots, not frames */
+  private lastNetworkSnap: Snapshot | null = null;
   private alienShip: AlienShipMesh | null = null;
   private ufo: UfoMesh | null = null;
   private depot: DepotMesh | null = null;
@@ -249,7 +265,7 @@ export class ThreeRenderer {
   // follow-cam base: lerped toward the possessed target or colony. Mouse input
   // is composed on top by CameraControls, so it is never overwritten here.
   private camFocus = new THREE.Vector3(0, 0, 0);
-  private camView = 13;
+  private camView = OVERVIEW_VIEW;
   private lastCameraT: number | null = null;
 
   // transient juice bookkeeping — all of it small + self-expiring
@@ -292,6 +308,9 @@ export class ThreeRenderer {
     this.scene.scene.add(this.robotsGroup);
     this.scene.scene.add(this.bubbles.group);
     this.scene.scene.add(this.nameTags.group);
+    this.networkOverlay = new NetworkOverlay(this.grid);
+    this.scene.scene.add(this.networkOverlay.group);
+    this.scene.scene.add(this.faultBadges.group);
     this.cameraControls = new CameraControls(canvas, this.scene.camera, this.grid.half());
     this.placement = new PlacementController(canvas, this.scene.camera, this.grid, bridge);
     this.scene.scene.add(this.placement.group);
@@ -390,6 +409,22 @@ export class ThreeRenderer {
   onSelect(cb: (info: SelectInfo | null) => void): void { this.placement.onSelect(cb); }
   onPlacePreview(cb: (preview: SealPreview | null) => void): void { this.placement.onPreview(cb); }
 
+  /** point the camera at a building and pulse a ring on it (the HUD's fault
+   *  lines). While piloting the follow-cam owns the view, so only the ring
+   *  plays. False when the building is not on the map. */
+  focusBuilding(uid: number): boolean {
+    const snap = this.bridge.latest;
+    const b = snap?.buildings.find((x) => x.uid === uid);
+    const def = b ? DEFS[b.defId] : undefined;
+    if (!snap || !b || !def) return false;
+    const centre = this.grid.footprintCenter(def, b.gx, b.gy);
+    if (snap.possessed == null) {
+      this.cameraControls.rig.setOffset(centre.clone().sub(this.camFocus), this.camFocus);
+    }
+    this.hazardFx.ringPulse(centre, FX_RUST, 1.8);
+    return true;
+  }
+
   // graphics tier — this exact signature is the contract the settings UI
   // consumes. HIGH/LOW pin the governor's ladder to the legacy steps; AUTO
   // un-pins it to adapt off measured frame cost.
@@ -417,7 +452,7 @@ export class ThreeRenderer {
   resetCamera(): void {
     this.cameraControls.reset();
     this.camFocus.set(0, 0, 0);
-    this.camView = 13;
+    this.camView = OVERVIEW_VIEW;
     this.lastCameraT = null;
     this.scene.setView(this.camFocus, this.camView);
   }
@@ -609,6 +644,7 @@ export class ThreeRenderer {
     this.scene.postfx.setFlare(flare);
     this.scene.postfx.update(dt);
     this.reconcile(snap);
+    this.syncNetworkFx(snap);
     this.reconcileColonists(snap, dt, now);
     this.reconcileRovers(snap, dt, now);
     this.reconcileRobots(snap, dt, now);
@@ -696,7 +732,8 @@ export class ThreeRenderer {
         mesh.object.position.copy(c);
         this.addDoor(mesh.object, def);
         this.buildingsGroup.add(mesh.object);
-        entry = { mesh, defId: b.defId, gx: b.gx, gy: b.gy };
+        const topY = new THREE.Box3().setFromObject(mesh.object).max.y;
+        entry = { mesh, defId: b.defId, gx: b.gx, gy: b.gy, topY };
         this.placed.set(b.uid, entry);
         // placed pop: scale-in + a cyan ring — only after the scene is seeded,
         // so the first snapshot (construction/load) doesn't pop everything
@@ -766,6 +803,22 @@ export class ThreeRenderer {
       }
     }
     this.seededOnce = true;
+  }
+
+  /** the network overlay and fault badges re-sync only when a new snapshot
+   *  lands, after reconcile so every badge has its mesh. The overlay shows
+   *  only while a build tool is up. */
+  private syncNetworkFx(snap: Snapshot): void {
+    this.networkOverlay.setVisible(this.placement.hasTool());
+    if (snap === this.lastNetworkSnap) return;
+    this.lastNetworkSnap = snap;
+    this.networkOverlay.sync(snap.buildings);
+    this.faultBadges.sync(badgeSpecs(snap.buildings), (uid) => {
+      const entry = this.placed.get(uid);
+      if (!entry) return null;
+      const at = entry.mesh.object.position;
+      return new THREE.Vector3(at.x, entry.topY, at.z); // fresh: sync keeps the anchors it is handed
+    });
   }
 
   /** a visible door on a building's front (its local def.door side), as a child of
@@ -1251,14 +1304,16 @@ export class ThreeRenderer {
       // centered wherever it sits on the larger grid, wide enough to see the
       // buildable area around it
       targetFocus = this.colonyCentroid(snap);
-      targetView = 13;
+      targetView = OVERVIEW_VIEW;
     }
     this.cameraControls.setContext(snap.world, pilotKey);
     const k = 1 - Math.exp(-6 * dt);
     this.camFocus.lerp(targetFocus, k);
     this.camView += (targetView - this.camView) * k;
     const focus = this.cameraControls.focusFor(this.camFocus, this.scratchCameraFocus);
-    this.scene.setView(focus, this.cameraControls.viewFor(this.camView));
+    const view = this.cameraControls.viewFor(this.camView);
+    this.scene.setView(focus, view);
+    this.faultBadges.setScale(view / OVERVIEW_VIEW); // badges keep their on-screen size
   }
 
   /** world-space centroid of all placed buildings (origin if none) */
@@ -1281,6 +1336,8 @@ export class ThreeRenderer {
     window.removeEventListener("resize", this.onResize);
     this.unsubEvents();
     this.nameTags.dispose();
+    this.networkOverlay.dispose();
+    this.faultBadges.dispose();
     this.cameraControls.dispose();
     this.placement.dispose();
     this.atmosphere.dispose();
