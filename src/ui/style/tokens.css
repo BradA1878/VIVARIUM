@@ -142,6 +142,7 @@ button:disabled { cursor: not-allowed; }
 .panel,
 .ctl,
 .pal-btn,
+.pal-demo,
 .alert,
 .ticker,
 .log-panel,
