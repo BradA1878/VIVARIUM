@@ -38,9 +38,12 @@ building you place after that lays its own corridor back to the network (see
    carry the night and the storms (wind peaks exactly when solar dies), a
    **Geothermal Tap** on one of the glowing fumarole **vents** — it only seats
    on a vent, and the vent cells are marked while the tool is up — then a
-   **Materials Printer** so expansion stops depending on the ore field, and
-   eventually a **Fission Reactor** (water in, big steady power out, engineer
-   on the rods) to stop worrying about the grid at all.
+   **3D Printer** so expansion stops depending on the ore field, a **Bio
+   Printer** for food that needs no crew, and eventually a **Fission Reactor**
+   (water in, big steady power out, engineer on the rods) to stop worrying
+   about the grid at all — and, once it runs, an **Atomic Printer** that turns
+   a lot of power into whichever of oxygen, water, food, or materials is
+   lowest.
 
 See [engine.md](engine.md) for the full building table and per-second numbers.
 
@@ -79,6 +82,31 @@ it. Doors are routing and visual only: the Corridor tool routes door to door,
 colonists walk in through them, and the seal ignores them. The Corridor tool
 (click two buildings to route between them, or click empty ground for one cell)
 is still there for manual runs and repairs.
+
+## Crew: who works where
+
+Buildings that need a colonist (the extractor, water generator, aquifer well,
+reclaimer, electrolysis, hydroponics, med-bay, reactor, and robotics bay) take
+one each, and there are rarely enough colonists for all of them. By default
+the oldest buildings get workers first; the rest show a NO CREW badge, and the
+left rail's LABOR line counts how many are waiting.
+
+Click a placed building (no tool selected) to open its **card** in the right
+column: what it does in plain words, what it makes, uses, and needs (numbers
+from the game's own data), a live line saying whether it is working and who is
+on shift there, or why it is off, and its setting:
+
+- **FIRST** — this building gets a worker before the others. Use it to keep one
+  hydroponics dome or electrolysis unit running when crew is short.
+- **NORMAL** — the default order: oldest first.
+- **OFF** — the building stops entirely: no worker, no power, no output. Its
+  worker goes to the next building in line. Buildings without crew that draw
+  power (the deflector, the printers, the bays, the transport pod) can be
+  switched ON or OFF too; the hub, corridors, habitats, generators, and
+  storage cannot.
+
+An OFF building wears an OFF badge but raises no HUD fault line: switching it
+off was your choice.
 
 ## The embodied colony
 
@@ -303,6 +331,7 @@ problem.
 | Build palette (bottom center) | Pick a building; click a cell to place. The ghost shows valid (cyan) / blocked (rust); a sealed building's ghost also draws the corridor it will lay. Locked tiles show their unlock condition. |
 | Right-click | Cancel placement / deselect |
 | Corridor tile | Manual corridors: 2-click auto-route (door → door), or one click on empty ground |
+| Click a building (no tool) | Open its card: what it does, what it needs, why it is off, and its FIRST / NORMAL / OFF setting |
 | Rotate control | Turn a building (moves its door) |
 | HUD fault line | Pan to the next building it counts (UNSEALED, UNSTAFFED, …) |
 | **F** | Take command: possess the **commander** → board a nearby rover → release |

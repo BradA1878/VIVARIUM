@@ -19,7 +19,10 @@ storage `caps` it adds, and pressure/door requirements.
 | Habitat | HAB | Houses 4 colonists | −1.0 power |
 | Solar Array | PV | Power from sunlight; follows the sol, gutted by dust | +solar |
 | Battery Bank | BAT | Stores power (+120 cap) — the buffer through the dark | — |
-| Ice Extractor | H2O | Power in, water out | −5 power → +4 water |
+| Ice Extractor | H2O | Power in, water out; needs 1 worker (miner-matched) | −5 power → +4 water |
+| Atmospheric Water Generator | AWG | Water from the air; needs 1 worker | −12 power → +8 water |
+| Aquifer Well | AQF | Pumps an aquifer; **only seats on an aquifer site** (`needsAquifer`); needs 1 worker | −3 power → +14 water |
+| Water Reclaimer | RCL | Returns 45% of the colony's water draw (up to 2.5/s, `reclaim`); needs 1 worker; sealed | −6 power |
 | Electrolysis | O2 | Splits water for oxygen; served first | −7 power, −2.5 water → +5 O₂ |
 | Hydroponics | GRO | Food + a little oxygen; needs 1 worker; shed early in a brownout | −6 power, −3 water → +5 food, +0.4 O₂ |
 | Med-Bay | MED | Triage for strike wounds; needs 1 worker; heals fastest at its door, under a medic | −4 power |
@@ -29,16 +32,21 @@ storage `caps` it adds, and pressure/door requirements.
 | Wind Turbine | WND | Power from moving air; rides the wind curve — strongest at night and in dust | +9 power × wind level |
 | Geothermal Tap | GEO | Flat power, sol and night; **only seats on a vent** (`needsVent`) | +6 power |
 | Fission Reactor | FIS | Big steady power; needs 1 worker (engineer-matched); a normal pass-4 recipe | −0.5 water → +20 power |
-| Materials Printer | PRN | Regolith → build currency (`producesMat`); priority 15, shed first in a brownout | −6 power → +0.35 materials |
+| 3D Printer | 3DP | Regolith → build currency (`producesMat`); no crew; priority 15 | −6 power → +0.35 materials |
+| Bio Printer | BIO | Food from water; no crew; priority 28 | −8 power, −2 water → +3 food |
+| Atomic Printer | ATM | 2×2; the lowest of oxygen / water / food / materials (`printsLowest`); no crew; priority 10, the first shed | −30 power → +6 O₂, +8 water, +4 food, or +1 materials |
 | Rover Bay | RVR | Garage; fabricates one drivable bulk hauler on a 45 s countdown | −2.5 power |
-| Robotics Bay | BOT | Prints autonomous mining robots; needs 1 worker (engineer-matched) | −4 power |
+| Robotics Bay | BOT | Prints autonomous mining robots; needs 1 worker | −4 power |
+| Transport Pod | PTP | Launches the expansion: ends the run and founds the next world | −8 power |
 
-The first twelve are the founding set, always placeable. The six below the
-Deflector are the **expansion tier**, latched open by the abundance unlocks
-(below). Optional def fields carry the new mechanics — `wind` (scaled by the
-wind curve), `steady` (flat generation), `producesMat` (the printer), and
-`needsVent` (terrain-restricted placement) — and the engine still just runs
-data: no per-building code anywhere.
+The hub, corridor, habitat, solar array, battery, extractor, electrolysis,
+hydroponics, med-bay, cistern, oxygen tank, and deflector are the founding set,
+always placeable; the rest are the **expansion tier**, latched open by the
+abundance unlocks (below). Optional def fields carry the extra mechanics —
+`wind` (scaled by the wind curve), `steady` (flat generation), `producesMat`
+(the 3D Printer), `printsLowest` (the Atomic Printer), `reclaim`, and
+`needsVent` / `needsAquifer` (terrain-restricted placement) — and the engine
+still just runs data.
 
 **Balancing means editing numbers in `defs.ts` and `tuning.ts`, never touching
 engine logic.** `tuning.ts` holds the global knobs: per-colonist life-support
@@ -86,12 +94,17 @@ ordering. The passes, in order:
    never what it consumes. The first gate that fails is recorded on the
    building as `offReason` (`power`, `damaged`, `faulted`, `seal`, `crew`, or
    the missing input), cleared each tick; the fault badges, the HUD's fault
-   lines, and the narrator's world model all read it. The **fission reactor** is deliberately a normal
-   recipe building here (water in, power out, engineer-staffed), so every gate
-   applies untouched; the **materials printer**'s `producesMat` credits the
-   build currency in this pass too, scaled by the same efficiency and clamped
-   to the materials cap (outside net flow, which tracks the four survival
-   pools only).
+   lines, and the narrator's world model all read it. Buildings the player set
+   to FIRST are visited (and so staffed) before the rest, and an OFF building
+   is skipped with `offReason: "off"` (see *Crew settings* below). The
+   **fission reactor** is deliberately a normal recipe building here (water
+   in, power out, engineer-staffed), so every gate applies untouched; the
+   **3D Printer**'s `producesMat` credits the build currency in this pass too,
+   scaled by the same efficiency and clamped to the materials cap (outside net
+   flow, which tracks the four survival pools only), and the **Atomic
+   Printer**'s `printsLowest` adds its rate to whichever of oxygen, water,
+   food, or materials is lowest as a share of its capacity (`printers.ts`,
+   ties in that order).
 5. **Colonist demand** — population draws oxygen/water/food from the pools.
 6. **Shortfall → grace timer → casualty** — when a life-support pool hits empty a
    grace timer starts; if it isn't recovered before the timer runs out, a colonist
@@ -108,9 +121,7 @@ ordering. The passes, in order:
    Bay's fabrication line and the fleet's self-repair (`rover.ts`), piloting for
    a possessed rover, then the Robotics Bay's line and the autonomous miners
    (`robots.ts`), which step through the **same claim set** the colonists' pass
-   built, then the Fabricator lineage (`fabricator.ts`) — per-instance
-   replication countdowns that place a copy of the def on adjacent ground
-   (fee at completion, hold at zero, `FAB_MAX_LINEAGE` freeze; zero RNG).
+   built.
 10. **Abundance unlocks** (pass 7d) — evaluate the un-latched gates and latch
     any that pass, just before the campaign verdict (see *Abundance unlocks*
     below).
@@ -234,19 +245,6 @@ Three rungs, one shared brain — all of it RNG-free.
   fleet for 12 s; a meteor/quake strike within 1.6 cells **scraps a robot
   outright** (`robot_destroyed`) — robots are the cheap, brittle rung where the
   rover is expensive and tough.
-- **The Fabricator** (`fabricator.ts`) — rung 4: an unstaffed building whose
-  def carries `replicates: { targetDefId, buildS }` pointed at **itself**. Each
-  instance runs its own countdown (`BuildingState.replicateT` — per-instance,
-  unlike the colony-scalar `roverFab`/`robotFab`), and on completion places a
-  copy in the first free N/E/S/W neighbor seat through an **unmodified
-  `canPlace`**, paying the target def's own `matCost` at completion (the two
-  affordability checks agree by construction). Every copy immediately runs its
-  own clock — 1 → 2 → 4 → 8 — throttled by what already exists: brownouts shed
-  it **first** (priority 10), the materials ledger starves it, the finite grid
-  boxes it in, and `FAB_MAX_LINEAGE` freezes every countdown at the valve. A
-  blocked completion holds at zero and narrates **once per stall episode**
-  (`fabricator_stalled`, edge-triggered with no stored flag); `remove` is the
-  player's kill switch.
 
 Two unification tricks hold the ladder together. **The unified actor id
 space**: rover *and* robot ids draw from `s.colonistCounter`, so every
@@ -268,7 +266,7 @@ Takes are always clamped to storable capacity.
 
 ## Abundance unlocks
 
-Six expansion buildings would bury a new player in palette, so the tech tree
+The expansion buildings would bury a new player in palette, so the tech tree
 **reveals itself as the colony earns it** (`unlocks.ts`). `GATES` is a data
 table — defId → predicate over `ColonyState` — and each tick `updateUnlocks`
 latches any gate that first passes into `s.unlocked` (persisted) and emits
@@ -280,16 +278,45 @@ open. The gates land each building when its problem is felt:
 |---|---|
 | Rover Bay | sol ≥ 3 **or** materials ≥ 80 |
 | Wind Turbine | sol ≥ 4 **or** an active dust hazard (the first storm sells it) |
-| Materials Printer | population ≥ 6 |
+| Atmospheric Water Generator | sol ≥ 5 **or** population ≥ 6 |
+| 3D Printer | population ≥ 6 |
+| Bio Printer | sol ≥ 6 **or** a Hydroponics built |
+| Water Reclaimer | population ≥ 6 **or** a Hydroponics built |
+| Aquifer Well | sol ≥ 8 |
 | Geothermal Tap | sol ≥ 6 (the vents are visible from sol 1 — a mystery before they're usable) |
 | Fission Reactor | population ≥ 8 **and** materials ≥ 150 |
 | Robotics Bay | a reactor built, **or** population ≥ 10 **and** materials ≥ 200 |
+| Atomic Printer | a reactor built |
+| Transport Pod | the outpost proven, a reactor built, **and** population ≥ 12 |
+
+`GATE_HINTS`, beside `GATES`, holds each gate as the palette's locked tooltip
+says it, so the rule and its description change together.
 
 The gate is **engine-authoritative**: `grid.ts canPlace` and `predict.ts`
 refuse locked defs, so no client can build ahead of the curve;
 `computeUnlocks()` feeds `Snapshot.unlocks` for the palette. Pure predicates,
 zero RNG draws — and a legacy save (no latch) simply re-derives the
 currently-true gates on its first tick, announcing the new buildings once.
+
+## Crew settings: FIRST, NORMAL, OFF
+
+Staffing is a count: each tick the production pass hands out the labor pool
+building by building. The player can steer it per building (`BuildingState.mode`,
+set by the `setMode` command, validated by `modesFor(def)` in `modes.ts`):
+
+- **FIRST** — `productionOrder` visits FIRST buildings before the rest (build
+  order within each group), so they claim workers first. Only buildings that
+  need crew offer it.
+- **NORMAL** — the default (`mode` unset), today's oldest-first order.
+- **OFF** — the building draws no power, takes no worker, and makes nothing
+  (`offReason: "off"`). Crewed buildings and any other power user except the
+  hub, corridors, and habitats offer it; generators and storage offer nothing.
+
+`assign()` posts colonists to the running buildings first, in the same order,
+so the colonist standing at a running building is the one running it; stopped
+buildings keep their posts after that, and OFF buildings get none. With no
+settings the order is unchanged, the setting is plain data carried by the
+building, and replay stays deterministic.
 
 ## The roster: names, roles, matched staffing
 

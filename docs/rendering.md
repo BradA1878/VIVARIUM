@@ -42,10 +42,11 @@ The generation-economy buildings reuse the families where they can: the
 **geothermal tap is a `tank.ts` variant** (squat, heat-stained bronze, venting
 its stack — a wellhead, not a tower), while `facility.ts` is one builder for
 the whole industrial family, switched by a `specFor(id)` the way the tanks key
-their vessels — the **printer** (a fabricator with sequenced status-bar
-lights), the **Rover Bay** (a garage with an emissive door slab and ramp on the
-def's door side), and the **Robotics Bay** (a gantry with a hanging tool
-block). The **reactor** (`reactor.ts`) carries its whole status story in a core
+their vessels — the **printer** (a boxy body with sequenced status-bar lights:
+the 3D Printer, and the Bio Printer in green), the **Atomic Printer** (twin
+extruder towers over a glowing core, sized to its 2×2 footprint), the **Rover
+Bay** (a garage with an emissive door slab and ramp on the def's door side),
+and the **Robotics Bay** (a gantry with a hanging tool block). The **reactor** (`reactor.ts`) carries its whole status story in a core
 ring light — breathing hot white-cyan while the pile runs, guttering offline,
 rust when hurt. The **wind turbine** (`kit/wind.ts`) is the one kit driven by
 the weather itself — see `KitEnv` below.
@@ -73,11 +74,10 @@ along its crossbeam.
 
 Industrial motion uses render-side active time (`KitEnv.dt`): the printer tray
 retracts slightly, the robotics/reclaimer carriage carries its beam, cable,
-and tool together, and the fabricator's small extruder travels below its beam.
-The phase starts from the building seed and freezes exactly when paused or
-offline. The fabricator also holds at completion or the lineage cap; the
-Robotics Bay holds at the fleet cap (`working:false`). The existing core and
-progress lights retain their meanings.
+and tool together, and the Atomic Printer's small extruder travels below its
+beam. The phase starts from the building seed and freezes exactly when paused
+or offline; the Robotics Bay also holds at the fleet cap (`working:false`).
+The existing core and progress lights retain their meanings.
 
 Corridors are special: rather than a fixed mesh, they render as **neighbour-aware
 arms** (`kit/corridor.ts`) that connect to adjacent corridors, hub, and habs, so a

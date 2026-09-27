@@ -1,3 +1,5 @@
+> **Removed 2026-09-26:** the Fabricator was replaced by the 3D, Bio, and Atomic printers (`docs/superpowers/specs/2026-09-26-crew-printers-building-info-design.md`). This spec is kept as the record of what it was.
+
 # Fabricator — Design & Requirements Spec
 
 **Working title:** Fabricator (rename freely; `FAB` fits the existing three-letter glyph convention with no collisions)
