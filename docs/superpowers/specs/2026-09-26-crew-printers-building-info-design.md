@@ -116,7 +116,7 @@ export function modesFor(def: BuildingDef): BuildingMode[];
 |---|---|
 | Pressure Hub | The center of a pressure network. Sealed buildings connect back to a hub, directly or through corridors and other sealed buildings. Each hub starts its own network. |
 | Corridor | A pressurized tube that carries the seal between the network and sealed buildings. Sealed buildings lay their own when placed; use this for manual runs and repairs. |
-| Habitat | Beds for colonists. New colonists arrive or are born only when there are free beds. Needs the seal. |
+| Habitat | Beds for colonists; new ones arrive or are born only into free beds. Connected to the seal, it also shelters the crew from hazards. |
 | Solar Array | Power from sunlight: most at noon, none at night, little in a dust storm. |
 | Battery Bank | Stores power for the night and for storms. |
 | Ice Extractor | Makes water from the ground with power alone. Needs one colonist; a miner makes more. |
@@ -128,7 +128,7 @@ export function modesFor(def: BuildingDef): BuildingMode[];
 | Med-Bay | Heals injured colonists, fastest at its door. Needs one colonist (a medic heals faster) and the seal. |
 | Water Cistern | Stores water. |
 | Oxygen Tank | Stores oxygen. |
-| Deflector Array | Keeps UFO abductors away while it has power. Loses power early in a brownout. |
+| Deflector Array | While powered, each deflector turns back half of the UFO's abduction attempts; two turn back three in four. Loses power early in a brownout. |
 | Wind Turbine | Power from wind: strongest at night and in dust storms, when solar is weakest. |
 | Geothermal Tap | Steady power, day and night. Must sit on a vent. |
 | Fission Reactor | Large, steady power from a little water. Needs one colonist; an engineer makes more. |

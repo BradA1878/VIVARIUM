@@ -33,7 +33,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 24,
     staffing: 0, consumes: { power: 1.0 }, produces: {},
     requiresPressure: true, priority: 88, popCap: 4, door: 2,
-    desc: "Beds for colonists. New colonists arrive or are born only when there are free beds. Needs the seal.",
+    desc: "Beds for colonists; new ones arrive or are born only into free beds. Connected to the seal, it also shelters the crew from hazards.",
   },
   solar: {
     id: "solar", name: "Solar Array", glyph: "PV",
@@ -129,7 +129,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 30,
     staffing: 0, consumes: { power: 3.5 }, produces: {},
     requiresPressure: false, priority: 35,
-    desc: "Keeps UFO abductors away while it has power. Loses power early in a brownout.",
+    desc: "While powered, each deflector turns back half of the UFO's abduction attempts; two turn back three in four. Loses power early in a brownout.",
   },
   windturbine: {
     id: "windturbine", name: "Wind Turbine", glyph: "WND",

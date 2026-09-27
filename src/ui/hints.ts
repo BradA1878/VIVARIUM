@@ -117,7 +117,7 @@ export const HINTS: Record<HintId, Hint> = {
   unlock_atomic: {
     id: "unlock_atomic",
     title: "NEW SCHEMATIC: ATOMIC PRINTER",
-    body: "Turns a lot of power into whichever of oxygen, water, food, or materials is lowest. Feed it from the reactor; it is the first thing cut in a brownout.",
+    body: "Turns a lot of power into whichever of oxygen, water, food, or materials is lowest. It draws more than one reactor makes, and it is the first thing cut in a brownout.",
   },
 };
 
