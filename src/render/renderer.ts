@@ -135,15 +135,17 @@ export const AIRLOCK_COLLAR = { radius: 0.2, tube: 0.055 } as const;
  *  it and never showed. */
 export const AIRLOCK_SIGNAL = { radius: 0.255, tube: 0.016, z: 0 } as const;
 
-/** prototype status(): the glow that reads a building's health */
-function buildingStatus(b: BuildingState): { alive: boolean; hurt: boolean } {
+/** prototype status(): the glow that reads a building's health. A building the
+ *  player switched OFF is dark but not hurt: that was a choice, not a fault. */
+export function buildingStatus(b: BuildingState): { alive: boolean; hurt: boolean } {
   const def = DEFS[b.defId];
   const alive = b.online && (!def.requiresPressure || b.connected) && b.staffed && b.fed;
-  const hurt =
+  const hurt = b.mode !== "off" && (
     (def.requiresPressure && !b.connected) ||
     (def.staffing > 0 && !b.staffed) ||
     !b.fed ||
-    (!b.online && (def.consumes.power ?? 0) > 0);
+    (!b.online && (def.consumes.power ?? 0) > 0)
+  );
   return { alive, hurt };
 }
 

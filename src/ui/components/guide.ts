@@ -14,7 +14,7 @@ export interface GuideProgress {
 }
 
 export interface GuideSnapshot {
-  buildings: readonly { defId: string; connected: boolean; online: boolean; staffed: boolean }[];
+  buildings: readonly { defId: string; connected: boolean; online: boolean; staffed: boolean; mode?: "first" | "off" }[];
   colonists: readonly { carryAmt: number; carryKind: string | null; possessed: boolean }[];
   possessed: number | null;
   solarMul: number;
@@ -133,6 +133,14 @@ export function guideObjective(
 ): GuideObjective {
   if (stage === "food") {
     const greenhouse = snapshot.buildings.find((building) => building.defId === "greenhouse");
+    if (greenhouse?.mode === "off") {
+      return {
+        eyebrow: "WATCH 1 OF 3 · FOOD",
+        title: "Switch Hydroponics back on",
+        body: "Hydroponics is switched off, so it takes no worker and makes no food.",
+        hint: "Click Hydroponics, then press NORMAL or FIRST on its card.",
+      };
+    }
     if (greenhouse && !greenhouse.connected) {
       return {
         eyebrow: "WATCH 1 OF 3 · PRESSURE",

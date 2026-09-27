@@ -30,6 +30,14 @@ function memoryStorage(): Pick<Storage, "getItem" | "setItem"> {
 }
 
 describe("field guide", () => {
+  it("tells the player to switch an OFF Hydroponics back on", () => {
+    const objective = guideObjective("food", snapshot({
+      buildings: [{ defId: "greenhouse", connected: true, online: false, staffed: true, mode: "off" }],
+    }));
+    expect(objective.title).toBe("Switch Hydroponics back on");
+    expect(objective.hint).toContain("NORMAL or FIRST");
+  });
+
   it("advances only after each contextual action is visible in the snapshot", () => {
     expect(guideStageComplete("food", snapshot({
       buildings: [{ defId: "greenhouse", connected: false, online: false, staffed: false }],
