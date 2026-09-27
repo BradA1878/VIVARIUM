@@ -108,6 +108,20 @@ describe("placement click coordinates", () => {
   });
 });
 
+describe("hover", () => {
+  it("reports the building under the cursor by uid", () => {
+    const { controller, dispatch } = fixture();
+    const hover = vi.fn();
+    controller.onHover(hover);
+    dispatch("pointermove", 4, 3);
+    controller.update();
+    expect(hover).toHaveBeenLastCalledWith({ gx: 4, gy: 3, defId: "battery", uid: 7 });
+    dispatch("pointermove", 2, 2);
+    controller.update();
+    expect(hover).toHaveBeenLastCalledWith({ gx: 2, gy: 2, defId: undefined, uid: undefined });
+  });
+});
+
 describe("placement overlay", () => {
   it("keeps the ghost tiles, outline and door arrow out of the AO pre-pass", () => {
     const { controller, dispatch } = fixture();

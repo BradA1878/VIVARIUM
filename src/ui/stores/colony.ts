@@ -6,7 +6,7 @@
    ============================================================================ */
 import { computed, ref, shallowRef, watch, type Ref, type ShallowRef } from "vue";
 import { RESOURCES } from "@shared/types";
-import type { ColonyEvent, Difficulty, LegacyManifest, Resource, ShipmentManifest, Snapshot, World } from "@shared/types";
+import type { BuildingMode, ColonyEvent, Difficulty, LegacyManifest, Resource, ShipmentManifest, Snapshot, World } from "@shared/types";
 import type { BridgeCore } from "@/worker/bridge";
 import { shipmentHasCargo, validShipmentManifest } from "@/worker/protocol";
 import type { ThreeRenderer } from "@/render/renderer";
@@ -875,6 +875,12 @@ const controls = {
   togglePause(): void { if (capabilities.value.canManageSimulation && bridge && snapshot.value) bridge.setPaused(!snapshot.value.paused); },
   setSpeed(n: number): void { if (capabilities.value.canManageSimulation) { bridge?.setPaused(false); bridge?.setSpeed(n); } },
   storm(): void { if (capabilities.value.canManageSimulation) bridge?.forceStorm(); },
+  /** the player's crew setting for one building (the building card's buttons) */
+  setMode(uid: number, mode: BuildingMode): void {
+    if (!capabilities.value.canBuild) return;
+    audio.uiTick();
+    bridge?.setMode(uid, mode);
+  },
   /** F — the commander chain: unpossessed → possess the LEADER (lowest living
    *  colonist id, ui/lead.ts); piloting the leader beside a functional rover →
    *  board it; otherwise (driving, or no rover in reach) → release. */

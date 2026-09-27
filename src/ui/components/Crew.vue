@@ -10,6 +10,8 @@ import { crewInjurySummary } from "./crew";
 const { snapshot } = useColony();
 const s = computed(() => snapshot.value);
 const laborFree = computed(() => (s.value ? s.value.labor - s.value.laborUsed : 0));
+/** buildings waiting for a worker (their badge says NO CREW) */
+const waiting = computed(() => s.value?.buildings.filter((b) => b.offReason === "crew").length ?? 0);
 
 const moralePct = computed(() => Math.round((s.value?.morale ?? 0) * 100));
 const injury = computed(() => crewInjurySummary(s.value?.colonists ?? []));
@@ -32,7 +34,7 @@ const moraleCol = computed(() => {
     <div class="crew-row">
       <span class="crew-k">LABOR</span>
       <span class="crew-v" :style="{ color: laborFree < 0 ? '#e8784f' : '#d6e2e6' }">
-        {{ s.laborUsed }}<span class="crew-sub">/{{ s.labor }} assigned</span>
+        {{ s.laborUsed }}<span class="crew-sub">/{{ s.labor }} assigned</span><span v-if="waiting" class="crew-sub"> · {{ waiting }} waiting</span>
       </span>
     </div>
     <div class="crew-row">

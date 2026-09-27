@@ -33,6 +33,8 @@ export interface HoverInfo {
   gx: number;
   gy: number;
   defId?: string;
+  /** the building under the cursor, if any */
+  uid?: number;
 }
 
 export interface SelectInfo {
@@ -269,10 +271,10 @@ export class PlacementController {
       return;
     }
     const b = this.bridge.buildingAt(this.hover.gx, this.hover.gy);
-    const key = `${this.hover.gx},${this.hover.gy},${b?.defId ?? ""}`;
+    const key = `${this.hover.gx},${this.hover.gy},${b?.defId ?? ""},${b?.uid ?? ""}`;
     if (key === this.lastHoverKey) return;
     this.lastHoverKey = key;
-    this.hoverCb({ gx: this.hover.gx, gy: this.hover.gy, defId: b?.defId });
+    this.hoverCb({ gx: this.hover.gx, gy: this.hover.gy, defId: b?.defId, uid: b?.uid });
   }
 
   private emitPreview(preview: SealPreview | null): void {
