@@ -22,7 +22,7 @@
 - Plain comments and commit messages. Never `git add -A`; list files. Commit on `main`. Every commit message ends with the line `Claude-Session: https://claude.ai/code/session_01Ega2HXb5a3AXwKzStmmc7w`.
 - e2e specs stay off HIGH and freeze the render loop around canvas clicks (CI renders on SwiftShader).
 
-**Ruling (spec AC4 vs AC5):** AC5 ("with no settings, a run plays out exactly as before") holds for the production order and power; the `assign()` alignment required by AC4 can change which colonist stands at which running building, and so the role bonus, when some staffed buildings are not running. Accepted: AC4 is a stated rule; any test that pinned the old posting is updated with a comment.
+**Ruling (spec AC4 vs AC5)** (amended during execution: see the ledger's Rulings 5 and 6 — stopped buildings keep their posts, and posts are sticky): AC5 ("with no settings, a run plays out exactly as before") holds for the production order and power; the `assign()` alignment required by AC4 can change which colonist stands at which running building, and so the role bonus, when some staffed buildings are not running. Accepted: AC4 is a stated rule; any test that pinned the old posting is updated with a comment.
 
 ## Review Focus
 

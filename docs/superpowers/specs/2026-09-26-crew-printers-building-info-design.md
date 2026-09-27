@@ -38,8 +38,8 @@ export function modesFor(def: BuildingDef): BuildingMode[];
 ```
 
 - `["first", "normal", "off"]` when `def.staffing > 0` (extractor, awg, aquifer, reclaimer, electrolysis, greenhouse, medbay, reactor, roboticsbay);
-- `["normal", "off"]` when the def draws power (`consumes.power > 0`) and is not the hub, a conduit, or a housing def (`popCap`): deflector, the three printers, roverbay, ptp;
-- `[]` otherwise (hub, corridor, hab, solar, wind, geothermal, battery, cistern, o2tank).
+- `["normal", "off"]` when the def draws power (`consumes.power > 0`) and is not the hub, a conduit, a housing def (`popCap`), or the transport pod (it launches whether or not it has power, so OFF would only drop its cost): deflector, the three printers, roverbay;
+- `[]` otherwise (hub, corridor, hab, ptp, solar, wind, geothermal, battery, cistern, o2tank).
 
 ### Rules
 
@@ -47,7 +47,7 @@ export function modesFor(def: BuildingDef): BuildingMode[];
 - **OFF.** An OFF building is left out of the power pass (no draw) and stays offline; in the production pass it records `offReason: "off"`, takes no worker, and makes nothing. Every later pass that checks `online` (reclaimer, med-bay healing, deflector, rover and robotics bays, the reactor objective) therefore skips it without new code. The "no power draw means online" step must not turn an OFF building back on.
 - **The seal.** OFF changes operation, not structure: an OFF sealed building still carries the seal (`seal.ts` is unchanged).
 - **Power.** FIRST is about crew only. The brownout still sheds by `def.priority`.
-- **Who walks where.** `assign()` in `colonists.ts` fills the posts of the staffed buildings that ran this tick first (`online`, `staffed`, `fed`), in the same FIRST-then-rest order and with both of its passes (role match, then backfill), and only then the posts of the staffed buildings that stopped, as it does today. OFF buildings get no post, so switching one off frees its worker. Today it fills posts in build order across every staffed building, so the colonist you see at a running building is not always the one running it; after this change it is. (Posting only running buildings was tried and rejected: unposted colonists go out gathering, which takes them off shift, stops more buildings, and broke the campaign test.)
+- **Who walks where.** `assign()` in `colonists.ts` fills the posts of the staffed buildings that ran this tick first (`online`, `staffed`, `fed`), in the same FIRST-then-rest order, and only then the posts of the staffed buildings that stopped, as it does today. Within each group a colonist keeps the post they held last tick (a colonist in their trade who lost their post may take one from someone out of trade), then open posts go by trade, then to anyone, so a building flickering between running and stopped does not reshuffle the crew. OFF buildings get no post, so switching one off frees its worker. Today it fills posts in build order across every staffed building, so the colonist you see at a running building is not always the one running it; after this change it is. (Posting only running buildings was tried and rejected: unposted colonists go out gathering, which takes them off shift, stops more buildings, and broke the campaign test.)
 - **Command.** `protocol.ts` gains `{ type: "setMode"; uid: number; mode: BuildingMode }`. `Colony.setMode(uid, mode)` stores `"first"`/`"off"` or deletes the field for `"normal"`, and returns false (changing nothing) for an unknown uid or a mode the def does not offer. `host.ts` applies it; `bridge.ts` exposes `setMode(uid, mode)`. Co-op guests cannot send it: `hostRelay.ts` already forwards only `moveIntent` and `interact`.
 - **Determinism.** No RNG, no clock: the setting is plain data carried by the building, so replay and save/resume hold. It rides snapshots, saves, and loads through the existing whole-building copies; a save without it loads as all NORMAL.
 
@@ -155,7 +155,7 @@ snapshot ──▶ card (facts from def, status from offReason/workUid) · badge
   - the "no power draw means online" step leaves an OFF building offline;
   - `setMode` rejects an unknown uid and a mode the def does not offer, and deletes the field for `"normal"`;
   - `modesFor` for each def class;
-  - `assign()` posts only running buildings, in FIRST-then-rest order, so no colonist is posted to an unsealed or unpowered building;
+  - `assign()` fills running buildings' posts first, in FIRST-then-rest order; stopped buildings keep their crew; OFF buildings get none; posts stay put while a building flickers;
   - determinism: two colonies with the same seed and the same `setMode` commands stay identical; a run with no settings matches today's;
   - save/load round-trips `mode`; a legacy save loads as all NORMAL;
   - `setMode` passes through the host; the bridge sends it;

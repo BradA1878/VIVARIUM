@@ -309,12 +309,17 @@ set by the `setMode` command, validated by `modesFor(def)` in `modes.ts`):
   need crew offer it.
 - **NORMAL** — the default (`mode` unset), today's oldest-first order.
 - **OFF** — the building draws no power, takes no worker, and makes nothing
-  (`offReason: "off"`). Crewed buildings and any other power user except the
-  hub, corridors, and habitats offer it; generators and storage offer nothing.
+  (`offReason: "off"`), shown at once even while paused. Crewed buildings and
+  any other power user except the hub, corridors, habitats, and the transport
+  pod (it launches whether or not it has power) offer it; generators and
+  storage offer nothing.
 
 `assign()` posts colonists to the running buildings first, in the same order,
 so the colonist standing at a running building is the one running it; stopped
-buildings keep their posts after that, and OFF buildings get none. With no
+buildings keep their posts after that, and OFF buildings get none. Posts are
+sticky: a colonist keeps last tick's post (one in their trade who lost theirs
+may take a post from someone out of trade), so a building flickering between
+running and stopped does not reshuffle the crew. With no
 settings the order is unchanged, the setting is plain data carried by the
 building, and replay stays deterministic.
 

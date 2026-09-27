@@ -101,8 +101,8 @@ on shift there, or why it is off, and its setting:
 - **NORMAL** — the default order: oldest first.
 - **OFF** — the building stops entirely: no worker, no power, no output. Its
   worker goes to the next building in line. Buildings without crew that draw
-  power (the deflector, the printers, the bays, the transport pod) can be
-  switched ON or OFF too; the hub, corridors, habitats, generators, and
+  power (the deflector, the printers, the rover bay) can be switched ON or
+  OFF too; the hub, corridors, habitats, transport pod, generators, and
   storage cannot.
 
 An OFF building wears an OFF badge but raises no HUD fault line: switching it
