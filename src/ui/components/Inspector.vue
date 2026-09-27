@@ -65,7 +65,7 @@ const sealLine = computed(() =>
     <span class="ins-glyph">{{ hoverDef.glyph }}</span>
     <span class="ins-name">{{ hoverDef.name.toUpperCase() }}</span>
     <span v-if="hoverStatus" class="ins-status" :class="{ off: !!hoverBuilding?.offReason }">{{ hoverStatus }}</span>
-    <span class="ins-hint">{{ hoverDef.foot[0] }}×{{ hoverDef.foot[1] }}{{ hoverDef.requiresPressure ? " · sealed" : "" }}{{ hoverHasDoor && capabilities.canBuild ? " · R to rotate" : "" }}</span>
+    <span class="ins-hint">{{ hoverDef.foot[0] }}×{{ hoverDef.foot[1] }}{{ hoverDef.requiresPressure ? " · sealed" : "" }}{{ hoverHasDoor && capabilities.canBuild && snapshot?.possessed == null ? " · R to rotate" : "" }}</span>
   </div>
 </template>
 
