@@ -1,7 +1,7 @@
 /* ============================================================================
    Generation economy tests — wind turbines ride a pure anti-solar weather
    curve, geothermal taps sit on world-gen vents, the fission reactor is a
-   normal pass-4 producer, and the materials printer closes the build-currency
+   normal pass-4 producer, and the 3D Printer closes the build-currency
    loop. All deterministic (doc §0): wind is a derivation (zero draws), vents
    seed on the env stream at world-gen, and legacy saves backfill vents from a
    DERIVED rng — never the live envRng — so resume determinism holds.
@@ -472,9 +472,9 @@ describe("the fission reactor — a pass-4 producer behind every existing gate",
   });
 });
 
-// ---- the materials printer ---------------------------------------------------------
+// ---- the 3D Printer (def id "printer") ----------------------------------------------
 
-describe("the materials printer", () => {
+describe("the 3D Printer", () => {
   it("trickles producesMat × eff into materials and clamps at the cap", () => {
     const { c, s } = controlled(83);
     expect(c.place("printer", 0, 0)).toBe(true);

@@ -223,7 +223,7 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
       addPool(s, r, d.produces[r]! * eff * dt);
       net[r] += d.produces[r]! * eff;
     }
-    // the materials printer — the build currency's on-planet source. Same eff
+    // the 3D Printer — the build currency's on-planet source. Same eff
     // scaling as produces; clamped to the materials cap (outside net flow,
     // which tracks the four survival pools only).
     if (d.producesMat) {
