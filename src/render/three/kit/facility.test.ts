@@ -78,6 +78,9 @@ describe("functional facility motion", () => {
     const steel = facility("printer");
     expect(bio.kit.object.children.length).toBe(steel.kit.object.children.length);
     expect(bio.kit.object.name).toBe("facility:bioprinter");
+    const bodyHex = (o: THREE.Object3D) => ((o.children[0] as THREE.Mesh).material as THREE.MeshStandardMaterial).color.getHexString();
+    expect(bodyHex(bio.kit.object)).toBe("6f8a6a");
+    expect(bodyHex(steel.kit.object)).toBe("838a96");
   });
 
   it.each(["roboticsbay", "reclaimer"] as const)("keeps the %s tool, cable and beam attached within the original gantry", (id) => {

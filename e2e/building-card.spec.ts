@@ -150,3 +150,33 @@ test("switching colonies drops the selected building", async ({ page }, testInfo
   // the same uid names a building of the arriving colony: no card may act on it
   await expect(page.locator(".building-card")).toHaveCount(0);
 });
+
+test("FIRST on a building waiting for crew staffs it ahead of an older one", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  test.setTimeout(90_000);
+  await startColony(page);
+  // one worker: the seed electrolysis (built first) takes them, and the extractor waits
+  await page.evaluate(async () => {
+    const { bridge } = (window as DebugWindow).__viv;
+    const save = await bridge.save();
+    save.state.population = 1;
+    await bridge.load(save);
+    bridge.setPaused(false);
+  });
+  const reasonOf = (defId: string) => page.evaluate((id) =>
+    (window as DebugWindow).__viv.bridge.latest!.buildings.find((b) => b.defId === id)?.offReason ?? null, defId);
+  await expect.poll(() => reasonOf("extractor"), { timeout: 15_000 }).toBe("crew");
+  await page.evaluate(() => (window as DebugWindow).__viv.bridge.setPaused(true));
+
+  const ex = await page.evaluate(() => {
+    const b = (window as DebugWindow).__viv.bridge.latest!.buildings.find((x) => x.defId === "extractor")!;
+    return { gx: b.gx, gy: b.gy };
+  });
+  await selectBuilding(page, ex.gx, ex.gy);
+  const card = page.locator(".building-card");
+  await expect(card).toContainText("NO CREW");
+  await card.getByRole("button", { name: "FIRST" }).click();
+  await page.evaluate(() => (window as DebugWindow).__viv.bridge.setPaused(false));
+  await expect.poll(() => reasonOf("extractor"), { timeout: 15_000 }).toBeNull();
+  await expect.poll(() => reasonOf("electrolysis"), { timeout: 15_000 }).toBe("crew");
+});
