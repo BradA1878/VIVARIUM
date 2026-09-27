@@ -176,7 +176,7 @@ export const ROVER_REPAIR_RATE = 0.02; // integrity/sec self-repair toward 1
  *  activation stuns the whole fleet; a meteor/quake strike inside
  *  ROBOT_HIT_RADIUS scraps a robot outright (unlike the rover, which only
  *  dents — robots are the cheap, replaceable rung). */
-export const ROBOT_CAP = 3;          // fleet size the bay builds up to
+export const ROBOT_CAP = 3;          // robots per Robotics Bay: the fleet cap is this × bays built
 export const ROBOT_MAT_COST = 40;    // materials drawn when a chassis completes
 export const ROBOT_BUILD_TIME = 60;  // fabrication seconds per robot
 export const ROBOT_SPEED = 1.6;      // cells/sec — brisker than a walking suit

@@ -28,7 +28,8 @@ import { buildVent, type VentMesh } from "./three/kit/vent";
 import { buildAquifer, type AquiferMesh } from "./three/kit/aquifer";
 import { buildRover, type RoverMesh } from "./three/kit/rover";
 import { buildRobot, type RobotMesh } from "./three/kit/robot";
-import { ROBOT_CAP, ROVER_CARGO_CAP } from "@/engine/tuning";
+import { ROVER_CARGO_CAP } from "@/engine/tuning";
+import { fleetCap } from "@/engine/robots";
 import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
 import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
@@ -708,6 +709,8 @@ export class ThreeRenderer {
     const now = performance.now();
     const seen = this.scratchSeen;
     seen.clear();
+    // a Robotics Bay's line holds (its tool stops) once the fleet is full
+    const robotCap = fleetCap(snap.buildings);
 
     // occupancy map for corridor neighbour masks (only built if needed)
     let cellOwner: Map<string, BuildingState> | null = null;
@@ -768,7 +771,7 @@ export class ThreeRenderer {
       const fill = b.defId === "battery"
         ? snap.pools.power.amount / snap.pools.power.capacity
         : undefined;
-      const working = st.alive && (b.defId !== "roboticsbay" || snap.robots.length < ROBOT_CAP);
+      const working = st.alive && (b.defId !== "roboticsbay" || snap.robots.length < robotCap);
       entry.mesh.setStatus({ ...st, fill, working }, pulse, this.env);
       this.groundDetails.syncBuilding(b.uid, DEFS[b.defId], entry.mesh.object, st.alive);
 

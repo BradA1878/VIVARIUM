@@ -1,7 +1,8 @@
 /* ============================================================================
    Mining robots — rung 3 of the automation ladder. The Robotics Bay fabricates
-   autonomous gatherers that run the SHARED gather brain (engine/gather.ts) sol
-   and night, never shelter, draw no life support, and are NOT possessable.
+   up to ROBOT_CAP robots per bay; each takes any crew post no colonist is free
+   for and otherwise runs the SHARED gather brain (engine/gather.ts) sol and
+   night. They never shelter, draw no life support, and are NOT possessable.
    Fabrication gates on an online + functional + STAFFED bay; the 40-material
    fee is drawn at COMPLETION (an unaffordable chassis holds at zero). The
    counterplay is deterministic — a flare's activation stuns the whole fleet,
@@ -12,6 +13,7 @@ import { describe, it, expect } from "vitest";
 import type { ColonyEvent } from "@shared/types";
 import { Colony, DEFS, ORDER } from "./index";
 import { applyStrikeMachines } from "./rover";
+import { fleetCap } from "./robots";
 import { updateHazards } from "./hazards";
 import { BUILDING_ROLE } from "./roster";
 import type { ColonyState, RobotInstance } from "./state";
@@ -293,6 +295,164 @@ describe("autonomy — the field never sleeps", () => {
       c.tick(0.2); c.drainEvents();
       expect(robot.gatherDepositId).toBe(503);
     }
+  });
+});
+
+// ---- crew posts: robots fill in for missing crew -------------------------------------
+
+describe("crew posts — a robot takes the posts no colonist is free for", () => {
+  /** the seed colony at noon with one colonist: the seed electrolysis (built
+   *  first) takes them and the seed extractor waits on NO CREW */
+  function shortHanded(seed: number) {
+    const { c, s } = controlled(seed);
+    s.tod = 0.5;
+    s.population = 1;
+    c.tick(0.2); c.drainEvents();
+    const elec = s.buildings.find((b) => b.defId === "electrolysis")!;
+    const ext = s.buildings.find((b) => b.defId === "extractor")!;
+    expect(ext.offReason).toBe("crew"); // the premise: a post nobody can fill
+    return { c, s, elec, ext };
+  }
+
+  it("staffs a NO CREW building, walks to its door, and works there", () => {
+    const { c, s, elec, ext } = shortHanded(7);
+    const robot = injectRobot(s, 4, 0);
+    c.tick(0.2); c.drainEvents();
+    expect(ext.offReason).toBeUndefined(); // the extractor runs again
+    expect(robot.workUid).toBe(ext.uid);
+    expect(s.colonists[0].workUid).toBe(elec.uid); // the colonist kept their post
+    expect(s.labor).toBe(2);
+    run(c, 30);
+    const view = c.snapshot().robots[0];
+    expect(view.workUid).toBe(ext.uid);
+    expect(view.state).toBe("working"); // arrived at the extractor's door
+  });
+
+  it("gives the post back when a colonist frees up, and goes back to gathering", () => {
+    const { c, s, ext } = shortHanded(11);
+    const robot = injectRobot(s, 4, 0);
+    s.deposits = [{ id: 501, ...fieldCell(s, 3, 0), kind: "ore", amount: 140, max: 140 }];
+    s.materials.amount = s.materials.capacity * 0.1; // give the field a reason
+    c.tick(0.2); c.drainEvents();
+    expect(robot.workUid).toBe(ext.uid);
+    s.population = 2; // a second colonist arrives
+    run(c, 1);
+    expect(s.colonists.map((k) => k.workUid)).toContain(ext.uid); // a colonist runs it now
+    expect(robot.workUid).toBeNull();
+    expect(ext.offReason).toBeUndefined();
+    run(c, 5);
+    expect(GATHER_STATES as readonly string[]).toContain(c.snapshot().robots[0].state);
+  });
+
+  it("leaves its post while a flare has it stunned; the building waits for crew until it recovers", () => {
+    const { c, s, ext } = shortHanded(13);
+    const robot = injectRobot(s, 4, 0);
+    c.tick(0.2); c.drainEvents();
+    expect(robot.workUid).toBe(ext.uid);
+    robot.faulted = ROBOT_FLARE_FAULT;
+    c.tick(0.2); c.drainEvents();
+    expect(ext.offReason).toBe("crew");
+    expect(c.snapshot().robots[0].workUid).toBeNull(); // off its post while stunned
+    run(c, ROBOT_FLARE_FAULT + 1);
+    expect(robot.faulted).toBe(0);
+    expect(robot.workUid).toBe(ext.uid);
+    expect(ext.offReason).toBeUndefined();
+  });
+
+  it("after a flare, each robot goes back to the post it held", () => {
+    const { c, s, ext } = shortHanded(29);
+    placeBay(c);
+    const bay = s.buildings.find((b) => b.defId === "roboticsbay")!;
+    s.materials.amount = 0; // the bay's line holds, so no third robot joins
+    const x = injectRobot(s, 4, 0);
+    const y = injectRobot(s, 5, 0);
+    x.workUid = bay.uid; // posts held in an order id order would not give them
+    y.workUid = ext.uid;
+    const step = () => { // pools pinned so no building starves and hands its worker on
+      s.pools.power.amount = 100;
+      s.pools.water.amount = 40;
+      s.pools.oxygen.amount = 30;
+      s.pools.food.amount = 40;
+      c.tick(0.2); c.drainEvents();
+    };
+    step();
+    expect([x.workUid, y.workUid]).toEqual([bay.uid, ext.uid]);
+    x.faulted = ROBOT_FLARE_FAULT; // the whole fleet, as a flare's front does
+    y.faulted = ROBOT_FLARE_FAULT;
+    for (let i = 0; i < Math.round((ROBOT_FLARE_FAULT + 1) / 0.2); i++) step();
+    expect([x.workUid, y.workUid]).toEqual([bay.uid, ext.uid]); // no swap
+  });
+
+  it("can run the Robotics Bay, and the bay's line builds while it does", () => {
+    const { c, s } = shortHanded(17);
+    placeBay(c);
+    const bay = s.buildings.find((b) => b.defId === "roboticsbay")!;
+    c.setMode(bay.uid, "first"); // the bay ahead of the seed buildings
+    s.materials.amount = 400;
+    const robot = injectRobot(s, 4, 0);
+    const events: ColonyEvent[] = [];
+    for (let i = 0; i < Math.round((ROBOT_BUILD_TIME + 5) / 0.2); i++) {
+      // pools pinned: with two workers and the bay FIRST, a starving electrolysis
+      // would trade its worker back and forth with the extractor every tick
+      s.pools.power.amount = 100;
+      s.pools.water.amount = 40;
+      s.pools.oxygen.amount = 30;
+      s.pools.food.amount = 40;
+      c.tick(0.2);
+      events.push(...c.drainEvents());
+    }
+    expect(robot.workUid).toBe(bay.uid); // the only colonist kept the electrolysis
+    expect(events.filter((e) => e.type === "robot_ready")).toHaveLength(1);
+    expect(s.robots).toHaveLength(2);
+  });
+
+  it("never stands at a stopped building: in a blackout the robot gathers", () => {
+    const { c, s, elec } = shortHanded(19);
+    const robot = injectRobot(s, 4, 0);
+    s.tod = 0.9; // night: no solar
+    s.pools.power.amount = 0;
+    c.tick(0.2); c.drainEvents();
+    expect(elec.offReason).toBe("power");
+    expect(robot.workUid).toBeNull(); // no running post to take
+    expect(s.colonists[0].workUid).toBe(elec.uid); // the colonist stays on post, as before
+  });
+
+  it("the fleet cap is ROBOT_CAP for each Robotics Bay built", () => {
+    expect(fleetCap([])).toBe(0);
+    expect(fleetCap([{ defId: "roboticsbay" }, { defId: "hub" }])).toBe(ROBOT_CAP);
+    expect(fleetCap([{ defId: "roboticsbay" }, { defId: "roboticsbay" }])).toBe(2 * ROBOT_CAP);
+  });
+
+  it("a second bay lets the line build past the first bay's cap", () => {
+    const { c, s } = controlled(7);
+    s.materials.amount = 400; // two bays at 90 each
+    placeBay(c);
+    // the second bay anywhere near the depot (placeBay's yard holds one)
+    let second = false;
+    for (let gx = s.depot.gx - 10; gx <= s.depot.gx + 10 && !second; gx++) {
+      for (let gy = s.depot.gy - 10; gy <= s.depot.gy + 10 && !second; gy++) second = c.place("roboticsbay", gx, gy);
+    }
+    expect(second).toBe(true);
+    c.drainEvents();
+    for (let i = 0; i < ROBOT_CAP; i++) injectRobot(s, 6 + i, -2);
+    s.materials.amount = 400;
+    s.robotFab = 0.2; // a chassis about to finish
+    for (let i = 0; i < 25; i++) {
+      s.pools.power.amount = 100;
+      c.tick(0.2); c.drainEvents();
+    }
+    expect(s.robots.length).toBe(ROBOT_CAP + 1);
+  });
+
+  it("a posted robot's save resumes byte-identically", () => {
+    const { c, s } = shortHanded(23);
+    injectRobot(s, 4, 0);
+    run(c, 3);
+    const twin = Colony.load(c.serialize());
+    run(c, 20);
+    run(twin, 20);
+    expect(JSON.stringify(twin.serialize())).toBe(JSON.stringify(c.serialize()));
+    expect(stateOf(twin).robots[0].workUid).not.toBeNull();
   });
 });
 

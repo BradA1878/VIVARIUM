@@ -10,6 +10,7 @@
    Colonists supply the headcount that tick.ts assigns to recipes. A wounded,
    piloted, mining, or hauling body is unavailable for that assignment; gather
    credits still land in the pools like resupply does, outside net flow.
+   Robots add to that headcount and take the posts no colonist is free for.
    ============================================================================ */
 import type { BuildingState, ColonistView, DepositKind, DepositView } from "@shared/types";
 import { DEFS } from "./defs";
@@ -18,7 +19,7 @@ import {
   AUTO_CARRY, GATHER_DWELL, ROVER_CARGO_CAP,
   DAY_START, DAY_END, MATERIALS_CAP, INJURED_SPEED, INJURED_PILOT_FACTOR,
 } from "./tuning";
-import type { ColonistInstance, ColonyState, DepositInstance, Pilot } from "./state";
+import type { ColonistInstance, ColonyState, DepositInstance, Pilot, RobotInstance } from "./state";
 import { buildingFunctional, emptyColonist, isPiloted, pilotOf, removePilot } from "./state";
 import { idx, inBounds, cellsFor } from "./grid";
 import { doorCells } from "./doors";
@@ -52,6 +53,18 @@ export function availableColonistLabor(s: ColonyState): number {
   // Population can change before roster reconciliation (arrivals/casualties and
   // controlled tests); never staff more bodies than the authoritative headcount.
   return Math.min(s.population, embodied);
+}
+
+/** A robot can take a post unless a flare has it stunned or it is carrying a
+ *  load (it finishes the trip first, as a colonist does). A robot walking to a
+ *  node or mining one drops that work for a post. */
+export function robotAvailableForShift(r: RobotInstance): boolean {
+  return r.faulted <= 0 && r.carryAmt <= 0;
+}
+
+/** robots that can take a post this tick — recipe labor on top of the crew's */
+export function availableRobotLabor(s: ColonyState): number {
+  return (s.robots ?? []).reduce((n, r) => n + (robotAvailableForShift(r) ? 1 : 0), 0);
 }
 
 /** continuous center of a building's footprint, in grid-cell coords */
@@ -182,7 +195,9 @@ export function reconcileColonists(s: ColonyState): void {
  *  buildings get no slot: switching one off frees its worker. Pass 1 hands each
  *  slot the lowest-id unclaimed colonist whose role matches the building, pass 2
  *  backfills the rest in id order. The injured are off shift — eligible for
- *  neither pass. Surplus colonists idle at a hab. */
+ *  neither pass. Surplus colonists idle at a hab. Robots then take the running
+ *  posts no colonist filled (the tick counted them as labor); they never stand
+ *  at a stopped building, and a robot without a post gathers. */
 function assign(s: ColonyState): void {
   const running: BuildingState[] = [];
   const stopped: BuildingState[] = [];
@@ -227,8 +242,30 @@ function assign(s: ColonyState): void {
   fill(0, runningSlots); // every running building gets its worker first
   fill(runningSlots, slots.length); // the stopped ones take whoever is left
 
+  // robots fill the running posts left open, a robot keeping last tick's post
+  // where it can (r.workUid still holds it here), then the rest in id order
+  const robots = [...(s.robots ?? [])].sort((a, b) => a.id - b.id);
+  const freeRobots = robots.filter(robotAvailableForShift);
+  const robotAt: (RobotInstance | null)[] = slots.map(() => null);
+  const claimRobot = (i: number, match: (r: RobotInstance) => boolean): void => {
+    const j = freeRobots.findIndex(match);
+    if (j >= 0) robotAt[i] = freeRobots.splice(j, 1)[0];
+  };
+  for (let i = 0; i < runningSlots; i++) if (!workers[i]) claimRobot(i, (r) => r.workUid === slots[i].uid);
+  for (let i = 0; i < runningSlots; i++) if (!workers[i] && !robotAt[i]) claimRobot(i, () => true);
+
   for (const c of colonists) c.workUid = null;
   workers.forEach((c, i) => { if (c) c.workUid = slots[i].uid; });
+  // a stunned robot keeps its post in memory (the view shows it off post), so
+  // after a flare it goes back to the post it held if that post is still open
+  for (const r of robots) if (r.faulted <= 0) r.workUid = null;
+  robotAt.forEach((r, i) => {
+    if (!r) return;
+    r.workUid = slots[i].uid;
+    // a posted robot drops its node, so the claim set built next is free of it
+    r.gatherDepositId = null;
+    r.gatherT = 0;
+  });
   colonists.forEach((c, i) => {
     c.homeUid = habs.length ? habs[i % habs.length].uid : null;
   });

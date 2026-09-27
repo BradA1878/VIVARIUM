@@ -25,7 +25,7 @@ import { buildingFunctional, pilotOf } from "./state";
 import { recomputeConnectivity } from "./connectivity";
 import { productionOrder } from "./modes";
 import { updateHazards, hazardMods, type HazardMods } from "./hazards";
-import { availableColonistLabor, stepColonists } from "./colonists";
+import { availableColonistLabor, availableRobotLabor, stepColonists } from "./colonists";
 import { updateInjuries } from "./injury";
 import { pilotRover, updateRoverFab } from "./rover";
 import { stepRobots, updateRobotFab } from "./robots";
@@ -128,8 +128,10 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   recomputeConnectivity(s);
 
   // Embodied work is exclusive: wounded, piloted, and actively gathering
-  // colonists are off shift and cannot simultaneously staff a recipe.
-  s.labor = availableColonistLabor(s);
+  // colonists are off shift and cannot simultaneously staff a recipe. Robots
+  // add to the count (unless stunned or carrying a load); assign() gives the
+  // colonists first pick of the posts and the robots the rest.
+  s.labor = availableColonistLabor(s) + availableRobotLabor(s);
   s.laborUsed = 0;
 
   const net: Record<Resource, number> = { power: 0, water: 0, oxygen: 0, food: 0 };

@@ -280,7 +280,9 @@ export interface RobotView {
   carryAmt: number;
   /** seconds of flare stun remaining; 0 = running */
   faulted: number;
-  state: "idle" | "gathering" | "mining" | "hauling" | "faulted";
+  state: "idle" | "gathering" | "mining" | "hauling" | "toWork" | "working" | "faulted";
+  /** the crew post this robot holds (a staffed building no colonist was free for), or null */
+  workUid: number | null;
 }
 
 export type TradePhase = "inbound" | "landed" | "leaving";

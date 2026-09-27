@@ -82,6 +82,9 @@ export interface RobotInstance {
   gatherDepositId: number | null;
   /** seconds spent mining at the claimed node so far (the dwell timer) */
   gatherT: number;
+  /** the crew post this robot holds (a running staffed building's uid), or
+   *  null while it gathers — set by assign(); absent in older saves */
+  workUid?: number | null;
 }
 
 /** a surface resource node */
