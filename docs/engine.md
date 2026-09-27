@@ -36,7 +36,7 @@ storage `caps` it adds, and pressure/door requirements.
 | Bio Printer | BIO | Food from water; no crew; priority 28 | −8 power, −2 water → +3 food |
 | Atomic Printer | ATM | 2×2; the lowest of oxygen / water / food / materials (`printsLowest`); no crew; priority 10, the first shed | −30 power → +6 O₂, +8 water, +4 food, or +1 materials |
 | Rover Bay | RVR | Garage; fabricates one drivable bulk hauler on a 45 s countdown | −2.5 power |
-| Robotics Bay | BOT | Prints autonomous mining robots; needs 1 worker | −4 power |
+| Robotics Bay | BOT | Builds up to 3 robots per bay; needs 1 worker (a colonist or a robot) | −4 power |
 | Transport Pod | PTP | Launches the expansion: ends the run and founds the next world | −8 power |
 
 The hub, corridor, habitat, solar array, battery, extractor, electrolysis,
@@ -56,7 +56,7 @@ arrivals, resupply, the campaign deadline, the embodied-colony economy, morale
 and injury rates, and the difficulty profiles — plus the homeostasis groups:
 auto-gather (`AUTO_CARRY 12`, `GATHER_DWELL 1.2 s`), the rover fleet
 (`ROVER_*`: cap 1, 45 s build, speed 4.5, cargo 80, strike damage/repair), the
-robot fleet (`ROBOT_*`: cap 3, 60 s build, 40-materials completion fee, speed
+robot fleet (`ROBOT_*`: 3 per Robotics Bay, 60 s build, 40-materials completion fee, speed
 1.6, carry 30, 12 s flare stun), the wind curve (`WIND_*`), and the geothermal
 vents (`VENT_*`, including the legacy-backfill salt).
 
@@ -237,10 +237,15 @@ Three rungs, one shared brain — all of it RNG-free.
   self-repairs at 0.02/s, is immobile below the 0.45 functional threshold, and
   is **never destroyed** — a big purchase must not evaporate.
 - **Mining robots** (`robots.ts`) — the Robotics Bay (staffed, unlike the
-  rover's garage) prints up to 3 autonomous gatherers on a 60 s countdown whose
+  rover's garage; a robot can staff it) prints robots on a 60 s countdown whose
   40-materials fee is charged **at completion** (an unaffordable chassis holds
-  at zero). They run the **same `stepGatherer` brain** sol and night, never
-  shelter, draw no life support, and count toward neither population nor labor.
+  at zero), up to `fleetCap`: 3 for each bay built, from one shared line. A
+  robot **fills any crew post no colonist is free for**: the tick counts
+  robots that are neither stunned nor carrying a load as labor, and `assign()`
+  posts them to the running posts the colonists left open (never a stopped
+  building; no trade bonus). A robot without a post runs the **same
+  `stepGatherer` brain** sol and night. Robots never shelter, draw no life
+  support, and never count toward population.
   Counterplay is deterministic: a flare's activation front stuns the whole
   fleet for 12 s; a meteor/quake strike within 1.6 cells **scraps a robot
   outright** (`robot_destroyed`) — robots are the cheap, brittle rung where the
@@ -319,7 +324,10 @@ so the colonist standing at a running building is the one running it; stopped
 buildings keep their posts after that, and OFF buildings get none. Posts are
 sticky: a colonist keeps last tick's post (one in their trade who lost theirs
 may take a post from someone out of trade), so a building flickering between
-running and stopped does not reshuffle the crew. With no
+running and stopped does not reshuffle the crew. Robots come after the
+colonists: they take the running posts left open (keeping last tick's post
+where they can; a robot stunned by a flare is off its post but remembers it,
+and goes back to it on recovery if it is still open) and gather otherwise. With no
 settings the order is unchanged, the setting is plain data carried by the
 building, and replay stays deterministic.
 

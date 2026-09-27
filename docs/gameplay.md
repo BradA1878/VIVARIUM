@@ -89,7 +89,9 @@ Buildings that need a colonist (the extractor, water generator, aquifer well,
 reclaimer, electrolysis, hydroponics, med-bay, reactor, and robotics bay) take
 one each, and there are rarely enough colonists for all of them. By default
 the oldest buildings get workers first; the rest show a NO CREW badge, and the
-HUD's UNSTAFFED line counts how many are waiting.
+HUD's UNSTAFFED line counts how many are waiting. Robots from a Robotics Bay
+fill in: a robot takes any post no colonist is free for (see the automation
+ladder below).
 
 Click a placed building (no tool selected) to open its **card** in the right
 column: what it does in plain words, what it makes, uses, and needs (numbers
@@ -165,12 +167,19 @@ humming on its own:
    deposit, one P at the depot drops everything. Strikes dent it (below 45%
    integrity it sits immobilized while it slowly self-repairs) but never
    destroy it.
-3. **Mining robots.** The **Robotics Bay** (staffed — keep an engineer on the
-   line) prints up to three autonomous miners; each one's 40-materials fee is
-   charged when the chassis completes. They work **sol and night**, never
-   shelter, and breathe nothing — but the planet keeps counterplay: a **solar
-   flare stuns the whole fleet** for a dozen seconds, and a direct
-   meteor/quake strike **scraps a robot outright**. Robots are the cheap,
+3. **Robots.** The **Robotics Bay** (staffed by a colonist or a robot)
+   builds up to three robots for each bay you have; each one's 40-materials
+   fee is charged when the chassis completes. A robot **works any post no
+   colonist is free for** — the LABOR line counts it, and a building's card
+   says "working · a robot" — and gathers resources when every post is
+   filled. Colonists always get first pick of the posts, and a robot earns no
+   trade bonus. Robots work **sol and night**, never shelter, and breathe
+   nothing — but the planet keeps counterplay: a **solar flare stuns the whole
+   fleet** for a dozen seconds (a stunned robot leaves its post and goes back
+   when it recovers), and a direct meteor/quake strike **scraps a robot
+   outright**. Out of crew with no robots yet? Set the Robotics Bay to FIRST
+   so it gets a colonist for the first build. A bay whose fleet is full still
+   takes a worker; switch it OFF to free one. Robots are the cheap,
    replaceable rung; the rover is the expensive, tough one.
 
 ## New schematics
