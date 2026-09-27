@@ -7,7 +7,7 @@
 import type { Resource, Snapshot } from "@shared/types";
 import { DEFS } from "@/engine";
 import {
-  buildGraph, diagnoseShortfall, producersOf, consumersOf,
+  buildGraph, diagnoseShortfall, producersOf, producesResource, consumersOf,
   type Diagnosis, type WorldGraph,
 } from "./graph";
 
@@ -86,4 +86,4 @@ export const worldStore: WorldStore = {
   risks,
 };
 
-export { producersOf, consumersOf };
+export { producersOf, producesResource, consumersOf };

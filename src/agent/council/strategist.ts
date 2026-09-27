@@ -9,6 +9,7 @@
    ============================================================================ */
 import type { ColonyEvent, Resource, Snapshot } from "@shared/types";
 import { DEFS } from "@/engine";
+import { producesResource } from "../worldmodel/graph";
 import type { Candidate, Voice, VoiceContext } from "./types";
 
 /** the event beats on which the Strategist will consider speaking */
@@ -143,6 +144,6 @@ export class StrategistVoice implements Voice {
 }
 
 function hasProduce(defId: string, res: Resource): boolean {
-  const v = DEFS[defId]?.produces[res];
-  return v != null && v > 0;
+  const d = DEFS[defId];
+  return !!d && producesResource(d, res);
 }

@@ -8,7 +8,7 @@
    cascade — oxygen is failing because electrolysis is unfed because water is
    empty because the extractor lost power to the storm.
    ============================================================================ */
-import type { BuildingState, OffReason, Resource, Snapshot } from "@shared/types";
+import type { BuildingDef, BuildingState, OffReason, Resource, Snapshot } from "@shared/types";
 import { DEFS } from "@/engine";
 
 export type NodeKind = "building" | "pool" | "crew" | "hub" | "environment";
@@ -87,13 +87,20 @@ export function buildGraph(s: Snapshot): WorldGraph {
   return { nodes, edges };
 }
 
-/** buildings producing into a pool — for power that includes the solar, wind,
- *  and geothermal generators, which feed it outside the recipe pass */
+/** does a building of this def put `res` into its pool? Recipe output, plus
+ *  the solar, wind, and geothermal generators for power and the Atomic
+ *  Printer for oxygen, water, and food, which feed pools outside the recipe */
+export function producesResource(def: BuildingDef, res: Resource): boolean {
+  if ((def.produces[res] ?? 0) > 0) return true;
+  if (res === "power") return !!(def.solar || def.wind || def.steady);
+  return (def.printsLowest?.[res] ?? 0) > 0;
+}
+
+/** buildings producing into a pool */
 export function producersOf(s: Snapshot, res: Resource): BuildingState[] {
   return s.buildings.filter((b) => {
     const d = DEFS[b.defId];
-    if (!d) return false;
-    return (d.produces[res] ?? 0) > 0 || (res === "power" && !!(d.solar || d.wind || d.steady));
+    return !!d && producesResource(d, res);
   });
 }
 

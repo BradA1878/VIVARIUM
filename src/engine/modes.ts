@@ -7,11 +7,12 @@ import type { BuildingDef, BuildingMode } from "@shared/types";
 
 /** FIRST / NORMAL / OFF when the building needs crew; NORMAL / OFF when it draws
  *  power (except the hub, corridors, and housing, which hold the colony
- *  together); nothing for generators and storage */
+ *  together, and the transport pod, whose launch does not depend on power, so
+ *  OFF would only drop its cost); nothing for generators and storage */
 export function modesFor(def: BuildingDef): BuildingMode[] {
   if (def.staffing > 0) return ["first", "normal", "off"];
-  if ((def.consumes.power ?? 0) > 0 && !def.isHub && !def.conduit && !def.popCap) return ["normal", "off"];
-  return [];
+  const switchable = (def.consumes.power ?? 0) > 0 && !def.isHub && !def.conduit && !def.popCap && def.id !== "ptp";
+  return switchable ? ["normal", "off"] : [];
 }
 
 /** the order the production pass (and the crew posting after it) visits

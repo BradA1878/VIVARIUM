@@ -14,11 +14,12 @@ describe("modesFor — which settings a building offers", () => {
   });
 
   it("offers NORMAL / OFF on crewless buildings that draw power", () => {
-    for (const id of ["deflector", "printer", "roverbay", "ptp"]) expect(modesFor(DEFS[id]), id).toEqual(["normal", "off"]);
+    for (const id of ["deflector", "printer", "bioprinter", "atomic", "roverbay"]) expect(modesFor(DEFS[id]), id).toEqual(["normal", "off"]);
   });
 
-  it("offers nothing on the hub, corridors, habitats, generators, and storage", () => {
-    for (const id of ["hub", "corridor", "hab", "solar", "windturbine", "geothermal", "battery", "cistern", "o2tank"]) {
+  it("offers nothing on the hub, corridors, habitats, the transport pod, generators, and storage", () => {
+    // the pod launches whether or not it has power: an OFF pod would only drop its cost
+    for (const id of ["hub", "corridor", "hab", "ptp", "solar", "windturbine", "geothermal", "battery", "cistern", "o2tank"]) {
       expect(modesFor(DEFS[id]), id).toEqual([]);
     }
   });
@@ -40,6 +41,14 @@ describe("Colony.setMode", () => {
     expect(elec.mode).toBe("off");
     expect(c.setMode(elec.uid, "normal")).toBe(true);
     expect("mode" in elec).toBe(false);
+  });
+
+  it("shows OFF at once, without waiting for a tick, and clears it when switched back", () => {
+    const { c, elec } = seed();
+    expect(c.setMode(elec.uid, "off")).toBe(true);
+    expect(elec).toMatchObject({ online: false, util: 0, offReason: "off" });
+    expect(c.setMode(elec.uid, "normal")).toBe(true);
+    expect(elec.offReason).toBeUndefined();
   });
 
   it("rejects an unknown uid (a building demolished a moment ago)", () => {

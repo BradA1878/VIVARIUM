@@ -5,7 +5,8 @@
 import { describe, it, expect } from "vitest";
 import { Colony } from "@/engine";
 import type { ColonyState } from "@/engine/state";
-import { buildGraph, diagnoseShortfall, summarizeDiagnosis, risks, producersOf } from "./index";
+import { buildGraph, diagnoseShortfall, summarizeDiagnosis, risks, producersOf, producesResource } from "./index";
+import { DEFS } from "@/engine";
 
 function run(c: Colony, seconds: number, step = 0.2): void {
   for (let i = 0; i < Math.round(seconds / step); i++) { c.tick(step); c.drainEvents(); }
@@ -95,6 +96,19 @@ describe("root-cause diagnosis traces the cascade", () => {
     expect(chain[0]).toBe("oxygen: the electrolysis unit has gone dark");
     expect(chain).toContain("the dark has taken the light");
     expect(chain).not.toContain("nothing makes power");
+  });
+
+  it("counts the Atomic Printer as a producer of oxygen, water, and food", () => {
+    for (const r of ["oxygen", "water", "food"] as const) expect(producesResource(DEFS.atomic, r), r).toBe(true);
+    expect(producesResource(DEFS.atomic, "power")).toBe(false);
+    expect(producesResource(DEFS.solar, "power")).toBe(true);
+    // a shed Atomic Printer that is the only water source is named, not "nothing makes water"
+    const s = new Colony(7).snapshot();
+    s.buildings = s.buildings.filter((b) => b.defId !== "extractor");
+    s.buildings.push({ ...s.buildings[0], uid: 990, defId: "atomic", online: false, offReason: "power" });
+    const d = diagnoseShortfall(s, "water");
+    expect(d.noProducer).toBe(false);
+    expect(d.failing.find((f) => f.defId === "atomic")?.reason).toBe("unpowered");
   });
 
   it("power shortfall under a storm reads as an environmental cause", () => {
