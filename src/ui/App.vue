@@ -15,6 +15,7 @@ import Objective from "./components/Objective.vue";
 import AlienTechStatus from "./components/AlienTechStatus.vue";
 import AlienTechReveal from "./components/AlienTechReveal.vue";
 import Alerts from "./components/Alerts.vue";
+import BuildingCard from "./components/BuildingCard.vue";
 import EndScreen from "./components/EndScreen.vue";
 import StartScreen from "./components/StartScreen.vue";
 import AwayDigest from "./components/AwayDigest.vue";
@@ -326,6 +327,7 @@ onUnmounted(() => {
       <div class="right-col">
         <AlienTechStatus />
         <Alerts />
+        <BuildingCard />
         <TradePrompt v-if="capabilities.canRespondTrade" />
         <LaunchPrompt v-if="capabilities.canManageColonies" />
         <ColoniesMap v-if="capabilities.canManageColonies" />

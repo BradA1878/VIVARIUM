@@ -7,6 +7,7 @@ import { computed } from "vue";
 import { useColony } from "@/ui/stores/colony";
 import { DEFS } from "@/engine";
 import { sealPreviewText } from "@/ui/sealPreview";
+import { statusLabel } from "@/ui/buildingFacts";
 
 const { snapshot, tool, demolish, hover, selected, placePreview, clearTool, rotate, capabilities } = useColony();
 
@@ -15,6 +16,12 @@ const toolDef = computed(() => (tool.value && tool.value !== "corridor" ? DEFS[t
 const selectedDef = computed(() => (selected.value ? DEFS[selected.value.defId] : null));
 const hoverDef = computed(() => (hover.value?.defId ? DEFS[hover.value.defId] : null));
 const hoverHasDoor = computed(() => hoverDef.value?.door != null);
+/** the hovered building's status word (WORKING, NO CREW, OFF, …), if it has one */
+const hoverBuilding = computed(() => {
+  const uid = hover.value?.uid;
+  return uid == null ? null : snapshot.value?.buildings.find((b) => b.uid === uid) ?? null;
+});
+const hoverStatus = computed(() => (hoverBuilding.value ? statusLabel(hoverBuilding.value) : null));
 const sealLine = computed(() =>
   placePreview.value ? sealPreviewText(placePreview.value, snapshot.value?.materials.amount ?? 0) : null,
 );
@@ -57,6 +64,7 @@ const sealLine = computed(() =>
   <div v-else-if="hoverDef" class="inspect">
     <span class="ins-glyph">{{ hoverDef.glyph }}</span>
     <span class="ins-name">{{ hoverDef.name.toUpperCase() }}</span>
+    <span v-if="hoverStatus" class="ins-status" :class="{ off: !!hoverBuilding?.offReason }">{{ hoverStatus }}</span>
     <span class="ins-hint">{{ hoverDef.foot[0] }}×{{ hoverDef.foot[1] }}{{ hoverDef.requiresPressure ? " · sealed" : "" }}{{ hoverHasDoor && capabilities.canBuild ? " · R to rotate" : "" }}</span>
   </div>
 </template>
@@ -72,6 +80,8 @@ const sealLine = computed(() =>
 }
 
 .ins-seal { color: var(--cyan); font-size: 10px; white-space: nowrap; }
+.ins-status { color: var(--cyan); font-size: 10px; white-space: nowrap; }
+.ins-status.off { color: var(--rust); }
 .ins-seal.warn { color: var(--rust); }
 
 .inspect-touch { display: none; }
