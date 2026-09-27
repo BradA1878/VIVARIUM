@@ -264,7 +264,7 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
 
 /* ---------- responsive: fit smaller laptops ----------
    The HUD is fixed-px by design; these steps shrink it into a small viewport
-   without a redesign. The build palette has 23 tiles (~1558px in one row), so
+   without a redesign. The build palette has 25 tiles (~1680px in one row), so
    it wraps into centred rows as the screen narrows. Each `.pal-grid` cap pairs
    a fixed width (sets the row count at the wide end of the range) with a
    rail-aware `calc(100vw - …)` (guarantees the centred palette clears the side
@@ -272,15 +272,15 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
    1280px screen matches the 1600 + 1480 blocks. Screens >1600px (16"/external)
    keep the single-row palette and today's look. */
 @media (max-width: 1600px) {
-  /* 14–15": two rows (12 + 11). A definite width wraps deterministically —
+  /* 14–15": two rows (13 + 12). A definite width wraps deterministically —
      a shrink-to-fit max-width leaves a lone tile stranded on a third row. */
-  .pal-grid { width: 800px; }
+  .pal-grid { width: 868px; }
 }
 @media (max-width: 1480px) {
-  /* 12–13": three rows (8 + 8 + 7) + slimmer rails + de-crowded top bar */
+  /* 12–13": three rows (9 + 9 + 7) + slimmer rails + de-crowded top bar */
   .left-col { width: 280px; }
   .right-col { width: 248px; }
-  .pal-grid { width: 535px; }
+  .pal-grid { width: 600px; }
   .brand-name { font-size: 18px; }
   .brand-sub { display: none; }
   .controls { gap: 4px; }
@@ -291,7 +291,7 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
      clears the rails even as the row count climbs */
   .left-col { width: 264px; }
   .right-col { width: 236px; }
-  .pal-grid { width: min(493px, calc(100vw - 600px)); }
+  .pal-grid { width: min(546px, calc(100vw - 600px)); }
   .pal-btn { width: 56px; height: 54px; }
 }
 @media (max-width: 880px) {

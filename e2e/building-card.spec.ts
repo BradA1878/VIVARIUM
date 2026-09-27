@@ -100,3 +100,13 @@ test("the palette has the printers and no Fabricator", async ({ page }, testInfo
   await expect(page.getByRole("button", { name: /^Atomic Printer/ })).toHaveCount(1);
   await expect(page.getByRole("button", { name: /^Fabricator/ })).toHaveCount(0);
 });
+
+test("the palette keeps its rows at common desktop widths", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  await startColony(page);
+  const rows = () => page.evaluate(() => new Set([...document.querySelectorAll<HTMLElement>(".pal-btn")].map((b) => b.offsetTop)).size);
+  for (const [width, height, expected] of [[1280, 720, 3], [1440, 900, 3], [1560, 900, 2]] as const) {
+    await page.setViewportSize({ width, height });
+    await expect.poll(rows, { message: `${width}×${height}` }).toBe(expected);
+  }
+});
