@@ -327,11 +327,12 @@ onUnmounted(() => {
       <div class="right-col">
         <AlienTechStatus />
         <Alerts />
-        <BuildingCard />
         <TradePrompt v-if="capabilities.canRespondTrade" />
         <LaunchPrompt v-if="capabilities.canManageColonies" />
         <ColoniesMap v-if="capabilities.canManageColonies" />
         <Lobby @host="onHost" @join="onJoin" />
+        <!-- last, so opening it never pushes a timed trade or launch prompt down -->
+        <BuildingCard />
       </div>
 
       <NarratorTicker />

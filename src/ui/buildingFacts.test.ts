@@ -27,10 +27,10 @@ function makeColonist(overrides: Partial<ColonistView> = {}): ColonistView {
   };
 }
 
-// Only labor/laborUsed/colonists are read by these functions — see task brief.
-function makeSnap(overrides: Partial<Pick<Snapshot, "labor" | "laborUsed" | "colonists">> = {}): Snapshot {
+// Only labor/laborUsed/colonists and the generators' solarMul/windLevel are read.
+function makeSnap(overrides: Partial<Pick<Snapshot, "labor" | "laborUsed" | "colonists" | "solarMul" | "windLevel">> = {}): Snapshot {
   return {
-    labor: 0, laborUsed: 0, colonists: [],
+    labor: 0, laborUsed: 0, colonists: [], solarMul: 1, windLevel: 1,
     ...overrides,
   } as unknown as Snapshot;
 }
@@ -60,12 +60,17 @@ describe("buildingFacts", () => {
     });
   });
 
-  it("the habitat sleeps colonists and needs the seal", () => {
+  it("the habitat sleeps colonists; the seal is for shelter (its beds count without it)", () => {
     expect(buildingFacts(DEFS.hab)).toEqual({
       makes: ["beds for 4"],
       uses: ["1 power/s"],
-      needs: ["the pressure seal"],
+      needs: ["the pressure seal, to shelter the crew"],
     });
+  });
+
+  it("scales the solar line to the world's sunlight", () => {
+    expect(buildingFacts(DEFS.solar).makes).toEqual(["up to 22 power/s in full sun"]);
+    expect(buildingFacts(DEFS.solar, 0.2).makes).toEqual(["up to 4.4 power/s in full sun"]);
   });
 
   it("the aquifer well needs an aquifer site (and has no role note: unmapped)", () => {
@@ -84,9 +89,9 @@ describe("buildingFacts", () => {
     expect(buildingFacts(DEFS.roboticsbay).needs).toEqual(["1 crew"]);
   });
 
-  it("the Atomic Printer prints the lowest of its four resources", () => {
+  it("the Atomic Printer makes whichever of its four resources is lowest", () => {
     expect(buildingFacts(DEFS.atomic).makes).toEqual([
-      "the lowest of 6 oxygen/s, 8 water/s, 4 food/s, or 1 materials/s",
+      "whichever is lowest: 6 oxygen/s, 8 water/s, 4 food/s, or 1 materials/s",
     ]);
   });
 
@@ -104,8 +109,12 @@ describe("statusLabel", () => {
     expect(statusLabel(makeBuilding({ uid: 1, defId: "greenhouse" }))).toBe("WORKING");
   });
 
-  it("shows WORKING for a generator with no off reason", () => {
-    expect(statusLabel(makeBuilding({ uid: 1, defId: "solar" }))).toBe("WORKING");
+  it("shows no label for a generator: its status is its output", () => {
+    expect(statusLabel(makeBuilding({ uid: 1, defId: "solar" }))).toBeNull();
+  });
+
+  it("shows TURNING ON for a building switched back on that has not run yet", () => {
+    expect(statusLabel(makeBuilding({ uid: 1, defId: "electrolysis", online: false }))).toBe("TURNING ON");
   });
 
   it("is null for storage, which has no status", () => {
@@ -181,7 +190,22 @@ describe("statusLine", () => {
   });
 
   it('says plain "working" for a def with no crew', () => {
-    expect(statusLine(makeBuilding({ uid: 1, defId: "solar" }), makeSnap())).toBe("working");
+    expect(statusLine(makeBuilding({ uid: 1, defId: "bioprinter" }), makeSnap())).toBe("working");
+  });
+
+  it("gives a generator's live output: none at night, the world's share by day", () => {
+    expect(statusLine(makeBuilding({ uid: 1, defId: "solar" }), makeSnap({ solarMul: 0 }))).toBe("making 0 power/s now");
+    expect(statusLine(makeBuilding({ uid: 1, defId: "solar" }), makeSnap({ solarMul: 0.5 }))).toBe("making 11 power/s now");
+    expect(statusLine(makeBuilding({ uid: 1, defId: "windturbine" }), makeSnap({ windLevel: 0.4 }))).toBe("making 3.6 power/s now");
+  });
+
+  it("says a building switched back on turns on when the colony runs", () => {
+    expect(statusLine(makeBuilding({ uid: 1, defId: "electrolysis", online: false }), makeSnap())).toBe("turns on when the colony runs");
+  });
+
+  it("names why nobody is free when the labor pool is empty", () => {
+    const b = makeBuilding({ uid: 1, defId: "electrolysis", online: false, offReason: "crew" });
+    expect(statusLine(b, makeSnap({ labor: 0, laborUsed: 0 }))).toBe("no colonist free to work (hurt, piloted, or out gathering)");
   });
 });
 

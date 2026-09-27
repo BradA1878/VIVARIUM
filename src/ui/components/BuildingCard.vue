@@ -5,6 +5,7 @@
 import { computed } from "vue";
 import type { BuildingMode } from "@shared/types";
 import { DEFS, modesFor } from "@/engine";
+import { worldProfile } from "@/engine/tuning";
 import { useColony } from "@/ui/stores/colony";
 import { buildingFacts, statusLabel, statusLine } from "@/ui/buildingFacts";
 
@@ -17,7 +18,7 @@ const building = computed(() => {
   return snap.buildings.find((b) => b.uid === sel.uid) ?? null;
 });
 const def = computed(() => (building.value ? DEFS[building.value.defId] ?? null : null));
-const facts = computed(() => (def.value ? buildingFacts(def.value) : null));
+const facts = computed(() => (def.value ? buildingFacts(def.value, worldProfile(snapshot.value?.world).solar) : null));
 const label = computed(() => (building.value ? statusLabel(building.value) : null));
 const now = computed(() => (building.value && snapshot.value ? statusLine(building.value, snapshot.value) : null));
 const off = computed(() => !!building.value?.offReason);

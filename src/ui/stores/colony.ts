@@ -879,10 +879,10 @@ const controls = {
   setSpeed(n: number): void { if (capabilities.value.canManageSimulation) { bridge?.setPaused(false); bridge?.setSpeed(n); } },
   storm(): void { if (capabilities.value.canManageSimulation) bridge?.forceStorm(); },
   /** the player's crew setting for one building (the building card's buttons) */
-  setMode(uid: number, mode: BuildingMode): void {
+  setMode(uid: number, setting: BuildingMode): void {
     if (!capabilities.value.canBuild) return;
     audio.uiTick();
-    bridge?.setMode(uid, mode);
+    bridge?.setMode(uid, setting);
   },
   /** F — the commander chain: unpossessed → possess the LEADER (lowest living
    *  colonist id, ui/lead.ts); piloting the leader beside a functional rover →

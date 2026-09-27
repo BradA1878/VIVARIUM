@@ -122,7 +122,11 @@
 .end-btn:hover { background: rgba(127, 212, 232, 0.1); border-color: var(--cyan); }
 
 /* ---------- alerts ---------- */
-.right-col { position: absolute; top: 56px; right: 16px; width: 268px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.right-col {
+  position: absolute; top: 56px; right: 16px; width: 268px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+  /* many alerts plus the building card can outgrow the screen: scroll, never run under the ticker */
+  max-height: calc(100vh - 56px - var(--ticker-h) - 12px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
 .alerts { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .alert {
   display: flex; gap: 10px; align-items: stretch; background: var(--panel);
@@ -332,7 +336,8 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
     top: 54px;
     right: 8px;
     width: min(236px, calc(50vw - 12px));
-    max-height: calc(100dvh - 54px - var(--ticker-h) - 142px);
+    /* leave room for the bottom cluster, including the selected-building strip */
+    max-height: calc(100dvh - 54px - var(--ticker-h) - 192px);
     overflow-y: auto;
     overscroll-behavior: contain;
     pointer-events: auto;
@@ -340,7 +345,7 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
     padding-bottom: 4px;
     scrollbar-width: thin;
   }
-  .rail { max-height: calc(100dvh - 54px - var(--ticker-h) - 142px); }
+  .rail { max-height: calc(100dvh - 54px - var(--ticker-h) - 192px); }
   .right-col > * { max-width: 100%; }
 
   .bottom-center {
