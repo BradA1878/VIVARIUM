@@ -113,6 +113,32 @@ test("the palette keeps its rows at common desktop widths", async ({ page }, tes
   await expect(page.getByRole("button", { name: /Demolish/ })).toHaveCount(1); // in the palette's header row
 });
 
+test("the palette tooltip sits just above the hovered tile and stays on screen", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  await startColony(page);
+  const rows = () => page.evaluate(() => new Set([...document.querySelectorAll<HTMLElement>(".pal-grid .pal-btn")].map((b) => b.offsetTop)).size);
+  for (const [width, height, rowCount] of [[1728, 1117, 2], [1280, 720, 3]] as const) {
+    await page.setViewportSize({ width, height });
+    await expect.poll(rows).toBe(rowCount); // the palette has settled at this width
+    // the first tile, and the last (the Transport Pod, beside the right edge)
+    for (const name of [/^Pressure Hub/, /^Transport Pod/]) {
+      const tile = page.getByRole("button", { name });
+      await tile.hover();
+      const t = (await tile.boundingBox())!;
+      const tip = page.locator(".pal-tip");
+      await expect(tip).toBeVisible();
+      const b = (await tip.boundingBox())!;
+      const where = `${width}×${height} ${name}`;
+      // starts at the tile's left edge, pulled in to stay 8px inside the screen…
+      const left = Math.max(8, Math.min(t.x, width - b.width - 8));
+      expect(Math.abs(b.x - left), where).toBeLessThanOrEqual(1);
+      expect(b.x + b.width, where).toBeLessThanOrEqual(width);
+      // …and ends 8px above the tile
+      expect(Math.abs(b.y + b.height - (t.y - 8)), where).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
 test("switching colonies drops the selected building", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "architect console");
   test.setTimeout(90_000);

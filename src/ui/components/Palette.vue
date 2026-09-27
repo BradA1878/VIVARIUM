@@ -97,27 +97,33 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
       </button>
     </div>
 
-    <div
-      v-if="hovered"
-      class="pal-tip"
-      :style="{ left: tipPos.left + 'px', bottom: tipPos.bottom + 'px' }"
-    >
-      <div class="tip-name">
-        {{ hovered.name }}
-        <span>{{ hovered.foot[0] }}&#215;{{ hovered.foot[1] }}</span>
+    <!-- in <body>, not the palette: the palette's backdrop-filter (and the
+         bottom cluster's transform) would make it the box position:fixed
+         measures from, and the viewport coordinates below would land the
+         tooltip one palette-offset to the right -->
+    <Teleport to="body">
+      <div
+        v-if="hovered"
+        class="pal-tip"
+        :style="{ left: tipPos.left + 'px', bottom: tipPos.bottom + 'px' }"
+      >
+        <div class="tip-name">
+          {{ hovered.name }}
+          <span>{{ hovered.foot[0] }}&#215;{{ hovered.foot[1] }}</span>
+        </div>
+        <div class="tip-desc">{{ hovered.desc }}</div>
+        <div v-if="locked(hovered) && GATE_HINTS[hovered.id]" class="tip-lock">
+          &#x1F512; LOCKED — unlocks with {{ GATE_HINTS[hovered.id] }}
+        </div>
+        <div class="tip-stats">
+          <span v-for="m in makes" :key="m" class="tip-prod">{{ m }}</span>
+          <span v-if="hasEntries(hovered.consumes)" class="tip-cons">{{ consumes(hovered.consumes) }}</span>
+          <span v-if="hovered.staffing" class="tip-staff">{{ hovered.staffing }} crew</span>
+          <span v-if="hovered.requiresPressure" class="tip-press">sealed</span>
+          <span v-if="costOf(hovered) > 0" class="tip-cost">&#9635; {{ costOf(hovered) }} materials</span>
+        </div>
       </div>
-      <div class="tip-desc">{{ hovered.desc }}</div>
-      <div v-if="locked(hovered) && GATE_HINTS[hovered.id]" class="tip-lock">
-        &#x1F512; LOCKED — unlocks with {{ GATE_HINTS[hovered.id] }}
-      </div>
-      <div class="tip-stats">
-        <span v-for="m in makes" :key="m" class="tip-prod">{{ m }}</span>
-        <span v-if="hasEntries(hovered.consumes)" class="tip-cons">{{ consumes(hovered.consumes) }}</span>
-        <span v-if="hovered.staffing" class="tip-staff">{{ hovered.staffing }} crew</span>
-        <span v-if="hovered.requiresPressure" class="tip-press">sealed</span>
-        <span v-if="costOf(hovered) > 0" class="tip-cost">&#9635; {{ costOf(hovered) }} materials</span>
-      </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
