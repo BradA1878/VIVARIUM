@@ -416,6 +416,9 @@ async function goTo(slotKey: string, target: SaveData): Promise<boolean> {
     // COMMIT: the worker has loaded/caught-up the target and delivered its snapshot.
     // Only now may persistence identity and run-scoped observers move to that world.
     renderer?.resetCamera();
+    // building uids restart at 1 in every colony: a kept selection would name a
+    // different building of the arriving one (the card would act on it)
+    clearTool();
     setActiveSlot(slotKey);
     narrationEpoch++;
     liveNarrationInFlight = false;

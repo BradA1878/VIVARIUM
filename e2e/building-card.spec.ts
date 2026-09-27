@@ -110,3 +110,41 @@ test("the palette keeps its rows at common desktop widths", async ({ page }, tes
     await expect.poll(rows, { message: `${width}×${height}` }).toBe(expected);
   }
 });
+
+test("switching colonies drops the selected building", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  test.setTimeout(90_000);
+  await startColony(page);
+  // wait for the first autosave, which also writes this colony's ledger row
+  // (the default slot keeps the legacy unsuffixed save key: persistence/local.ts)
+  await expect.poll(() => page.evaluate(() => {
+    const slot = localStorage.getItem("vivarium:activeslot:v1") ?? "default";
+    const saveKey = slot === "default" ? "vivarium:save:v1" : `vivarium:save:v1:${slot}`;
+    const ledger = JSON.parse(localStorage.getItem("vivarium:colonies:v1") ?? "{}") as { colonies?: { slotKey: string }[] };
+    return !!localStorage.getItem(saveKey) && !!ledger.colonies?.some((c) => c.slotKey === slot);
+  }), { timeout: 30_000 }).toBe(true);
+  // a second world to switch to: a copy of this colony under another slot, so
+  // its building uids match this one's
+  await page.evaluate(() => {
+    const slot = localStorage.getItem("vivarium:activeslot:v1") ?? "default";
+    const saveKey = slot === "default" ? "vivarium:save:v1" : `vivarium:save:v1:${slot}`;
+    const ledger = JSON.parse(localStorage.getItem("vivarium:colonies:v1")!) as { colonies: { slotKey: string }[] };
+    const row = ledger.colonies.find((c) => c.slotKey === slot)!;
+    localStorage.setItem("vivarium:save:v1:mars:4242", localStorage.getItem(saveKey)!);
+    ledger.colonies.push({ ...row, slotKey: "mars:4242" });
+    localStorage.setItem("vivarium:colonies:v1", JSON.stringify(ledger));
+  });
+
+  const elec = await page.evaluate(() => {
+    const b = (window as DebugWindow).__viv.bridge.latest!.buildings.find((x) => x.defId === "electrolysis")!;
+    return { gx: b.gx, gy: b.gy };
+  });
+  await selectBuilding(page, elec.gx, elec.gy);
+  await expect(page.locator(".building-card")).toContainText("ELECTROLYSIS UNIT");
+
+  await page.getByRole("button", { name: /COLONIES/ }).click();
+  await page.locator(".cr-name:not([disabled])").click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("vivarium:activeslot:v1")), { timeout: 30_000 }).toBe("mars:4242");
+  // the same uid names a building of the arriving colony: no card may act on it
+  await expect(page.locator(".building-card")).toHaveCount(0);
+});
