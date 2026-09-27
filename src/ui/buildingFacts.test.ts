@@ -184,3 +184,10 @@ describe("statusLine", () => {
     expect(statusLine(makeBuilding({ uid: 1, defId: "solar" }), makeSnap())).toBe("working");
   });
 });
+
+describe("the role note's article", () => {
+  it("says \"an engineer\" for the electrolysis unit, \"a miner\" for the extractor", () => {
+    expect(buildingFacts(DEFS.electrolysis).needs).toContain("an engineer makes 25% more");
+    expect(buildingFacts(DEFS.extractor).needs).toContain("a miner makes 25% more");
+  });
+});

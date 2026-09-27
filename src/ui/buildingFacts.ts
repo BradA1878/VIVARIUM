@@ -26,7 +26,7 @@ function hasOutput(def: BuildingDef): boolean {
 function roleNote(def: BuildingDef): string | null {
   const role = BUILDING_ROLE[def.id];
   if (!role) return null;
-  if (hasOutput(def)) return `a ${role} makes 25% more`;
+  if (hasOutput(def)) return `${/^[aeiou]/.test(role) ? "an" : "a"} ${role} makes 25% more`;
   if (def.id === "medbay") return "a medic heals faster";
   return null;
 }
