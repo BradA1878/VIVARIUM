@@ -92,7 +92,7 @@ export const HINTS: Record<HintId, Hint> = {
   unlock_roboticsbay: {
     id: "unlock_roboticsbay",
     title: "NEW SCHEMATIC: ROBOTICS BAY",
-    body: "Prints autonomous mining robots that work the deposit field sol and night, no air required.",
+    body: "Builds robots that work any post your crew can't fill, sol and night, and gather resources when every post is filled. Three per bay, no air required.",
   },
   unlock_awg: {
     id: "unlock_awg",

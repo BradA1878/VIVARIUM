@@ -148,8 +148,8 @@ export const LINES: Partial<Record<EventType | "boot", Bank>> = {
     "Rover ready by the bay door. Press F beside it to take the controls.",
   ],
   robot_ready: [
-    "Mining robot online. Rolling out from the bay. It gathers without rest.",
-    "Robot fabricated. One more set of hands that does not breathe. Assigned to gathering.",
+    "Robot online. Rolling out from the bay. It takes an empty post, or gathers without rest.",
+    "Robot fabricated. One more set of hands that does not breathe. Empty posts first, then the field.",
   ],
   morale_low: [
     "Morale below threshold. Work speed measurably down. They need a quiet sol.",

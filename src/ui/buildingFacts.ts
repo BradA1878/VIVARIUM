@@ -108,12 +108,17 @@ export function statusLabel(b: BuildingState): string | null {
 }
 
 /** the fixed explanation for each off reason; `crew` is the only one that
- *  reads the snapshot (how many colonists are free right now) */
+ *  reads the snapshot (how many colonists, and robots, are free right now) */
 function offReasonLine(reason: OffReason, snap: Snapshot): string {
   switch (reason) {
-    case "crew": return snap.labor > 0
-      ? `no free colonist (${fmtNum(snap.laborUsed)} of ${fmtNum(snap.labor)} busy)`
-      : "no colonist free to work (hurt, piloted, or out gathering)";
+    case "crew": {
+      // robots count in the labor pool once the colony has any
+      const who = snap.robots.length > 0 ? "colonist or robot" : "colonist";
+      if (snap.labor > 0) return `no free ${who} (${fmtNum(snap.laborUsed)} of ${fmtNum(snap.labor)} busy)`;
+      return snap.robots.length > 0
+        ? "no colonist or robot free to work (hurt, piloted, out gathering, or stunned)"
+        : "no colonist free to work (hurt, piloted, or out gathering)";
+    }
     case "power": return "not enough power";
     case "seal": return "cut off from the pressure network";
     case "damaged": return "damaged · repairs itself over time";
@@ -131,8 +136,9 @@ function offReasonLine(reason: OffReason, snap: Snapshot): string {
 
 /** the building card's status line: the off reason's explanation; a
  *  generator's live output; for a building with a setting, who is posted
- *  there (with the trade bonus when their role matches and the def makes
- *  something) or that it turns on when the colony runs; else null */
+ *  there (a colonist, with the trade bonus when their role matches and the def
+ *  makes something, or a robot) or that it turns on when the colony runs;
+ *  else null */
 export function statusLine(b: BuildingState, snap: Snapshot): string | null {
   if (b.offReason) return offReasonLine(b.offReason, snap);
   const def = DEFS[b.defId];
@@ -149,6 +155,7 @@ export function statusLine(b: BuildingState, snap: Snapshot): string | null {
       const bonus = BUILDING_ROLE[def.id] === worker.role && hasOutput(def) ? `, +${BONUS_PCT}` : "";
       return `working · ${worker.name}, ${worker.role}${bonus}`;
     }
+    if (snap.robots.some((r) => r.workUid === b.uid)) return "working · a robot";
   }
   return "working";
 }

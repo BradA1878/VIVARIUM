@@ -5,7 +5,7 @@
    working/staffed cases.
    ============================================================================ */
 import { describe, expect, it } from "vitest";
-import type { BuildingState, ColonistView, Snapshot } from "@shared/types";
+import type { BuildingState, ColonistView, RobotView, Snapshot } from "@shared/types";
 import { DEFS } from "@/engine";
 import { buildingFacts, statusLabel, statusLine } from "./buildingFacts";
 
@@ -27,10 +27,18 @@ function makeColonist(overrides: Partial<ColonistView> = {}): ColonistView {
   };
 }
 
-// Only labor/laborUsed/colonists and the generators' solarMul/windLevel are read.
-function makeSnap(overrides: Partial<Pick<Snapshot, "labor" | "laborUsed" | "colonists" | "solarMul" | "windLevel">> = {}): Snapshot {
+function makeRobot(overrides: Partial<RobotView> = {}): RobotView {
   return {
-    labor: 0, laborUsed: 0, colonists: [], solarMul: 1, windLevel: 1,
+    id: 90, x: 0, y: 0, facing: 0, carryKind: null, carryAmt: 0, faulted: 0,
+    state: "working", workUid: null,
+    ...overrides,
+  };
+}
+
+// Only labor/laborUsed/colonists/robots and the generators' solarMul/windLevel are read.
+function makeSnap(overrides: Partial<Pick<Snapshot, "labor" | "laborUsed" | "colonists" | "robots" | "solarMul" | "windLevel">> = {}): Snapshot {
+  return {
+    labor: 0, laborUsed: 0, colonists: [], robots: [], solarMul: 1, windLevel: 1,
     ...overrides,
   } as unknown as Snapshot;
 }
@@ -206,6 +214,19 @@ describe("statusLine", () => {
   it("names why nobody is free when the labor pool is empty", () => {
     const b = makeBuilding({ uid: 1, defId: "electrolysis", online: false, offReason: "crew" });
     expect(statusLine(b, makeSnap({ labor: 0, laborUsed: 0 }))).toBe("no colonist free to work (hurt, piloted, or out gathering)");
+  });
+
+  it("says a robot runs a building no colonist was free for", () => {
+    const b = makeBuilding({ uid: 7, defId: "greenhouse" });
+    expect(statusLine(b, makeSnap({ robots: [makeRobot({ workUid: 7 })] }))).toBe("working · a robot");
+  });
+
+  it("counts robots in the crew line once the colony has any", () => {
+    const b = makeBuilding({ uid: 1, defId: "greenhouse", offReason: "crew" });
+    const robots = [makeRobot({ workUid: 4 })];
+    expect(statusLine(b, makeSnap({ labor: 5, laborUsed: 5, robots }))).toBe("no free colonist or robot (5 of 5 busy)");
+    expect(statusLine(b, makeSnap({ labor: 0, laborUsed: 0, robots: [makeRobot({ faulted: 12, state: "faulted" })] })))
+      .toBe("no colonist or robot free to work (hurt, piloted, out gathering, or stunned)");
   });
 });
 

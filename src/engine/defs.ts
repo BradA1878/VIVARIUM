@@ -194,7 +194,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 90,
     staffing: 1, consumes: { power: 4 }, produces: {},
     requiresPressure: false, priority: 20, door: 2,
-    desc: "Builds up to three mining robots that gather resources day and night. Needs one colonist.",
+    desc: "Builds up to three robots per bay. A robot works any post no colonist is free for, day and night, and gathers resources when every post is filled. Needs one colonist or robot.",
   },
   ptp: {
     id: "ptp", name: "Transport Pod", glyph: "PTP",

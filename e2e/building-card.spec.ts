@@ -177,6 +177,42 @@ test("switching colonies drops the selected building", async ({ page }, testInfo
   await expect(page.locator(".building-card")).toHaveCount(0);
 });
 
+test("a robot works a post no colonist is free for, and the card and LABOR line say so", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "architect console");
+  test.setTimeout(90_000);
+  await startColony(page);
+  // one colonist and one robot for the two seed posts (electrolysis, extractor)
+  await page.evaluate(async () => {
+    const { bridge } = (window as DebugWindow).__viv;
+    const save = await bridge.save();
+    const st = save.state;
+    st.population = 1;
+    const extractor = st.buildings.find((b) => b.defId === "extractor")!;
+    st.robots.push({
+      id: st.colonistCounter++, x: extractor.gx + 2, y: extractor.gy, facing: 0, state: "idle",
+      carryKind: null, carryAmt: 0, faulted: 0, gatherDepositId: null, gatherT: 0, workUid: null,
+    });
+    await bridge.load(save);
+    bridge.setPaused(false);
+  });
+  // the colonist keeps the post they held (by trade); the robot takes the other
+  await expect.poll(() => page.evaluate(() => (window as DebugWindow).__viv.bridge.latest!.robots[0]?.workUid ?? null),
+    { timeout: 15_000 }).not.toBeNull();
+  await page.evaluate(() => (window as DebugWindow).__viv.bridge.setPaused(true));
+  const post = await page.evaluate(() => {
+    const snap = (window as DebugWindow).__viv.bridge.latest!;
+    const b = snap.buildings.find((x) => x.uid === snap.robots[0].workUid)!;
+    return { gx: b.gx, gy: b.gy, defId: b.defId, offReason: b.offReason ?? null };
+  });
+  expect(["electrolysis", "extractor"]).toContain(post.defId);
+  expect(post.offReason).toBeNull(); // the robot's post runs
+
+  await selectBuilding(page, post.gx, post.gy);
+  const card = page.locator(".building-card");
+  await expect(card).toContainText("working · a robot");
+  await expect(page.locator(".crew")).toContainText("1 robot");
+});
+
 test("FIRST on a building waiting for crew staffs it ahead of an older one", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "architect console");
   test.setTimeout(90_000);
