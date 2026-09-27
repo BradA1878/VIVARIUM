@@ -8,6 +8,7 @@
 import { computed, ref } from "vue";
 import type { BuildingDef, Resource } from "@shared/types";
 import { DEFS, ORDER } from "@/engine";
+import { GATE_HINTS } from "@/engine/unlocks";
 import { useColony } from "@/ui/stores/colony";
 
 const { snapshot, tool, demolish, pick, toggleDemolish } = useColony();
@@ -24,20 +25,6 @@ const affordable = (d: BuildingDef): boolean => onHand.value >= costOf(d);
  *  strands a player on stale data */
 const locked = (d: BuildingDef): boolean => snapshot.value?.unlocks?.[d.id] === false;
 
-/** UI-local copy of the unlock gates (engine/unlocks.ts GATES), as the tooltip
- *  tells them — keep in step with the real conditions when rebalancing */
-const UNLOCK_HINTS: Record<string, string> = {
-  windturbine: "sol 4, or survive a dust storm",
-  geothermal: "sol 6",
-  reactor: "population 8 + 150 materials",
-  printer: "population 6",
-  roverbay: "sol 3, or stockpile 80 materials",
-  roboticsbay: "build a reactor, or population 10 + 200 materials",
-  awg: "sol 5, or population 6",
-  aquifer: "sol 8 — must sit on an aquifer site",
-  reclaimer: "population 6, or build a Hydroponics Unit",
-  fabricator: "build a Robotics Bay + 250 materials",
-};
 
 /** piloting locks construction — every tile disables while possessing */
 const piloting = computed(() => snapshot.value?.possessed != null);
@@ -115,8 +102,8 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
         <span>{{ hovered.foot[0] }}&#215;{{ hovered.foot[1] }}</span>
       </div>
       <div class="tip-desc">{{ hovered.desc }}</div>
-      <div v-if="locked(hovered) && UNLOCK_HINTS[hovered.id]" class="tip-lock">
-        &#x1F512; LOCKED — unlocks at {{ UNLOCK_HINTS[hovered.id] }}
+      <div v-if="locked(hovered) && GATE_HINTS[hovered.id]" class="tip-lock">
+        &#x1F512; LOCKED — unlocks at {{ GATE_HINTS[hovered.id] }}
       </div>
       <div class="tip-stats">
         <span v-if="hovered.solar" class="tip-prod">+{{ hovered.solar }} power (solar)</span>

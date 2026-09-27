@@ -25,11 +25,11 @@ export const GATES: Record<string, (s: ColonyState) => boolean> = {
   roboticsbay: (s) =>
     s.buildings.some((b) => b.defId === "reactor") ||
     (s.population >= 10 && s.materials.amount >= 200),
-  // the self-replicator sits one rung past the robot shop: a built Robotics Bay
-  // plus a stockpile deep enough to survive the lineage's compounding fees
-  // (thresholds are starting guesses — tune by playtest, like the ptp gate's)
-  fabricator: (s) =>
-    s.buildings.some((b) => b.defId === "roboticsbay") && s.materials.amount >= 250,
+  // a crewless food source for colonies short of hands: open once Hydroponics
+  // is known, or by sol 6
+  bioprinter: (s) => s.sol >= 6 || s.buildings.some((b) => b.defId === "greenhouse"),
+  // power into whatever is running out: a reactor-era machine
+  atomic: (s) => s.buildings.some((b) => b.defId === "reactor"),
   awg: (s) => s.sol >= 5 || s.population >= 6,
   aquifer: (s) => s.sol >= 8,
   // a mid-game efficiency unlock: once the colony has grown, OR you've built the
@@ -47,6 +47,23 @@ export const GATES: Record<string, (s: ColonyState) => boolean> = {
     s.settlementEstablished === true &&
     s.buildings.some((b) => b.defId === "reactor") &&
     s.population >= 12,
+};
+
+/** each gate, as the palette's locked tooltip says it — kept beside the rules
+ *  so the two change together */
+export const GATE_HINTS: Record<string, string> = {
+  windturbine: "sol 4, or survive a dust storm",
+  geothermal: "sol 6",
+  reactor: "population 8 + 150 materials",
+  printer: "population 6",
+  roverbay: "sol 3, or stockpile 80 materials",
+  roboticsbay: "build a reactor, or population 10 + 200 materials",
+  awg: "sol 5, or population 6",
+  aquifer: "sol 8 — must sit on an aquifer site",
+  reclaimer: "population 6, or build a Hydroponics",
+  bioprinter: "sol 6, or build a Hydroponics",
+  atomic: "build a Fission Reactor",
+  ptp: "prove the outpost, build a reactor, and reach 12 colonists",
 };
 
 /** is this def still behind its gate? Founding defs are never locked.

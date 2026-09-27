@@ -2,15 +2,16 @@
    Facility — one builder for the industrial fabrication family, switched by a
    specFor(id) the way tank.ts keys its vessels:
 
-     printer     — a boxy fabricator with a reciprocating out-feed tray and
-                   front status-bar lights that pulse while it runs
+     printer     — a boxy printer with a reciprocating out-feed tray and
+                   front status-bar lights that pulse while it runs (the 3D
+                   Printer, and the Bio Printer in green)
      roverbay    — a garage: a wide low box with a recessed emissive door slab
                    on the def's door side and a shallow ramp out of it
      roboticsbay — a gantry: four corner posts under a top frame, with a tool
                    and crossbeam traversing the rails over the work floor
-     fabricator  — the self-replicator: twin extruder towers over an emissive
-                   core, with a front gauge that FILLS with replication
-                   progress (status.fill) instead of chasing
+     atomic      — the Atomic Printer: twin extruder towers over an emissive
+                   core, with front status segments that chase while it runs;
+                   sized to its 2×2 footprint
 
    Local door convention: def.door = 2 (S) is local +Z before rotation; the
    renderer turns the whole group by the building's rot, so the garage door and
@@ -23,7 +24,7 @@ import { disposeObject } from "./contract";
 import { statusGlow, applyGlow } from "../materials";
 
 interface FacilitySpec {
-  kind: "printer" | "roverbay" | "roboticsbay" | "fabricator";
+  kind: "printer" | "roverbay" | "roboticsbay" | "atomic";
   /** body metal hex */
   metal: string;
 }
@@ -31,11 +32,13 @@ interface FacilitySpec {
 function specFor(id: string): FacilitySpec {
   switch (id) {
     case "printer":
-      return { kind: "printer", metal: "#838a96" }; // steel fabricator
+      return { kind: "printer", metal: "#838a96" }; // steel printer
+    case "bioprinter":
+      return { kind: "printer", metal: "#6f8a6a" }; // the same printer, in green
     case "roverbay":
       return { kind: "roverbay", metal: "#76828e" }; // garage blue-grey
-    case "fabricator":
-      return { kind: "fabricator", metal: "#7d8a6e" }; // moss — the lineage's livery
+    case "atomic":
+      return { kind: "atomic", metal: "#6e6a8a" }; // violet steel
     case "roboticsbay":
     default:
       return { kind: "roboticsbay", metal: "#7f8790" }; // workshop steel
@@ -76,7 +79,7 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
   };
 
   if (spec.kind === "printer") {
-    // --- boxy fabricator: a tall body, a hopper on top, front status bars -----
+    // --- boxy printer: a tall body, a hopper on top, front status bars --------
     const bodyW = w * 0.78, bodyH = cell * 0.85, bodyD = d * 0.7;
     box(new THREE.BoxGeometry(bodyW, bodyH, bodyD), metalMat, 0, bodyH / 2, 0);
     box(new THREE.BoxGeometry(bodyW * 0.5, cell * 0.22, bodyD * 0.5), trimMat, 0, bodyH + cell * 0.11, -bodyD * 0.1); // regolith hopper
@@ -116,31 +119,33 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
     ramp.rotation.x = 0.1; // tips down toward the apron
     ramp.receiveShadow = true;
     group.add(ramp);
-  } else if (spec.kind === "fabricator") {
-    // --- self-replicator: twin extruder towers over an emissive core, front
-    // gauge segments that FILL with replication progress (see setStatus) ------
-    const bodyW = w * 0.72, bodyH = cell * 0.42, bodyD = d * 0.72;
+  } else if (spec.kind === "atomic") {
+    // --- Atomic Printer: twin extruder towers over an emissive core, front
+    // status segments that chase while it runs. Every size is in units of the
+    // footprint's short side, so the 2×2 reads as the same machine, larger. ---
+    const u = Math.min(w, d);
+    const bodyW = w * 0.72, bodyH = u * 0.42, bodyD = d * 0.72;
     box(new THREE.BoxGeometry(bodyW, bodyH, bodyD), metalMat, 0, bodyH / 2, 0); // plinth
-    const towerGeo = new THREE.BoxGeometry(cell * 0.14, cell * 0.62, cell * 0.14);
-    box(towerGeo, trimMat, -bodyW * 0.32, bodyH + cell * 0.31, -bodyD * 0.18);
-    box(towerGeo, trimMat, bodyW * 0.32, bodyH + cell * 0.31, -bodyD * 0.18);
-    box(new THREE.BoxGeometry(bodyW * 0.78, cell * 0.07, cell * 0.14), trimMat, 0, bodyH + cell * 0.58, -bodyD * 0.18); // gantry beam
+    const towerGeo = new THREE.BoxGeometry(u * 0.14, u * 0.62, u * 0.14);
+    box(towerGeo, trimMat, -bodyW * 0.32, bodyH + u * 0.31, -bodyD * 0.18);
+    box(towerGeo, trimMat, bodyW * 0.32, bodyH + u * 0.31, -bodyD * 0.18);
+    box(new THREE.BoxGeometry(bodyW * 0.78, u * 0.07, u * 0.14), trimMat, 0, bodyH + u * 0.58, -bodyD * 0.18); // gantry beam
     // A compact extruder rides below the beam, clear of the core and towers.
     const extruder = new THREE.Group();
     extruder.name = "facility-extruder";
     group.add(extruder);
-    extruder.add(box(new THREE.BoxGeometry(cell * 0.11, cell * 0.07, cell * 0.1), metalMat, 0, bodyH + cell * 0.51, -bodyD * 0.18));
-    extruder.add(box(new THREE.BoxGeometry(cell * 0.035, cell * 0.05, cell * 0.035), trimMat, 0, bodyH + cell * 0.45, -bodyD * 0.18));
+    extruder.add(box(new THREE.BoxGeometry(u * 0.11, u * 0.07, u * 0.1), metalMat, 0, bodyH + u * 0.51, -bodyD * 0.18));
+    extruder.add(box(new THREE.BoxGeometry(u * 0.035, u * 0.05, u * 0.035), trimMat, 0, bodyH + u * 0.45, -bodyD * 0.18));
     motionRate = 0.8;
-    poseMotion = (phase) => { extruder.position.x = cell * 0.08 * Math.sin(phase); };
-    // the core — where the copy takes shape; shares the beacon glow material
-    const core = new THREE.Mesh(new THREE.BoxGeometry(cell * 0.26, cell * 0.26, cell * 0.26), lightMat);
-    core.position.set(0, bodyH + cell * 0.24, -bodyD * 0.18);
+    poseMotion = (phase) => { extruder.position.x = u * 0.08 * Math.sin(phase); };
+    // the core — where the matter is assembled; shares the beacon glow material
+    const core = new THREE.Mesh(new THREE.BoxGeometry(u * 0.26, u * 0.26, u * 0.26), lightMat);
+    core.position.set(0, bodyH + u * 0.24, -bodyD * 0.18);
     core.rotation.y = Math.PI / 4;
     core.castShadow = true;
     group.add(core);
-    // the front (+Z) gauge: 4 segments that light up as the countdown runs down
-    const segGeo = new THREE.BoxGeometry(bodyW * 0.16, cell * 0.05, cell * 0.02);
+    // the front (+Z) status segments: 4 lights that chase while it runs
+    const segGeo = new THREE.BoxGeometry(bodyW * 0.16, u * 0.05, u * 0.02);
     for (let i = 0; i < 4; i++) {
       const segMat = materials.glow();
       barMats.push(segMat);
@@ -186,9 +191,9 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
   poseMotion?.(motionPhase);
 
   // a small shared status beacon for the variants whose "screen" is dim
-  // geometry otherwise (the printer's bars double as its beacon; the
-  // fabricator's core cube already rides lightMat)
-  if (spec.kind !== "printer" && spec.kind !== "fabricator") {
+  // geometry otherwise (the printer's bars double as its beacon; the atomic
+  // printer's core cube already rides lightMat)
+  if (spec.kind !== "printer" && spec.kind !== "atomic") {
     const beacon = new THREE.Mesh(new THREE.SphereGeometry(cell * 0.04, 10, 8), lightMat);
     beacon.position.set(-w * 0.32, spec.kind === "roverbay" ? cell * 0.66 : cell * 0.86, -d * 0.3);
     group.add(beacon);
@@ -196,8 +201,7 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
 
   function setStatus(status: BuildingStatus, pulse: number, env?: KitEnv): void {
     const dt = env?.dt ?? 0;
-    const working = (status.working ?? status.alive) && status.alive && !env?.paused
-      && (spec.kind !== "fabricator" || (status.fill ?? 0) < 1);
+    const working = (status.working ?? status.alive) && status.alive && !env?.paused;
     if (poseMotion && working && Number.isFinite(dt) && dt > 0) {
       motionPhase = (motionPhase + motionRate * dt) % (Math.PI * 2);
       poseMotion(motionPhase);
@@ -206,19 +210,11 @@ export const buildFacility: KitBuilder = (ctx: KitContext): KitMesh => {
     const color = statusGlow(status.alive, status.hurt);
     const intensity = (0.35 + 0.55 * pulse) * (status.alive ? 1 + 1.2 * night : 1);
     applyGlow(lightMat, color, intensity);
-    // the printer's bar segments chase left→right while alive, freeze dim when
-    // not; the fabricator's are a GAUGE — they light steadily as status.fill
-    // (replication progress) climbs, so a yard of staggered countdowns reads
+    // the bar segments (printer and atomic printer) chase left→right while
+    // alive, and freeze dim when not
     for (let i = 0; i < barMats.length; i++) {
-      let seg: number;
-      if (spec.kind === "fabricator") {
-        const lit = (status.fill ?? 0) * barMats.length > i;
-        seg = !status.alive ? 0.12 : lit ? 1.15 : 0.22;
-      } else {
-        const phase = (pulse + i / barMats.length) % 1;
-        seg = status.alive ? 0.35 + 0.9 * phase : 0.12;
-      }
-      applyGlow(barMats[i], color, seg);
+      const phase = (pulse + i / barMats.length) % 1;
+      applyGlow(barMats[i], color, status.alive ? 0.35 + 0.9 * phase : 0.12);
     }
   }
 

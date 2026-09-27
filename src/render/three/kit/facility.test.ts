@@ -7,9 +7,10 @@ import type { BuildingStatus } from "./contract";
 
 const movingParts = {
   printer: "facility-outfeed",
+  bioprinter: "facility-outfeed",
   roboticsbay: "facility-gantry",
   reclaimer: "facility-gantry",
-  fabricator: "facility-extruder",
+  atomic: "facility-extruder",
 } as const;
 type MovingFacility = keyof typeof movingParts;
 const active: BuildingStatus = { alive: true, hurt: false, fill: 0.5 };
@@ -36,8 +37,8 @@ describe("functional facility motion", () => {
     expect(part.position.equals(running)).toBe(true);
     kit.setStatus({ ...active, alive: false, hurt: true }, 0, { night: 0, dt: 20 });
     expect(part.position.equals(running)).toBe(true);
-    // An operational line may be deliberately held (e.g. the lineage cap)
-    // even though it has power and a partially completed fabrication cycle.
+    // An operational line may be deliberately held (e.g. the Robotics Bay at
+    // its fleet cap) even though it has power.
     kit.setStatus({ ...active, working: false }, 0, { night: 0, dt: 20 });
     expect(part.position.equals(running)).toBe(true);
     // Missing/bad frame deltas must neither move the tool nor poison its phase.
@@ -61,21 +62,22 @@ describe("functional facility motion", () => {
     expect(low.part.position.distanceTo(high.part.position)).toBeLessThan(1e-12);
   });
 
-  it("holds a completed fabricator in place while keeping its full progress gauge", () => {
-    const { kit, part } = facility("fabricator");
-    kit.setStatus(active, 0.4, { night: 0, dt: 1 });
-    const running = part.position.clone();
-    for (const fill of [1, 1.1]) {
-      kit.setStatus({ ...active, fill }, 0.7, { night: 0, dt: 10 });
-      expect(part.position.equals(running)).toBe(true);
-    }
-    const gauge = kit.object.children.filter((o) => o.position.z > 0.35) as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>[];
-    expect(gauge).toHaveLength(4);
-    expect(gauge.map((seg) => seg.material.emissiveIntensity)).toEqual([1.15, 1.15, 1.15, 1.15]);
-    kit.setStatus({ ...active, fill: 0 }, 0.1, { night: 0, dt: 1 });
-    const reference = facility("fabricator");
-    reference.kit.setStatus(active, 0.1, { night: 0, dt: 2 });
-    expect(part.position.distanceTo(reference.part.position)).toBeLessThan(1e-12);
+  it("the atomic printer's front segments chase while it runs and dim when it stops", () => {
+    const { kit } = facility("atomic");
+    const front = kit.object.children.filter((o) => o.position.z > 0.7) as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>[];
+    expect(front).toHaveLength(4);
+    kit.setStatus(active, 0.1, { night: 0, dt: 1 });
+    const lit = front.map((seg) => seg.material.emissiveIntensity);
+    expect(new Set(lit).size).toBeGreaterThan(1); // a chase, not a flat bar
+    kit.setStatus({ ...active, alive: false }, 0.1, { night: 0, dt: 1 });
+    expect(front.map((seg) => seg.material.emissiveIntensity)).toEqual([0.12, 0.12, 0.12, 0.12]);
+  });
+
+  it("the Bio Printer is the printer body in its own colour", () => {
+    const bio = facility("bioprinter");
+    const steel = facility("printer");
+    expect(bio.kit.object.children.length).toBe(steel.kit.object.children.length);
+    expect(bio.kit.object.name).toBe("facility:bioprinter");
   });
 
   it.each(["roboticsbay", "reclaimer"] as const)("keeps the %s tool, cable and beam attached within the original gantry", (id) => {
@@ -96,16 +98,17 @@ describe("functional facility motion", () => {
   });
 
   it("keeps the extruder clear of its core and towers, and the printer tray inside its old extent", () => {
-    const fab = facility("fabricator");
+    const atomic = facility("atomic");
     const printer = facility("printer");
-    const towerInner = 0.72 * 0.32 - 0.14 / 2;
+    const u = 2; // the atomic printer is 2×2: every part is in units of its short side
+    const towerInner = u * (0.72 * 0.32 - 0.14 / 2);
     for (let i = 0; i < 120; i++) {
-      fab.kit.setStatus(active, 0.5, { night: 0, dt: 0.25 });
-      const head = new THREE.Box3().setFromObject(fab.part);
+      atomic.kit.setStatus(active, 0.5, { night: 0, dt: 0.25 });
+      const head = new THREE.Box3().setFromObject(atomic.part);
       expect(head.min.x).toBeGreaterThan(-towerInner);
       expect(head.max.x).toBeLessThan(towerInner);
-      expect(head.min.y).toBeGreaterThan(0.42 + 0.24 + 0.26 / 2); // core top
-      expect(head.max.y).toBeLessThanOrEqual(0.42 + 0.58 - 0.07 / 2 + 1e-7); // beam bottom
+      expect(head.min.y).toBeGreaterThan(u * (0.42 + 0.24 + 0.26 / 2)); // core top
+      expect(head.max.y).toBeLessThanOrEqual(u * (0.42 + 0.58 - 0.07 / 2) + 1e-7); // beam bottom
       printer.kit.setStatus(active, 0.5, { night: 0, dt: 0.25 });
       const tray = new THREE.Box3().setFromObject(printer.part);
       expect(tray.max.z).toBeLessThanOrEqual(0.7 / 2 + 0.07 + 0.16 / 2 + 1e-7);

@@ -24,18 +24,17 @@ describe("telemetry features", () => {
     expect(v[4]).toBeCloseTo(0.5, 5);
   });
 
-  it("the fabricator feature (index 10) scales with the lineage and saturates at 16", () => {
+  it("the last feature (index 10) is the share of the labor pool at work", () => {
     const s = new Colony().snapshot();
-    const fabIdx = FEATURE_LABELS.indexOf("the fabricators");
-    expect(fabIdx).toBe(10); // appended at the END — earlier indices stay stable
-    expect(featureVector(s)[fabIdx]).toBe(0); // a founding colony has none
-
-    const fab = { ...s.buildings[0], uid: 900, defId: "fabricator" };
-    s.buildings = [...s.buildings, ...Array.from({ length: 8 }, (_, i) => ({ ...fab, uid: 900 + i }))];
-    expect(featureVector(s)[fabIdx]).toBeCloseTo(0.5, 5); // 8 of 16
-
-    s.buildings = [...s.buildings, ...Array.from({ length: 40 }, (_, i) => ({ ...fab, uid: 950 + i }))];
-    expect(featureVector(s)[fabIdx]).toBe(1); // clamped — a runaway pins the feature
+    const idx = FEATURE_LABELS.indexOf("the crew at work");
+    expect(idx).toBe(10); // the vector keeps its length: this slot watched the Fabricator
+    expect(featureVector(s)).toHaveLength(11);
+    s.labor = 4;
+    s.laborUsed = 3;
+    expect(featureVector(s)[idx]).toBeCloseTo(0.75, 5);
+    s.labor = 0;
+    s.laborUsed = 0;
+    expect(featureVector(s)[idx]).toBe(0); // nobody to work: no divide by zero
   });
 });
 

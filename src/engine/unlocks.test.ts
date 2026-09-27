@@ -100,12 +100,11 @@ describe("GATES — the truth table, by state injection", () => {
     expect(GATES.roboticsbay(gateState({ population: 9, materials: mat(200) }))).toBe(false);
   });
 
-  it("fabricator: a roboticsbay exists AND materials ≥ 250", () => {
-    const bayBuilt = () => [{ defId: "roboticsbay" } as BuildingState];
-    expect(GATES.fabricator(gateState())).toBe(false);
-    expect(GATES.fabricator(gateState({ buildings: bayBuilt(), materials: mat(249) }))).toBe(false);
-    expect(GATES.fabricator(gateState({ materials: mat(250) }))).toBe(false); // rich, but no bay
-    expect(GATES.fabricator(gateState({ buildings: bayBuilt(), materials: mat(250) }))).toBe(true);
+  it("bioprinter: a greenhouse exists OR sol ≥ 6; atomic: a reactor exists", () => {
+    expect(GATES.bioprinter(gateState())).toBe(false);
+    expect(GATES.bioprinter(gateState({ buildings: [{ defId: "greenhouse" } as BuildingState] }))).toBe(true);
+    expect(GATES.atomic(gateState())).toBe(false);
+    expect(GATES.atomic(gateState({ buildings: reactorBuilt() }))).toBe(true);
   });
 });
 
@@ -113,19 +112,19 @@ describe("GATES — the truth table, by state injection", () => {
 
 describe("updateUnlocks — latch once, announce once", () => {
   it("emits `unlock` with defId AND the display name, exactly once per def", () => {
-    const s = gateState({ sol: 6, materials: mat(90) }); // roverbay + windturbine + geothermal + awg (sol ≥ 5)
+    const s = gateState({ sol: 6, materials: mat(90) }); // roverbay + windturbine + geothermal + awg (sol ≥ 5) + bioprinter (sol ≥ 6)
     const { events, emit } = collector();
     updateUnlocks(s, emit);
     const unlocks = events.filter((e) => e.type === "unlock");
     expect(unlocks.map((e) => e.defId).sort())
-      .toEqual(["awg", "geothermal", "roverbay", "windturbine"]);
+      .toEqual(["awg", "bioprinter", "geothermal", "roverbay", "windturbine"]);
     expect(unlocks.find((e) => e.defId === "geothermal")!.detail).toBe("Geothermal Tap");
     expect(unlocks.find((e) => e.defId === "roverbay")!.detail).toBe("Rover Bay");
     expect(unlocks.find((e) => e.defId === "awg")!.detail).toBe("Atmospheric Water Generator");
-    expect(s.unlocked.sort()).toEqual(["awg", "geothermal", "roverbay", "windturbine"]);
+    expect(s.unlocked.sort()).toEqual(["awg", "bioprinter", "geothermal", "roverbay", "windturbine"]);
 
     updateUnlocks(s, emit); // already latched — silence
-    expect(events.filter((e) => e.type === "unlock")).toHaveLength(4);
+    expect(events.filter((e) => e.type === "unlock")).toHaveLength(5);
   });
 
   it("the latch survives condition regression — an unlock never revokes", () => {

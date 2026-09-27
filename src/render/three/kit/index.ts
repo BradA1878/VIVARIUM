@@ -22,8 +22,8 @@ function builderFor(def: BuildingDef): KitBuilder {
   if (def.id === "battery") return buildDrum;
   if (def.id === "windturbine") return buildWind;
   if (def.id === "reactor") return buildReactor;
-  if (def.id === "printer" || def.id === "roverbay" || def.id === "roboticsbay" ||
-      def.id === "reclaimer" || def.id === "fabricator") {
+  if (def.id === "printer" || def.id === "bioprinter" || def.id === "atomic" ||
+      def.id === "roverbay" || def.id === "roboticsbay" || def.id === "reclaimer") {
     return buildFacility;
   }
   if (

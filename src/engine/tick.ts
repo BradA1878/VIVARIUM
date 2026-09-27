@@ -29,7 +29,7 @@ import { availableColonistLabor, stepColonists } from "./colonists";
 import { updateInjuries } from "./injury";
 import { pilotRover, updateRoverFab } from "./rover";
 import { stepRobots, updateRobotFab } from "./robots";
-import { updateFabricatorReplication } from "./fabricator";
+import { lowestPrintTarget } from "./printers";
 import { roleMatchCount } from "./roster";
 import { bumpMorale, moraleMult, updateMorale } from "./morale";
 import { respawnDeposits } from "./deposits";
@@ -231,6 +231,16 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
         s.materials.capacity, s.materials.amount + d.producesMat * eff * dt,
       );
     }
+    // the Atomic Printer: whichever of oxygen, water, food, materials is lowest
+    if (d.printsLowest) {
+      const target = lowestPrintTarget(s);
+      if (target === "materials") {
+        s.materials.amount = Math.min(s.materials.capacity, s.materials.amount + d.printsLowest.materials * eff * dt);
+      } else {
+        addPool(s, target, d.printsLowest[target] * eff * dt);
+        net[target] += d.printsLowest[target] * eff;
+      }
+    }
     b.util = 1;
   }
 
@@ -345,9 +355,6 @@ export function tick(s: ColonyState, dt: number, rng: RNG, envRng: RNG, emit: Em
   // colonists' pass built, so the species never thrash over a node.
   updateRobotFab(s, dt, emit);
   stepRobots(s, dt, claims);
-  // rung 4 — the self-replicating Fabricator lineage: per-instance countdowns,
-  // copies placed on adjacent ground, growth throttled by power/materials/grid.
-  updateFabricatorReplication(s, dt, emit);
 
   // 7d. Abundance unlocks — the expansion palette latches open as the colony
   // proves itself (pure derivations over the resolved state, zero rng draws)

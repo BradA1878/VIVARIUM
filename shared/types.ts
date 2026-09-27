@@ -67,8 +67,12 @@ export interface BuildingDef {
   wind?: number;
   /** flat generation, sol or night (geothermal) — pass 2, like solar */
   steady?: number;
-  /** materials trickled per second at full operation (the printer) — pass 4, × eff */
+  /** materials trickled per second at full operation (the 3D Printer) — pass 4, × eff */
   producesMat?: number;
+  /** the Atomic Printer: each tick, output this rate of whichever listed
+   *  resource is lowest as a share of its capacity (ties in listed order) —
+   *  pass 4, × eff, like produces / producesMat */
+  printsLowest?: { oxygen: number; water: number; food: number; materials: number };
   /** placement requires a footprint cell on a geothermal vent */
   needsVent?: true;
   /** placement requires a footprint cell on a subsurface aquifer (parallel to needsVent) */
@@ -89,13 +93,6 @@ export interface BuildingDef {
   /** which local side the airlock/door is on (pressure buildings only). The
    *  world door side is (door + rot) % 4; corridors auto-route to its exit cell. */
   door?: Side;
-  /** on a materials-gated countdown, places a copy of DEFS[targetDefId] in an
-   *  adjacent cell — targetDefId === own id → self-replication. Mirrors the
-   *  Rover/Robotics Bay fabrication idioms, but the countdown lives per
-   *  INSTANCE (BuildingState.replicateT) and the output is a placed building.
-   *  The completion fee is the TARGET def's own matCost, so canPlace's
-   *  affordability check agrees by construction. */
-  replicates?: { targetDefId: string; buildS: number };
   desc: string;
 }
 
@@ -138,10 +135,6 @@ export interface BuildingState {
   offReason?: OffReason;
   /** the player's crew setting; undefined means NORMAL, so saves carry only what was set */
   mode?: "first" | "off";
-  /** seconds until this instance's replication completes (replicates defs only);
-   *  undefined until its first ticking tick — per-instance, unlike the colony-
-   *  scalar roverFab/robotFab, because each lineage member runs its own clock */
-  replicateT?: number;
 }
 
 export type Weather = "clear" | "dust";
@@ -482,10 +475,6 @@ export type EventType =
   | "robot_ready"
   /** a meteor/quake strike scrapped a robot (its cell in gx/gy) */
   | "robot_destroyed"
-  /** a Fabricator finished a copy (target defId + the child's cell; n = lineage size) */
-  | "fabricator_ready"
-  /** a completed cycle can't place or afford its copy — once per stall episode */
-  | "fabricator_stalled"
   /** campaign end states (doc §2.5) */
   | "victory"
   | "defeat"

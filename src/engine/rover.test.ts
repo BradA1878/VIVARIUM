@@ -48,8 +48,8 @@ function placeBay(c: Colony): { gx: number; gy: number } {
 // ---- the def + palette order ---------------------------------------------------
 
 describe("the Rover Bay def", () => {
-  it("appends roverbay right after printer, preserving medbay-after-greenhouse", () => {
-    expect(ORDER[ORDER.indexOf("printer") + 1]).toBe("roverbay");
+  it("places roverbay right after the printers, preserving medbay-after-greenhouse", () => {
+    expect(ORDER.slice(ORDER.indexOf("printer"), ORDER.indexOf("printer") + 4)).toEqual(["printer", "bioprinter", "atomic", "roverbay"]);
     expect(ORDER[ORDER.indexOf("greenhouse") + 1]).toBe("medbay");
   });
 

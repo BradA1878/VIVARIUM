@@ -509,7 +509,7 @@ describe("the materials printer", () => {
 
 describe("defs + palette order", () => {
   it("appends the four after deflector, preserving medbay-after-greenhouse", () => {
-    // the fabricator bays (roverbay, roboticsbay) append after these four
+    // the printers and the bays (roverbay, roboticsbay) follow these four
     expect(ORDER.slice(ORDER.indexOf("deflector") + 1, ORDER.indexOf("deflector") + 5))
       .toEqual(["windturbine", "geothermal", "reactor", "printer"]);
     expect(ORDER[ORDER.indexOf("greenhouse") + 1]).toBe("medbay");

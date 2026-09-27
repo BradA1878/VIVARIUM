@@ -8,7 +8,6 @@
    life support. (Doc §2.4 pass 3, §4.4.)
    ============================================================================ */
 import type { BuildingDef } from "@shared/types";
-import { FAB_BUILD_S, FAB_MAT_COST } from "./tuning";
 
 export const DEFS: Record<string, BuildingDef> = {
   hub: {
@@ -18,7 +17,7 @@ export const DEFS: Record<string, BuildingDef> = {
     staffing: 0, consumes: { power: 1.5 }, produces: {},
     requiresPressure: false, isHub: true, priority: 99, door: 2,
     caps: { oxygen: 30 },
-    desc: "Source of pressure. Everything sealed flood-fills from here.",
+    desc: "The center of a pressure network. Sealed buildings connect back to a hub, directly or through corridors and other sealed buildings. Each hub starts its own network.",
   },
   corridor: {
     id: "corridor", name: "Corridor", glyph: "===",
@@ -26,7 +25,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 2,
     staffing: 0, consumes: { power: 0.2 }, produces: {},
     requiresPressure: false, conduit: true, priority: 95,
-    desc: "Pressurized link. Carries the seal between hub and habs.",
+    desc: "A pressurized tube that carries the seal between the network and sealed buildings. Sealed buildings lay their own when placed; use this for manual runs and repairs.",
   },
   hab: {
     id: "hab", name: "Habitat", glyph: "HAB",
@@ -34,7 +33,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 24,
     staffing: 0, consumes: { power: 1.0 }, produces: {},
     requiresPressure: true, priority: 88, popCap: 4, door: 2,
-    desc: "Houses 4 colonists. Heated. Must stay pressurized.",
+    desc: "Beds for colonists. New colonists arrive or are born only when there are free beds. Needs the seal.",
   },
   solar: {
     id: "solar", name: "Solar Array", glyph: "PV",
@@ -42,7 +41,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 16,
     staffing: 0, consumes: {}, produces: {}, solar: 22,
     requiresPressure: false, priority: 0,
-    desc: "Power from sunlight. Follows the sol. Gutted by dust storms.",
+    desc: "Power from sunlight: most at noon, none at night, little in a dust storm.",
   },
   battery: {
     id: "battery", name: "Battery Bank", glyph: "BAT",
@@ -50,7 +49,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 14,
     staffing: 0, consumes: {}, produces: {},
     requiresPressure: false, priority: 0, caps: { power: 120 },
-    desc: "Stores power. The only thing between you and the dark.",
+    desc: "Stores power for the night and for storms.",
   },
   extractor: {
     id: "extractor", name: "Ice Extractor", glyph: "H2O",
@@ -58,7 +57,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 18,
     staffing: 1, consumes: { power: 5 }, produces: { water: 4 },
     requiresPressure: false, priority: 45,
-    desc: "Cheap starter water. Runs on power alone — no ice deposit needed.",
+    desc: "Makes water from the ground with power alone. Needs one colonist; a miner makes more.",
   },
   awg: {
     id: "awg", name: "Atmospheric Water Generator", glyph: "AWG",
@@ -66,7 +65,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 45,
     staffing: 1, consumes: { power: 12 }, produces: { water: 8 },
     requiresPressure: false, priority: 44,
-    desc: "Condenses water vapor from the thin Martian air. Power in, water out.",
+    desc: "Pulls water out of the air: more water than the extractor, for more power. Needs one colonist.",
   },
   aquifer: {
     id: "aquifer", name: "Aquifer Well", glyph: "AQF",
@@ -74,7 +73,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 60,
     staffing: 1, consumes: { power: 3 }, produces: { water: 14 }, needsAquifer: true,
     requiresPressure: false, priority: 46,
-    desc: "Pumps a subsurface brine aquifer. Huge water for little power — only seats on an aquifer site.",
+    desc: "Pumps an underground aquifer: the most water for the least power. Must sit on an aquifer site. Needs one colonist.",
   },
   reclaimer: {
     id: "reclaimer", name: "Water Reclaimer", glyph: "RCL",
@@ -82,7 +81,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 40,
     staffing: 1, consumes: { power: 6 }, produces: {}, reclaim: { frac: 0.45, max: 2.5 },
     requiresPressure: true, priority: 40, door: 2,
-    desc: "Recycles greywater. Returns a slice of every drop the colony draws.",
+    desc: "Recycles used water, returning part of what the colony uses. Needs one colonist and the seal.",
   },
   electrolysis: {
     id: "electrolysis", name: "Electrolysis Unit", glyph: "O2",
@@ -90,7 +89,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 22,
     staffing: 1, consumes: { power: 7, water: 2.5 }, produces: { oxygen: 5 },
     requiresPressure: true, priority: 82, door: 2,
-    desc: "Splits water for breathable oxygen. Life support — served first.",
+    desc: "Splits water into oxygen for the crew to breathe. Needs one colonist (an engineer makes more) and the seal. Among the last to lose power in a brownout.",
   },
   greenhouse: {
     id: "greenhouse", name: "Hydroponics", glyph: "GRO",
@@ -98,7 +97,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 30,
     staffing: 1, consumes: { power: 6, water: 3 }, produces: { food: 5, oxygen: 0.4 },
     requiresPressure: true, priority: 30, door: 2,
-    desc: "Food, with trace oxygen as a crop byproduct. Needs a botanist. Shed early in a brownout.",
+    desc: "Grows food, with a little oxygen on the side. Needs one colonist (a botanist grows more) and the seal. Loses power early in a brownout.",
   },
   medbay: {
     id: "medbay", name: "Med-Bay", glyph: "MED",
@@ -106,7 +105,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 26,
     staffing: 1, consumes: { power: 4 }, produces: {},
     requiresPressure: true, priority: 60, door: 2,
-    desc: "Triage for strike wounds. Heals fastest at its door, under a medic.",
+    desc: "Heals injured colonists, fastest at its door. Needs one colonist (a medic heals faster) and the seal.",
   },
   cistern: {
     id: "cistern", name: "Water Cistern", glyph: "CIS",
@@ -114,7 +113,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 16,
     staffing: 0, consumes: {}, produces: {},
     requiresPressure: false, priority: 0, caps: { water: 160 },
-    desc: "Holds water. Buffers the gap between extraction and demand.",
+    desc: "Stores water.",
   },
   o2tank: {
     id: "o2tank", name: "Oxygen Tank", glyph: "TNK",
@@ -122,7 +121,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 18,
     staffing: 0, consumes: {}, produces: {},
     requiresPressure: false, priority: 0, caps: { oxygen: 130 },
-    desc: "Reserve oxygen. Counts down the suffocation timer for you.",
+    desc: "Stores oxygen.",
   },
   deflector: {
     id: "deflector", name: "Deflector Array", glyph: "DFL",
@@ -130,7 +129,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 30,
     staffing: 0, consumes: { power: 3.5 }, produces: {},
     requiresPressure: false, priority: 35,
-    desc: "Wards off abductors while powered. Sheds early in a brownout — keep it lit.",
+    desc: "Keeps UFO abductors away while it has power. Loses power early in a brownout.",
   },
   windturbine: {
     id: "windturbine", name: "Wind Turbine", glyph: "WND",
@@ -138,7 +137,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 28,
     staffing: 0, consumes: {}, produces: {}, wind: 9,
     requiresPressure: false, priority: 0,
-    desc: "Power from moving air. Strongest at night and in dust — the panel's complement.",
+    desc: "Power from wind: strongest at night and in dust storms, when solar is weakest.",
   },
   geothermal: {
     id: "geothermal", name: "Geothermal Tap", glyph: "GEO",
@@ -146,7 +145,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 45,
     staffing: 0, consumes: {}, produces: {}, steady: 6, needsVent: true,
     requiresPressure: false, priority: 0,
-    desc: "Flat power, sol and night. Only seats on a vent — read the terrain.",
+    desc: "Steady power, day and night. Must sit on a vent.",
   },
   reactor: {
     id: "reactor", name: "Fission Reactor", glyph: "FIS",
@@ -154,15 +153,32 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 120,
     staffing: 1, consumes: { water: 0.5 }, produces: { power: 20 },
     requiresPressure: false, priority: 0,
-    desc: "Big, steady power. Drinks water and wants an engineer on the rods.",
+    desc: "Large, steady power from a little water. Needs one colonist; an engineer makes more.",
   },
   printer: {
-    id: "printer", name: "Materials Printer", glyph: "PRN",
+    id: "printer", name: "3D Printer", glyph: "3DP",
     foot: [1, 1], h: 18, color: "#3f3347",
     cost: { power: 0 }, matCost: 40,
     staffing: 0, consumes: { power: 6 }, produces: {}, producesMat: 0.35,
     requiresPressure: false, priority: 15,
-    desc: "Regolith in, materials out. Shed early when power runs short.",
+    desc: "Turns regolith into building materials using power. No crew.",
+  },
+  bioprinter: {
+    id: "bioprinter", name: "Bio Printer", glyph: "BIO",
+    foot: [1, 1], h: 18, color: "#3d4a3a",
+    cost: { power: 0 }, matCost: 35,
+    staffing: 0, consumes: { power: 8, water: 2 }, produces: { food: 3 },
+    requiresPressure: false, priority: 28,
+    desc: "Makes food from water using power. No crew, so it runs when colonists are short; less efficient than Hydroponics.",
+  },
+  atomic: {
+    id: "atomic", name: "Atomic Printer", glyph: "ATM",
+    foot: [2, 2], h: 24, color: "#3a3850",
+    cost: { power: 0 }, matCost: 120,
+    staffing: 0, consumes: { power: 30 }, produces: {},
+    printsLowest: { oxygen: 6, water: 8, food: 4, materials: 1 },
+    requiresPressure: false, priority: 10,
+    desc: "Uses a lot of power to make whichever of water, oxygen, food, or materials is lowest. No crew. The first thing cut in a brownout.",
   },
   roverbay: {
     id: "roverbay", name: "Rover Bay", glyph: "RVR",
@@ -170,7 +186,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 60,
     staffing: 0, consumes: { power: 2.5 }, produces: {},
     requiresPressure: false, priority: 25, door: 2,
-    desc: "Garage and fabrication line. Builds one drivable bulk hauler; the countdown holds while unpowered.",
+    desc: "Builds one rover, a vehicle you drive to haul resources in bulk. Holds its build while unpowered.",
   },
   roboticsbay: {
     id: "roboticsbay", name: "Robotics Bay", glyph: "BOT",
@@ -178,16 +194,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 90,
     staffing: 1, consumes: { power: 4 }, produces: {},
     requiresPressure: false, priority: 20, door: 2,
-    desc: "Prints autonomous mining robots that work the field sol and night. Wants an engineer on the line.",
-  },
-  fabricator: {
-    id: "fabricator", name: "Fabricator", glyph: "FAB",
-    foot: [1, 1], h: 16, color: "#54604a",
-    cost: { power: 0 }, matCost: FAB_MAT_COST,
-    staffing: 0, consumes: { power: 1.5 }, produces: {},
-    requiresPressure: false, priority: 10,
-    replicates: { targetDefId: "fabricator", buildS: FAB_BUILD_S },
-    desc: "Builds a copy of itself on open ground, forever. First shed in a brownout. Demolish is the off switch.",
+    desc: "Builds up to three mining robots that gather resources day and night. Needs one colonist.",
   },
   ptp: {
     id: "ptp", name: "Transport Pod", glyph: "PTP",
@@ -195,7 +202,7 @@ export const DEFS: Record<string, BuildingDef> = {
     cost: { power: 0 }, matCost: 200,
     staffing: 0, consumes: { power: 8 }, produces: {},
     requiresPressure: false, priority: 30,
-    desc: "The way off-world. Build it past the reactor, then launch to found a colony on a new planet — this run ends in expansion.",
+    desc: "Launches a crew to found a colony on another planet. Launching ends this run as an expansion.",
   },
 };
 
@@ -204,6 +211,6 @@ export const ORDER: string[] = [
   "hub", "corridor", "hab", "solar", "battery",
   "extractor", "awg", "aquifer", "reclaimer",
   "electrolysis", "greenhouse", "medbay", "cistern", "o2tank", "deflector",
-  "windturbine", "geothermal", "reactor", "printer", "roverbay", "roboticsbay",
-  "fabricator", "ptp",
+  "windturbine", "geothermal", "reactor", "printer", "bioprinter", "atomic",
+  "roverbay", "roboticsbay", "ptp",
 ];

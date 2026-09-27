@@ -14,7 +14,7 @@ import {
   TARGET_POP, SELF_SUFFICIENCY_GOAL, DEFAULT_SEED,
 } from "./tuning";
 import { RNG } from "./rng";
-import { canPlace, cellsFor, idx, inBounds, migrateGrid, siteAllows } from "./grid";
+import { canPlace, cellsFor, idx, inBounds, migrateGrid, rebuildGrid, siteAllows } from "./grid";
 import { tick as runTick } from "./tick";
 import { planRoute } from "./route";
 import { planSealRoute, reservedCells, sealNetwork, type SealPlan } from "./seal";
@@ -629,6 +629,13 @@ export class Colony {
       hazards: strikeState.hazards,
       hazardCounter: strikeState.hazardCounter,
     };
+    // the Fabricator was removed (2026-09): drop any a save still holds, with no refund
+    if (c.s.buildings.some((b) => b.defId === "fabricator")) {
+      c.s.buildings = c.s.buildings.filter((b) => b.defId !== "fabricator");
+      rebuildGrid(c.s);
+    }
+    c.s.unlocked = c.s.unlocked.filter((id) => id !== "fabricator");
+    for (const b of c.s.buildings) delete (b as { replicateT?: number }).replicateT;
     // legacy backfill: a pre-generation-economy save carries no vents. Seed them
     // from a DERIVED rng — never the live envRng, whose serialized state must
     // keep resuming byte-identically — so every load of the same save gets the

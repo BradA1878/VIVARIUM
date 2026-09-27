@@ -29,7 +29,7 @@ export type HintId =
   // unlock event maps mechanically (and stays one-shot via the seen-set)
   | "unlock_windturbine" | "unlock_geothermal" | "unlock_reactor"
   | "unlock_printer" | "unlock_roverbay" | "unlock_roboticsbay"
-  | "unlock_awg" | "unlock_aquifer" | "unlock_reclaimer" | "unlock_fabricator";
+  | "unlock_awg" | "unlock_aquifer" | "unlock_reclaimer" | "unlock_bioprinter" | "unlock_atomic";
 
 export interface Hint {
   id: HintId;
@@ -81,8 +81,8 @@ export const HINTS: Record<HintId, Hint> = {
   },
   unlock_printer: {
     id: "unlock_printer",
-    title: "NEW SCHEMATIC: MATERIALS PRINTER",
-    body: "Regolith in, materials out — a slow trickle of build currency that frees your people from the ore field.",
+    title: "NEW SCHEMATIC: 3D PRINTER",
+    body: "Turns regolith into building materials with power, so your colonists spend less time in the ore field.",
   },
   unlock_roverbay: {
     id: "unlock_roverbay",
@@ -109,10 +109,15 @@ export const HINTS: Record<HintId, Hint> = {
     title: "NEW SCHEMATIC: WATER RECLAIMER",
     body: "Recycles greywater, returning a slice of every drop the colony draws. It can't start from empty, but it stretches every source you have.",
   },
-  unlock_fabricator: {
-    id: "unlock_fabricator",
-    title: "NEW SCHEMATIC: FABRICATOR",
-    body: "A machine that builds a copy of itself, forever, while materials and ground hold out. It grows without you — demolish is the off switch.",
+  unlock_bioprinter: {
+    id: "unlock_bioprinter",
+    title: "NEW SCHEMATIC: BIO PRINTER",
+    body: "Makes food from water with power and no crew. Less food per watt than Hydroponics, but it runs when your colonists are busy.",
+  },
+  unlock_atomic: {
+    id: "unlock_atomic",
+    title: "NEW SCHEMATIC: ATOMIC PRINTER",
+    body: "Turns a lot of power into whichever of oxygen, water, food, or materials is lowest. Feed it from the reactor; it is the first thing cut in a brownout.",
   },
 };
 

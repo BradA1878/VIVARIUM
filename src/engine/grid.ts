@@ -68,16 +68,22 @@ export function migrateGrid(s: ColonyState, newN: number): ColonyState {
   s.depot.gx += off; s.depot.gy += off;
   if (s.ufo) { s.ufo.gx += off; s.ufo.gy += off; }
   if (s.trade) { s.trade.gx += off; s.trade.gy += off; }
-  const grid = new Int32Array(newN * newN);
+  s.grid = new Int32Array(newN * newN);
+  s.N = newN;
+  rebuildGrid(s);
+  return s;
+}
+
+/** rebuild the occupancy grid from the building list (cells off the grid and
+ *  buildings of unknown defs are skipped) */
+export function rebuildGrid(s: ColonyState): void {
+  s.grid.fill(0);
   for (const b of s.buildings) {
     const def = DEFS[b.defId];
     if (!def) continue;
     for (const [x, y] of cellsFor(def, b.gx, b.gy))
-      if (inBounds(newN, x, y)) grid[idx(newN, x, y)] = b.uid;
+      if (inBounds(s.N, x, y)) s.grid[idx(s.N, x, y)] = b.uid;
   }
-  s.grid = grid;
-  s.N = newN;
-  return s;
 }
 
 /** remove a building by uid: clear its grid cells + drop it from the list.

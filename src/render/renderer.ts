@@ -28,7 +28,7 @@ import { buildVent, type VentMesh } from "./three/kit/vent";
 import { buildAquifer, type AquiferMesh } from "./three/kit/aquifer";
 import { buildRover, type RoverMesh } from "./three/kit/rover";
 import { buildRobot, type RobotMesh } from "./three/kit/robot";
-import { FAB_MAX_LINEAGE, ROBOT_CAP, ROVER_CARGO_CAP } from "@/engine/tuning";
+import { ROBOT_CAP, ROVER_CARGO_CAP } from "@/engine/tuning";
 import { buildAlienShip, type AlienShipMesh } from "./three/alienship";
 import { buildUfo, type UfoMesh } from "./three/ufo";
 import { buildDepot, type DepotMesh } from "./three/depot";
@@ -706,9 +706,6 @@ export class ThreeRenderer {
     const now = performance.now();
     const seen = this.scratchSeen;
     seen.clear();
-    let fabricators = 0;
-    for (const b of snap.buildings) if (b.defId === "fabricator") fabricators++;
-    const lineageFull = fabricators >= FAB_MAX_LINEAGE;
 
     // occupancy map for corridor neighbour masks (only built if needed)
     let cellOwner: Map<string, BuildingState> | null = null;
@@ -765,15 +762,11 @@ export class ThreeRenderer {
 
       const st = buildingStatus(b);
       const pulse = 0.5 + 0.5 * Math.sin(now / 700 + b.uid);
-      // per-building progress channel: battery charge, or a replicator's cycle
-      // (generic off def.replicates — works for any future replicating def)
-      const rep = DEFS[b.defId]?.replicates;
+      // per-building progress channel: the battery's charge
       const fill = b.defId === "battery"
         ? snap.pools.power.amount / snap.pools.power.capacity
-        : rep ? 1 - (b.replicateT ?? rep.buildS) / rep.buildS
         : undefined;
-      const working = st.alive && (!rep || !lineageFull) &&
-        (b.defId !== "roboticsbay" || snap.robots.length < ROBOT_CAP);
+      const working = st.alive && (b.defId !== "roboticsbay" || snap.robots.length < ROBOT_CAP);
       entry.mesh.setStatus({ ...st, fill, working }, pulse, this.env);
       this.groundDetails.syncBuilding(b.uid, DEFS[b.defId], entry.mesh.object, st.alive);
 
