@@ -64,27 +64,40 @@ describe("the printers in the tick", () => {
     expect(DEFS.bioprinter).toMatchObject({ staffing: 0, consumes: { power: 8, water: 2 }, produces: { food: 3 } });
   });
 
-  it("the Atomic Printer makes the lowest resource, scaled by morale", () => {
-    // the same colony with and without it: the difference in water flow is its output
-    const flowWater = (withAtomic: boolean) => {
+  /** the same colony with and without an Atomic Printer, pools filled as given
+   *  and morale set high enough that its multiplier is not 1: the difference in
+   *  flow is the printer's output */
+  function atomicDelta(o: number, w: number, f: number, m: number) {
+    const run = (withAtomic: boolean) => {
       const { c, s, printer } = withPrinter("atomic");
       if (!withAtomic) c.removeAt(printer.gx, printer.gy);
-      fill(s, 0.9, 0.1, 0.9, 0.9); // water is lowest
+      fill(s, o, w, f, m);
       s.pools.power.amount = s.pools.power.capacity;
+      s.morale = 0.95;
       const eff = moraleMult(s);
       c.tick(0.2);
-      return { water: s.flow.water, eff };
+      return { s, printer, eff };
     };
-    const a = flowWater(false);
-    const b = flowWater(true);
-    expect(b.water - a.water).toBeCloseTo(DEFS.atomic.printsLowest!.water * b.eff, 6);
+    const a = run(false);
+    const b = run(true);
+    const diff = (k: "oxygen" | "water" | "food") => b.s.flow[k] - a.s.flow[k];
+    return { a, b, diff };
+  }
+
+  it("the Atomic Printer makes the lowest resource, scaled by morale", () => {
+    const { b, diff } = atomicDelta(0.9, 0.1, 0.9, 0.9); // water is lowest
+    expect(b.eff).not.toBe(1);
+    expect(b.printer.util).toBe(1);
+    expect(diff("water")).toBeCloseTo(DEFS.atomic.printsLowest!.water * b.eff, 6);
+    expect(diff("oxygen")).toBeCloseTo(0, 6);
   });
 
   it("all full: it picks oxygen and the pool stays at capacity", () => {
-    const { c, s } = withPrinter("atomic");
-    fill(s, 1, 1, 1, 1);
-    c.tick(0.2);
-    expect(s.pools.oxygen.amount).toBeLessThanOrEqual(s.pools.oxygen.capacity);
+    const { b, diff } = atomicDelta(1, 1, 1, 1);
+    expect(b.printer.util).toBe(1);
+    expect(diff("oxygen")).toBeCloseTo(DEFS.atomic.printsLowest!.oxygen * b.eff, 6);
+    expect(diff("water")).toBeCloseTo(0, 6);
+    expect(b.s.pools.oxygen.amount).toBeLessThanOrEqual(b.s.pools.oxygen.capacity);
   });
 
   it("carries the spec's numbers", () => {

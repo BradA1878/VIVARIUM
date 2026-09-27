@@ -305,6 +305,11 @@ export class Colony {
     if (!b || !def || !modesFor(def).includes(mode)) return false;
     if (mode === "normal") delete b.mode;
     else b.mode = mode;
+    // show the change before the next tick, which may be a while if paused: an
+    // OFF building is offline at once; one switched back on waits for the tick
+    // to decide whether it runs (the tick rewrites all three fields)
+    if (mode === "off") { b.online = false; b.util = 0; b.offReason = "off"; }
+    else if (b.offReason === "off") b.offReason = undefined;
     return true;
   }
 
