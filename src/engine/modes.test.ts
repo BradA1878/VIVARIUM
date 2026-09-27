@@ -176,6 +176,20 @@ describe("crew order in the tick", () => {
     expect(posted).toContain(e3.uid); // a stopped building's crew stays on post, as before
   });
 
+  it("keeps colonists on their posts when a building flickers between running and stopped", () => {
+    const { c, s, e1 } = scene(10); // four colonists for the four staffed buildings
+    c.tick(0.1);
+    const posts = () => s.colonists.map((k) => `${k.id}:${k.workUid}`).join(" ");
+    const before = posts();
+    expect(s.colonists.filter((k) => k.workUid != null)).toHaveLength(4);
+    e1.integrity = 0.2; // stopped for a tick
+    c.tick(0.1);
+    expect(posts()).toBe(before);
+    e1.integrity = 1; // running again
+    c.tick(0.1);
+    expect(posts()).toBe(before);
+  });
+
   it("stays deterministic with settings in play", () => {
     const run = () => {
       const { c, e1, e4 } = scene(2);

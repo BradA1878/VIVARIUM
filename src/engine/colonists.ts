@@ -206,9 +206,22 @@ function assign(s: ColonyState): void {
     const j = free.findIndex(match);
     if (j >= 0) workers[i] = free.splice(j, 1)[0];
   };
-  // both passes over one group of slots: role matches first, then anyone
+  // c.workUid still holds last tick's post here (it is reset below)
+  const slotUids = new Set(slots.map((slot) => slot.uid));
+  const inTrade = (c: ColonistInstance, i: number): boolean => BUILDING_ROLE[slots[i].defId] === roleOf(c.id);
+  const heldHere = (c: ColonistInstance, i: number): boolean => c.workUid === slots[i].uid;
+  const postless = (c: ColonistInstance): boolean => c.workUid == null || !slotUids.has(c.workUid);
+  // one group of slots, five passes: a colonist in their trade keeps the post
+  // they held last tick; one in their trade who lost their post (back from an
+  // injury, or their building went away) may take a post held by someone out
+  // of trade; everyone else keeps their post; open posts go by trade, then to
+  // anyone. Keeping posts means a building that flickers between running and
+  // stopped does not reshuffle the crew every tick.
   const fill = (from: number, to: number): void => {
-    for (let i = from; i < to; i++) claim(i, (c) => BUILDING_ROLE[slots[i].defId] === roleOf(c.id));
+    for (let i = from; i < to; i++) claim(i, (c) => heldHere(c, i) && inTrade(c, i));
+    for (let i = from; i < to; i++) if (!workers[i]) claim(i, (c) => inTrade(c, i) && postless(c));
+    for (let i = from; i < to; i++) if (!workers[i]) claim(i, (c) => heldHere(c, i));
+    for (let i = from; i < to; i++) if (!workers[i]) claim(i, (c) => inTrade(c, i));
     for (let i = from; i < to; i++) if (!workers[i]) claim(i, () => true);
   };
   fill(0, runningSlots); // every running building gets its worker first
@@ -217,7 +230,7 @@ function assign(s: ColonyState): void {
   for (const c of colonists) c.workUid = null;
   workers.forEach((c, i) => { if (c) c.workUid = slots[i].uid; });
   colonists.forEach((c, i) => {
-    c.homeUid = habs.length ? habs[i % habs.length].uid : (hub(s)?.gx != null ? null : null);
+    c.homeUid = habs.length ? habs[i % habs.length].uid : null;
   });
 }
 
