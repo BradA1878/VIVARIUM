@@ -9,7 +9,9 @@ import { computed, ref } from "vue";
 import type { BuildingDef, Resource } from "@shared/types";
 import { DEFS, ORDER } from "@/engine";
 import { GATE_HINTS } from "@/engine/unlocks";
+import { worldProfile } from "@/engine/tuning";
 import { useColony } from "@/ui/stores/colony";
+import { buildingFacts } from "@/ui/buildingFacts";
 
 const { snapshot, tool, demolish, pick, toggleDemolish } = useColony();
 
@@ -48,12 +50,12 @@ function hideTip(): void {
 // recipe formatting helpers -------------------------------------------------
 type ResMap = Partial<Record<Resource, number>>;
 
-const produces = (m: ResMap): string =>
-  Object.entries(m).map(([k, v]) => `+${v} ${k}`).join(" ");
 const consumes = (m: ResMap): string =>
   Object.entries(m).map(([k, v]) => `−${v} ${k}`).join(" ");
-const caps = (m: ResMap): string =>
-  Object.entries(m).map(([k, v]) => `+${v} ${k} cap`).join(" ");
+/** what the hovered building makes, from its def (solar scaled to this world's sunlight) */
+const makes = computed(() =>
+  hovered.value ? buildingFacts(hovered.value, worldProfile(snapshot.value?.world).solar).makes : [],
+);
 
 const hasEntries = (m: ResMap | undefined): m is ResMap =>
   !!m && Object.keys(m).length > 0;
@@ -61,7 +63,20 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
 
 <template>
   <div class="palette">
-    <div class="pal-title">CONSTRUCT</div>
+    <div class="pal-head">
+      <span class="pal-title">CONSTRUCT</span>
+      <!-- Demolish sits in the header, not the grid, so the grid keeps the row
+           counts its width tiers are tuned for (hud.css) -->
+      <button
+        :class="['pal-demo', { sel: demolish }]"
+        :disabled="piloting"
+        type="button"
+        :aria-pressed="demolish"
+        @click="toggleDemolish()"
+      >
+        &#10005; Demolish
+      </button>
+    </div>
     <div v-if="piloting" class="pal-lock">&#10178; PILOTING — construction locked · F to release</div>
     <div :class="['pal-grid', { locked: piloting }]">
       <button
@@ -80,16 +95,6 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
         <span class="pal-name">{{ d.name }}</span>
         <span v-if="costOf(d) > 0 && !locked(d)" class="pal-cost">&#9635; {{ costOf(d) }}</span>
       </button>
-      <button
-        :class="['pal-btn', 'demo', { sel: demolish }]"
-        :disabled="piloting"
-        type="button"
-        :aria-pressed="demolish"
-        @click="toggleDemolish()"
-      >
-        <span class="pal-glyph">&#10005;</span>
-        <span class="pal-name">Demolish</span>
-      </button>
     </div>
 
     <div
@@ -103,13 +108,11 @@ const hasEntries = (m: ResMap | undefined): m is ResMap =>
       </div>
       <div class="tip-desc">{{ hovered.desc }}</div>
       <div v-if="locked(hovered) && GATE_HINTS[hovered.id]" class="tip-lock">
-        &#x1F512; LOCKED — unlocks at {{ GATE_HINTS[hovered.id] }}
+        &#x1F512; LOCKED — unlocks with {{ GATE_HINTS[hovered.id] }}
       </div>
       <div class="tip-stats">
-        <span v-if="hovered.solar" class="tip-prod">+{{ hovered.solar }} power (solar)</span>
-        <span v-if="hasEntries(hovered.produces)" class="tip-prod">{{ produces(hovered.produces) }}</span>
+        <span v-for="m in makes" :key="m" class="tip-prod">{{ m }}</span>
         <span v-if="hasEntries(hovered.consumes)" class="tip-cons">{{ consumes(hovered.consumes) }}</span>
-        <span v-if="hasEntries(hovered.caps)" class="tip-cap">{{ caps(hovered.caps) }}</span>
         <span v-if="hovered.staffing" class="tip-staff">{{ hovered.staffing }} crew</span>
         <span v-if="hovered.requiresPressure" class="tip-press">sealed</span>
         <span v-if="costOf(hovered) > 0" class="tip-cost">&#9635; {{ costOf(hovered) }} materials</span>

@@ -239,7 +239,15 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
 .ins-hint { color: var(--dim); font-size: 10px; }
 
 .palette { background: var(--panel); backdrop-filter: blur(10px); border: 1px solid var(--hair); border-radius: 4px; padding: 9px 11px; }
-.pal-title { font-size: 9px; letter-spacing: 0.28em; color: var(--dim); text-align: center; margin-bottom: 8px; }
+.pal-head { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-bottom: 8px; }
+.pal-title { grid-column: 2; font-size: 9px; letter-spacing: 0.28em; color: var(--dim); text-align: center; }
+.pal-demo {
+  grid-column: 3; justify-self: end; font-size: 9px; letter-spacing: 0.14em; color: var(--rust);
+  border: 1px solid rgba(232, 120, 79, 0.3); border-radius: 3px; padding: 3px 8px; transition: 0.13s;
+}
+.pal-demo:hover:not(:disabled) { border-color: rgba(232, 120, 79, 0.55); }
+.pal-demo.sel { border-color: rgba(232, 120, 79, 0.6); background: rgba(232, 120, 79, 0.12); }
+.pal-demo:disabled { opacity: 0.35; cursor: not-allowed; }
 .pal-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; max-width: calc(100vw - 32px); }
 .pal-btn {
   width: 62px; height: 58px; display: flex; flex-direction: column; align-items: center;
@@ -251,8 +259,6 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
 .pal-glyph { font-size: 14px; color: var(--cyan); font-weight: 500; letter-spacing: 0.02em; }
 .pal-name { font-size: 9px; color: var(--dim); letter-spacing: 0.03em; text-align: center; line-height: 1.1; }
 .pal-btn.sel .pal-name { color: var(--ink); }
-.pal-btn.demo .pal-glyph { color: var(--rust); }
-.pal-btn.demo.sel { border-color: rgba(232, 120, 79, 0.55); background: rgba(232, 120, 79, 0.1); box-shadow: none; }
 
 .pal-tip { position: fixed; z-index: 50; width: min(206px, calc(100vw - 24px)); background: rgba(9, 12, 15, 0.97); border: 1px solid var(--hair); border-radius: 4px; padding: 10px 11px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); pointer-events: none; }
 .tip-name { font-size: 12px; letter-spacing: 0.05em; color: #e6eef1; display: flex; justify-content: space-between; margin-bottom: 5px; }
@@ -262,29 +268,29 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
 .tip-stats span { font-size: 10px; letter-spacing: 0.02em; }
 .tip-prod { color: #9bd6a0; }
 .tip-cons { color: var(--rust); }
-.tip-cap { color: var(--cyan); }
 .tip-staff { color: var(--dim); }
 .tip-press { color: var(--dim); border: 1px solid var(--hair); border-radius: 2px; padding: 0 4px; }
 
 /* ---------- responsive: fit smaller laptops ----------
    The HUD is fixed-px by design; these steps shrink it into a small viewport
-   without a redesign. The build palette has 25 tiles (~1680px in one row), so
-   it wraps into centred rows as the screen narrows. Each `.pal-grid` cap pairs
+   without a redesign. The build palette's grid has 24 tiles (~1603px in one
+   row; Demolish sits in the palette header, outside the grid), so it wraps
+   into centred rows as the screen narrows. Each `.pal-grid` cap pairs
    a fixed width (sets the row count at the wide end of the range) with a
    rail-aware `calc(100vw - …)` (guarantees the centred palette clears the side
    rails at the narrow end). Ordered widest→narrowest so the cascade stacks — a
    1280px screen matches the 1600 + 1480 blocks. Screens >1600px (16"/external)
    keep the single-row palette and today's look. */
 @media (max-width: 1600px) {
-  /* 14–15": two rows (13 + 12). A definite width wraps deterministically —
+  /* 14–15": two rows (12 + 12). A definite width wraps deterministically —
      a shrink-to-fit max-width leaves a lone tile stranded on a third row. */
-  .pal-grid { width: 868px; }
+  .pal-grid { width: 800px; }
 }
 @media (max-width: 1480px) {
-  /* 12–13": three rows (9 + 9 + 7) + slimmer rails + de-crowded top bar */
+  /* 12–13": three rows (8 + 8 + 8) + slimmer rails + de-crowded top bar */
   .left-col { width: 280px; }
   .right-col { width: 248px; }
-  .pal-grid { width: 600px; }
+  .pal-grid { width: 535px; }
   .brand-name { font-size: 18px; }
   .brand-sub { display: none; }
   .controls { gap: 4px; }
@@ -295,7 +301,7 @@ button.alert:hover { border-color: rgba(232, 120, 79, 0.45); }
      clears the rails even as the row count climbs */
   .left-col { width: 264px; }
   .right-col { width: 236px; }
-  .pal-grid { width: min(546px, calc(100vw - 600px)); }
+  .pal-grid { width: min(493px, calc(100vw - 600px)); }
   .pal-btn { width: 56px; height: 54px; }
 }
 @media (max-width: 880px) {

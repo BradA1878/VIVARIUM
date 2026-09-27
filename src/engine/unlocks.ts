@@ -49,21 +49,21 @@ export const GATES: Record<string, (s: ColonyState) => boolean> = {
     s.population >= 12,
 };
 
-/** each gate, as the palette's locked tooltip says it — kept beside the rules
- *  so the two change together */
+/** each gate, as the palette's locked tooltip says it ("unlocks with …") —
+ *  kept beside the rules so the two change together */
 export const GATE_HINTS: Record<string, string> = {
-  windturbine: "sol 4, or survive a dust storm",
+  windturbine: "sol 4, or a dust storm",
   geothermal: "sol 6",
-  reactor: "population 8 + 150 materials",
-  printer: "population 6",
-  roverbay: "sol 3, or stockpile 80 materials",
-  roboticsbay: "build a reactor, or population 10 + 200 materials",
-  awg: "sol 5, or population 6",
-  aquifer: "sol 8 — must sit on an aquifer site",
-  reclaimer: "population 6, or build a Hydroponics",
-  bioprinter: "sol 6, or build a Hydroponics",
-  atomic: "build a Fission Reactor",
-  ptp: "prove the outpost, build a reactor, and reach 12 colonists",
+  reactor: "8 colonists and 150 materials",
+  printer: "6 colonists",
+  roverbay: "sol 3, or 80 materials in stock",
+  roboticsbay: "a reactor, or 10 colonists and 200 materials",
+  awg: "sol 5, or 6 colonists",
+  aquifer: "sol 8 (it must sit on an aquifer site)",
+  reclaimer: "6 colonists, or a Hydroponics",
+  bioprinter: "sol 6, or a Hydroponics",
+  atomic: "a Fission Reactor",
+  ptp: "the outpost proven, a reactor, and 12 colonists",
 };
 
 /** is this def still behind its gate? Founding defs are never locked.

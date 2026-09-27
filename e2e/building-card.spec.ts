@@ -104,11 +104,13 @@ test("the palette has the printers and no Fabricator", async ({ page }, testInfo
 test("the palette keeps its rows at common desktop widths", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "architect console");
   await startColony(page);
-  const rows = () => page.evaluate(() => new Set([...document.querySelectorAll<HTMLElement>(".pal-btn")].map((b) => b.offsetTop)).size);
-  for (const [width, height, expected] of [[1280, 720, 3], [1440, 900, 3], [1560, 900, 2]] as const) {
+  const rows = () => page.evaluate(() => new Set([...document.querySelectorAll<HTMLElement>(".pal-grid .pal-btn")].map((b) => b.offsetTop)).size);
+  // 1512 and 1728: the 14" and 16" MacBook Pro defaults
+  for (const [width, height, expected] of [[1280, 720, 3], [1440, 900, 3], [1512, 982, 2], [1560, 900, 2], [1728, 1117, 2]] as const) {
     await page.setViewportSize({ width, height });
     await expect.poll(rows, { message: `${width}×${height}` }).toBe(expected);
   }
+  await expect(page.getByRole("button", { name: /Demolish/ })).toHaveCount(1); // in the palette's header row
 });
 
 test("switching colonies drops the selected building", async ({ page }, testInfo) => {
