@@ -89,7 +89,7 @@ Buildings that need a colonist (the extractor, water generator, aquifer well,
 reclaimer, electrolysis, hydroponics, med-bay, reactor, and robotics bay) take
 one each, and there are rarely enough colonists for all of them. By default
 the oldest buildings get workers first; the rest show a NO CREW badge, and the
-left rail's LABOR line counts how many are waiting.
+HUD's UNSTAFFED line counts how many are waiting.
 
 Click a placed building (no tool selected) to open its **card** in the right
 column: what it does in plain words, what it makes, uses, and needs (numbers

@@ -105,7 +105,7 @@ export function modesFor(def: BuildingDef): BuildingMode[];
 ### Other surfaces
 
 - **Hover:** the Inspector's hover chip for a placed building adds its status label ("HYDROPONICS · NO CREW").
-- **Left rail:** the LABOR line adds "· N waiting" when N buildings report `offReason: "crew"`.
+- **Left rail:** unchanged. (A "· N waiting" suffix on the LABOR line was built and dropped in review: it wrapped the crew row and made the rail jump, and the HUD's "N UNSTAFFED" fault line already gives the count.)
 - **Unlock hints:** the "unlocks at …" text moves out of `Palette.vue` into `GATE_HINTS` beside `GATES` in `unlocks.ts`, so the rule and its description sit together.
 
 ### Descriptions
